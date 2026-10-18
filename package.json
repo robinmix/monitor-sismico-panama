@@ -1,0 +1,10 @@
+{
+  "name": "monitor-sismico-igc-panama",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Visualizador independiente de sismos publicados por el IGC-UP. Sin otras fuentes sísmicas.",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {"node": ">=18"}
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#091421">
+  <meta name="description" content="Monitor independiente de los sismos publicados por el Instituto de Geociencias de la Universidad de Panamá. Estadísticas, gráficos, filtros y contador desde el último sismo.">
+  <title>Monitor Sísmico · Panamá | Datos IGC-UP</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoSA7CpccJkI1g6m4=" crossorigin="">
+  <link rel="stylesheet" href="assets/style.css">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script defer src="assets/app.js"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="identity" href="#inicio" aria-label="Inicio del monitor sísmico">
+        <span class="identity-mark" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-opacity=".3"/><path d="M3 26h10l5-15 8 28 6-17 4 4h9" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="identity-name"><b>SISMO<span>DATA</span></b><small>PANAMÁ · OBSERVATORIO</small></span>
+      </a>
+      <nav class="topnav" aria-label="Secciones"><a href="#resumen">Resumen</a><a href="#geografia">Geografía</a><a href="#registros">Registros</a></nav>
+      <div class="topbar-right"><span id="panamaTime" class="panama-time">--:--:--</span><span class="status-pill loading" id="sourceStatus"><i></i> Conectando</span></div>
+    </header>
+
+    <main id="inicio">
+      <section class="masthead" id="resumen">
+        <div class="masthead-copy">
+          <div class="eyebrow"><span class="eyebrow-rule"></span> SEGUIMIENTO SÍSMICO / ÚLTIMOS 7 DÍAS</div>
+          <h1>El pulso de<br><em>la tierra.</em></h1>
+          <p>Actividad sísmica registrada por el Instituto de Geociencias de la Universidad de Panamá. Una sola fuente, todos los datos organizados.</p>
+          <div class="masthead-meta"><span class="tiny-orbit"></span><strong>Fuente exclusiva: IGC-UP</strong><span class="sep">/</span><span>Horario de Panamá · UTC−5</span></div>
+        </div>
+        <div class="last-event" id="lastEventPanel">
+          <div class="last-top"><span><span class="live-dot"></span> ÚLTIMO SISMO REGISTRADO</span><span class="mono" id="latestState">—</span></div>
+          <div class="last-magnitude"><span class="last-prefix">M</span><strong id="latestMagnitude">—</strong><span id="latestLevel" class="last-level">SIN DATOS</span></div>
+          <div id="latestRegion" class="last-region">Consultando los registros del IGC-UP…</div>
+          <div class="last-time-line"><span id="latestDate">—</span><span id="latestDepth">—</span></div>
+          <div class="timer-label">TIEMPO TRANSCURRIDO DESDE ESE EVENTO</div>
+          <div class="live-counter" aria-live="off"><div><strong id="elapsedDays">00</strong><small>DÍAS</small></div><span>:</span><div><strong id="elapsedHours">00</strong><small>HORAS</small></div><span>:</span><div><strong id="elapsedMinutes">00</strong><small>MIN</small></div><span>:</span><div><strong id="elapsedSeconds">00</strong><small>SEG</small></div></div>
+          <div class="last-foot"><span id="snapshotStatus">Esperando primera lectura</span><a id="latestLink" href="https://sismosgeociencias.up.ac.pa/" target="_blank" rel="noopener noreferrer">Ver fuente <span aria-hidden="true">↗</span></a></div>
+        </div>
+      </section>
+
+      <div class="filter-panel">
+        <div class="filter-topline"><div><span class="section-kicker">01 / EXPLORAR DATOS</span><h2>Filtros de actividad</h2></div><div class="filter-top-actions"><span id="filterInfo" class="filtered-count">— eventos visibles</span><button id="resetBtn" class="text-action" type="button">↺ Limpiar filtros</button></div></div>
+        <div class="filter-grid">
+          <label class="field"><span>PERÍODO</span><select id="filterPeriod"><option value="168">Últimos 7 días</option><option value="72">Últimas 72 horas</option><option value="48">Últimas 48 horas</option><option value="24">Últimas 24 horas</option><option value="12">Últimas 12 horas</option><option value="0">Toda la lista oficial</option></select></label>
+          <label class="field"><span>REGIÓN IGC-UP</span><select id="filterZone"><option value="">Todas las regiones</option></select></label>
+          <label class="field"><span>LOCALIDAD CERCANA</span><select id="filterTown"><option value="">Todas las localidades</option></select></label>
+          <label class="field"><span>MAGNITUD</span><select id="filterMag"><option value="">Todas las magnitudes</option><option value="below3">Menor de 3.0</option><option value="3">3.0 a 3.9</option><option value="4">4.0 a 4.9</option><option value="5">5.0 o superior</option></select></label>
+          <label class="field"><span>PROFUNDIDAD</span><select id="filterDepth"><option value="">Cualquier profundidad</option><option value="shallow">Menor de 10 km</option><option value="middle">10 a 30 km</option><option value="deep">Mayor de 30 km</option></select></label>
+          <label class="field"><span>ESTADO DEL REGISTRO</span><select id="filterState"><option value="">Todos los estados</option><option value="PRELIMINAR">Preliminar</option><option value="REVISADO">Revisado</option></select></label>
+          <label class="field"><span>DESDE LA FECHA</span><input id="filterFrom" type="date" aria-label="Desde la fecha"></label>
+          <label class="field"><span>HASTA LA FECHA</span><input id="filterTo" type="date" aria-label="Hasta la fecha"></label>
+          <label class="field search-field"><span>BUSCAR POR LUGAR</span><div class="search-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="filterSearch" type="search" placeholder="Ej. Coiba, Soná, Chiriquí…" autocomplete="off"></div></label>
+        </div>
+      </div>
+
+      <section class="metrics" aria-label="Estadísticas por magnitud">
+        <div class="metric primary"><div class="metric-tag">TOTAL EN EL PERÍODO <span>↗</span></div><strong id="statTotal">—</strong><div class="metric-bottom"><span id="statTotalHint">Eventos registrados</span><span class="micro-line"></span></div></div>
+        <button type="button" class="metric metric-button" data-magnitude="below3" aria-label="Filtrar menores de magnitud 3"><div class="metric-tag">MENOR DE 3.0 <span class="indicator gentle"></span></div><strong id="statBelow3">—</strong><div class="metric-bottom"><span>Baja magnitud</span><span id="pctBelow3">—</span></div></button>
+        <button type="button" class="metric metric-button" data-magnitude="3" aria-label="Filtrar magnitud entre 3.0 y 3.9"><div class="metric-tag">DE 3.0 A 3.9 <span class="indicator cyan"></span></div><strong id="stat3">—</strong><div class="metric-bottom"><span>Magnitud 3.x</span><span id="pct3">—</span></div></button>
+        <button type="button" class="metric metric-button" data-magnitude="4" aria-label="Filtrar magnitud entre 4.0 y 4.9"><div class="metric-tag">DE 4.0 A 4.9 <span class="indicator amber"></span></div><strong id="stat4">—</strong><div class="metric-bottom"><span>Magnitud 4.x</span><span id="pct4">—</span></div></button>
+        <button type="button" class="metric metric-button" data-magnitude="5" aria-label="Filtrar magnitud de 5.0 o superior"><div class="metric-tag">5.0 O SUPERIOR <span class="indicator coral"></span></div><strong id="stat5">—</strong><div class="metric-bottom"><span>Magnitud ≥5.0</span><span id="pct5">—</span></div></button>
+      </section>
+
+      <section class="chart-layout">
+        <article class="panel chart-main"><div class="panel-head"><div><span class="section-kicker">02 / COMPORTAMIENTO</span><h2>Actividad en el tiempo</h2></div><div class="panel-action"><span id="timelineDescription">Por día</span><span class="panel-mark">▥</span></div></div><div class="plot-area" id="timelineChart"><div class="empty-plot">Preparando gráfica…</div></div><div class="panel-note"><span>Distribución de los eventos según la hora local de Panamá</span><span id="timelineTotal">—</span></div></article>
+        <article class="panel mag-panel"><div class="panel-head"><div><span class="section-kicker">03 / DISTRIBUCIÓN</span><h2>Por magnitud</h2></div><span class="panel-mark">◌</span></div><div class="donut-body"><div class="donut" id="donut"><div class="donut-inner"><span>REGISTROS</span><strong id="donutTotal">—</strong></div></div><div class="donut-legend"><div><span><i class="legend-dot l-below"></i>Menos de 3.0</span><b id="legendBelow3">—</b></div><div><span><i class="legend-dot l-three"></i>3.0 a 3.9</span><b id="legend3">—</b></div><div><span><i class="legend-dot l-four"></i>4.0 a 4.9</span><b id="legend4">—</b></div><div><span><i class="legend-dot l-five"></i>5.0 o más</span><b id="legend5">—</b></div></div></div><div class="panel-note"><span>Intervalos sin superposición</span><span>ESCALA M</span></div></article>
+      </section>
+
+      <section class="location-layout" id="geografia">
+        <article class="panel geography"><div class="panel-head"><div><span class="section-kicker">04 / EPICENTROS</span><h2>Distribución geográfica</h2></div><span id="mapCount" class="badge-outline">— puntos</span></div><div class="map-container" id="map"><div class="map-placeholder" id="mapFallback"><div id="coordinateMap" class="coordinate-map"></div></div></div><div class="map-legend"><span><i class="legend-dot l-three"></i>M 3.0–3.9</span><span><i class="legend-dot l-four"></i>M 4.0–4.9</span><span><i class="legend-dot l-five"></i>M ≥5.0</span><span><i class="legend-dot l-below"></i>M &lt;3.0</span></div></article>
+        <article class="panel locations"><div class="panel-head"><div><span class="section-kicker">05 / CONCENTRACIÓN</span><h2>Por localidad</h2></div><span class="panel-mark">↗</span></div><p class="help-text">Localidad de referencia indicada por el IGC-UP, no necesariamente el lugar exacto del epicentro.</p><div id="townBars" class="bar-rows"><div class="empty-plot">Esperando registros…</div></div></article>
+      </section>
+
+      <section class="section-regions panel"><div class="panel-head"><div><span class="section-kicker">06 / REGIONES REPORTADAS</span><h2>Conteo por región sísmica</h2></div><span id="regionCount" class="badge-outline">— regiones</span></div><div id="regionBars" class="region-grid"><div class="empty-plot">Esperando registros…</div></div></section>
+
+      <section id="registros" class="panel records-section"><div class="panel-head records-head"><div><span class="section-kicker">07 / DETALLE DE EVENTOS</span><h2>Registro de sismos <small id="recordCount">—</small></h2></div><div class="record-actions"><label class="sort-wrap">Ordenar <select id="filterSort"><option value="recent">Más recientes</option><option value="largest">Mayor magnitud</option><option value="deepest">Mayor profundidad</option></select></label><button id="csvBtn" class="download-button" type="button">↓ Exportar CSV</button><button id="refreshBtn" class="refresh-button" type="button">↻ Actualizar</button></div></div>
+        <div class="table-scroll"><table><thead><tr><th>FECHA / HORA</th><th>MAGNITUD</th><th>REGIÓN / REFERENCIA</th><th>PROFUNDIDAD</th><th>ESTADO</th><th class="align-right">DETALLE</th></tr></thead><tbody id="recordsBody"><tr><td colspan="6" class="empty-table">Cargando registros oficiales…</td></tr></tbody></table></div>
+        <div class="table-footer"><span id="paginationText">—</span><div class="pagination"><button id="pagePrev" type="button">← Anterior</button><span id="pageNum">—</span><button id="pageNext" type="button">Siguiente →</button></div></div>
+      </section>
+
+      <div id="alertBox" class="alertbox" role="status" hidden><strong id="alertTitle">No hay datos disponibles</strong><p id="alertText">No se pudo cargar la fuente.</p><button type="button" id="alertRetry">Reintentar ↻</button></div>
+
+      <footer class="footer"><div><span class="footer-brand">SISMO<span>DATA</span></span><p>Visualizador independiente. Información sísmica procedente únicamente del <a href="https://sismosgeociencias.up.ac.pa/" target="_blank" rel="noopener noreferrer">Instituto de Geociencias de la Universidad de Panamá</a>. No es un sitio oficial del IGC-UP.</p></div><div class="footer-right"><span id="sourceTimestamp">Sin lectura reciente</span><span>Los eventos preliminares pueden revisarse. No es un sistema de alerta temprana.</span></div></footer>
+    </main>
+  </div>
+</body>
+</html>
