@@ -3,8 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "description": "Visualizador independiente de sismos publicados por el IGC-UP. Sin otras fuentes sísmicas.",
+  "type": "commonjs",
   "scripts": {
     "test": "node --test tests/*.test.js"
   },
-  "engines": {"node": ">=18"}
+  "dependencies": {
+    "@netlify/functions": "^2.8.2",
+    "@supabase/supabase-js": "^2.49.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }

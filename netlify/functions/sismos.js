@@ -142,4 +142,4 @@ async function handler() {
     return json(502, { error:'No se pudieron leer los sismos del sitio oficial.', detalle:e.message, fuente:SOURCE_URLS[0] });
   }
 }
-module.exports = {handler, parseEvents, dateFromLocal, classifyRegion};
+module.exports = {handler, parseEvents, dateFromLocal, classifyRegion, requestSource};

@@ -5,7 +5,7 @@
   const SOURCE = 'https://sismosgeociencias.up.ac.pa/';
   const INTERVAL_MS = 5 * 60 * 1000;
   const LIMIT = 25;
-  const COLORS = ['#83a1b1', '#67b9e9', '#efb367', '#f47469'];
+  const COLORS = ['#36DDF3', '#B9F34D', '#FFC857', '#FF6B62'];
   const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map(el => [el.id, el]));
   const state = {events: [], source: null, loading: false, page: 1, map: null, layer: null, hasFitted: false, initialized: false};
   const f = {
@@ -305,8 +305,8 @@
     const maxY=valid.length?Math.ceil(Math.max(...lats)+.5):11;
     for(let i=0;i<=5;i++){
       const x=l+(W-l-r)*i/5;const y=t+(H-t-b)*i/5;
-      svg.append(svgNode('line',{x1:x,y1:t,x2:x,y2:H-b,stroke:'#345062','stroke-dasharray':'2,6'}));
-      svg.append(svgNode('line',{x1:l,y1:y,x2:W-r,y2:y,stroke:'#345062','stroke-dasharray':'2,6'}));
+      svg.append(svgNode('line',{x1:x,y1:t,x2:x,y2:H-b,stroke:'#2B353D','stroke-dasharray':'2,4'}));
+      svg.append(svgNode('line',{x1:l,y1:y,x2:W-r,y2:y,stroke:'#2B353D','stroke-dasharray':'2,4'}));
       svg.append(svgNode('text',{x,y:H-13,'text-anchor':'middle'},(minX+(maxX-minX)*i/5).toFixed(1)+'°'));
       svg.append(svgNode('text',{x:l-10,y:y+4,'text-anchor':'end'},(maxY-(maxY-minY)*i/5).toFixed(1)+'°'));
     }
