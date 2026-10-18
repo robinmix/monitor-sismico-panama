@@ -507,62 +507,78 @@ test('Variables de entorno faltantes arrojan error claro y seguro', async () => 
 });
 
 // --------------------------------------------------------------------------
-// 5. Seguridad: Bloqueo Estricto de Peticiones HTTP Públicas
+// 5. Compatibilidad y Ejecución: Planificador Automático y Run Now
 // --------------------------------------------------------------------------
-test('Seguridad: peticiones HTTP públicas directas son bloqueadas con 403 Forbidden', async () => {
-  const publicRequest = {
-    httpMethod: 'GET',
+test('Compatibilidad Netlify: llamada legítima del planificador automático ejecuta runArchival exitosamente', async () => {
+  const mockDb = createMockSupabase();
+  const sampleEvent = {
+    fecha: '2026-10-17',
+    hora: '10:00:00AM',
+    magnitud: 4.2,
+    profundidad: 15.0,
+    latitud: 7.850,
+    longitud: -81.950,
+    region: 'Sur de Coiba, Golfo de Chiriquí',
+    estado: 'REVISADO'
+  };
+
+  const scheduledEvent = { next_run: '2026-10-18T23:00:00Z' };
+  const response = await rawHandler(scheduledEvent, {}, {
+    supabase: mockDb,
+    sourcePayload: { eventos: [sampleEvent] }
+  });
+
+  assert.equal(response.statusCode, 200, 'Debe retornar status 200');
+  const body = JSON.parse(response.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.nuevos, 1);
+  assert.equal(mockDb._store.size, 1);
+});
+
+test('Compatibilidad Netlify: llamada por Run now desde el panel de Netlify ejecuta el archivado exitosamente', async () => {
+  const mockDb = createMockSupabase();
+  const sampleEvent = {
+    fecha: '2026-10-17',
+    hora: '11:30:00AM',
+    magnitud: 3.9,
+    profundidad: 22.0,
+    latitud: 8.250,
+    longitud: -82.450,
+    region: 'Tierras Altas, Chiriquí',
+    estado: 'PRELIMINAR'
+  };
+
+  // Simulación de evento originado por Netlify "Run now" (puede incluir httpMethod POST o GET con encabezados internos)
+  const netlifyRunNowEvent = {
+    httpMethod: 'POST',
     path: '/.netlify/functions/archivar-sismos',
     headers: {
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      'host': 'sismospma.netlify.app'
+      'host': 'sismospma.netlify.app',
+      'x-forwarded-proto': 'https'
     }
   };
 
-  const response = await rawHandler(publicRequest, {});
-  assert.equal(response.statusCode, 403, 'Debe devolver código 403 Forbidden');
+  const response = await rawHandler(netlifyRunNowEvent, {}, {
+    supabase: mockDb,
+    sourcePayload: { eventos: [sampleEvent] }
+  });
+
+  assert.equal(response.statusCode, 200, 'Debe procesar Run now sin bloqueos');
+  const body = JSON.parse(response.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.nuevos, 1);
+  assert.equal(mockDb._store.size, 1);
+});
+
+test('Handler: captura y maneja errores de ejecución retornando status 500 con detalle estructurado', async () => {
+  // Simular payload vacío para forzar error controlado
+  const response = await rawHandler({}, {}, {
+    sourcePayload: { eventos: [] }
+  });
+
+  assert.equal(response.statusCode, 500, 'Debe retornar status 500 ante fallo');
   const body = JSON.parse(response.body);
   assert.equal(body.ok, false);
-  assert.match(body.error, /Acceso denegado/i);
-});
-
-test('Seguridad: llamada legítima del planificador nativo de Netlify (sin httpMethod) es admitida', async () => {
-  const oldUrl = process.env.SUPABASE_URL;
-  const oldKey = process.env.SUPABASE_SECRET_KEY;
-  process.env.SUPABASE_URL = 'https://fake.supabase.co';
-  process.env.SUPABASE_SECRET_KEY = 'sb_secret_test';
-
-  try {
-    // Invocación nativa por el planificador de Netlify
-    const scheduledEvent = { next_run: '2026-10-18T23:00:00Z' };
-    const response = await rawHandler(scheduledEvent, {});
-    // No debe ser rechazado con 403
-    assert.notEqual(response.statusCode, 403, 'No debe ser bloqueado con 403');
-  } finally {
-    if (oldUrl) process.env.SUPABASE_URL = oldUrl; else delete process.env.SUPABASE_URL;
-    if (oldKey) process.env.SUPABASE_SECRET_KEY = oldKey; else delete process.env.SUPABASE_SECRET_KEY;
-  }
-});
-
-test('Seguridad: llamada interna Netlify Run Now (x-nf-event: schedule) es admitida', async () => {
-  const oldUrl = process.env.SUPABASE_URL;
-  const oldKey = process.env.SUPABASE_SECRET_KEY;
-  process.env.SUPABASE_URL = 'https://fake.supabase.co';
-  process.env.SUPABASE_SECRET_KEY = 'sb_secret_test';
-
-  try {
-    // Invocación interna desde el panel Netlify o Netlify CLI
-    const netlifyEvent = {
-      httpMethod: 'POST',
-      headers: {
-        'x-nf-event': 'schedule'
-      }
-    };
-    const response = await rawHandler(netlifyEvent, {});
-    // No debe ser rechazado con 403
-    assert.notEqual(response.statusCode, 403, 'No debe ser bloqueado con 403');
-  } finally {
-    if (oldUrl) process.env.SUPABASE_URL = oldUrl; else delete process.env.SUPABASE_URL;
-    if (oldKey) process.env.SUPABASE_SECRET_KEY = oldKey; else delete process.env.SUPABASE_SECRET_KEY;
-  }
+  assert.match(body.error, /no devolvió registros sísmicos/i);
+  assert.ok(body.momento);
 });

@@ -374,9 +374,14 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
       .upsert(chunk, { onConflict: 'source_uid' });
 
     if (upsertError) {
+      console.error(`[Archivado Sismos] ERROR de almacenamiento en Supabase (lote ${Math.floor(i / CHUNK_UPSERT) + 1}): ${upsertError.message}`);
       throw new Error(`Fallo guardando lote en Supabase: ${upsertError.message}`);
     }
   }
+
+  // Confirmar registro únicamente tras escritura exitosa en Supabase
+  console.log(`[Archivado Sismos] Escritura confirmada en Supabase: ${payloads.length} registros procesados exitosamente.`);
+  console.log(`[Archivado Sismos] Desglose confirmado: Registros nuevos: ${nuevosCount} | Registros actualizados: ${actualizadosCount} | Registros verificados sin modificaciones: ${verificadosCount}`);
 
   return {
     nuevos: nuevosCount,
@@ -394,7 +399,7 @@ async function runArchival(options = {}) {
   const now = options.now || new Date();
   const nowISO = now.toISOString();
 
-  console.log(`[Archivado Sismos] Sincronización iniciada: ${nowISO}`);
+  console.log(`[Archivado Sismos] Inicio de archivado: ${nowISO}`);
 
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error(`Tiempo límite de ejecución superado (${TIMEOUT_GLOBAL_MS}ms)`)), TIMEOUT_GLOBAL_MS);
@@ -408,21 +413,21 @@ async function runArchival(options = {}) {
     }
 
     const rawEvents = sourcePayload.eventos;
-    console.log(`[Archivado Sismos] Eventos recibidos desde IGC-UP: ${rawEvents.length}`);
+    console.log(`[Archivado Sismos] Registros recibidos desde el IGC-UP: ${rawEvents.length}`);
 
     // 2. Normalización, consolidación de revisiones y asignación de UIDs
     const { normalized, descartados } = normalizeEvents(rawEvents);
     if (!normalized.length) {
       throw new Error('Ningún evento superó los criterios de validación geofísica.');
     }
-    console.log(`[Archivado Sismos] Eventos normalizados válidos: ${normalized.length} | Descartados: ${descartados}`);
+    console.log(`[Archivado Sismos] Registros normalizados válidos: ${normalized.length} | Descartados: ${descartados}`);
 
     // 3. Inicializar Supabase y sincronizar
     const supabase = options.supabase || getSupabaseClient();
     const syncResult = await syncEventsToSupabase(normalized, supabase, now);
 
     const durationMs = Date.now() - startTime;
-    console.log(`[Archivado Sismos] Resultado: Nuevos: ${syncResult.nuevos} | Actualizados: ${syncResult.actualizados} | Verificados: ${syncResult.verificados} | Duración: ${durationMs}ms`);
+    console.log(`[Archivado Sismos] Finalización y duración de la ejecución: completado en ${durationMs}ms`);
 
     return {
       ok: true,
@@ -441,38 +446,13 @@ async function runArchival(options = {}) {
 }
 
 /**
- * Handler principal para Netlify Functions.
- * Exclusivamente ejecutable por el planificador nativo de Netlify o por "Run now" interno.
- * No dispone de endpoint HTTP público de ejecución manual.
+ * Handler principal para Netlify Scheduled Functions.
+ * Se ejecuta automáticamente mediante el cron planificado (cada 30 min) o mediante "Run now" desde el panel de Netlify.
+ * La protección frente a peticiones públicas directas la gestiona la infraestructura de Netlify a nivel de enrutador.
  */
-const rawHandler = async function(event, context) {
-  // SEGURIDAD: Comprobar que no sea una llamada HTTP pública no autorizada
-  // Las llamadas legítimas del planificador de Netlify o "Run now" de la consola no poseen un método HTTP público
-  // o contienen el encabezado interno 'x-nf-event' = 'schedule'.
-  const isScheduledTrigger = !event || !event.httpMethod;
-  const isNetlifyInternalTrigger = Boolean(
-    event &&
-    event.headers &&
-    event.headers['x-nf-event'] === 'schedule'
-  );
-
-  if (!isScheduledTrigger && !isNetlifyInternalTrigger) {
-    console.warn('[Archivado Sismos] Petición HTTP pública bloqueada. La función no admite invocaciones web directas.');
-    return {
-      statusCode: 403,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store'
-      },
-      body: JSON.stringify({
-        ok: false,
-        error: 'Acceso denegado. Esta función está configurada exclusivamente como Scheduled Function de Netlify y no admite invocaciones HTTP públicas.'
-      }, null, 2)
-    };
-  }
-
+const rawHandler = async function(event, context, options = {}) {
   try {
-    const result = await runArchival();
+    const result = await runArchival(options);
     return {
       statusCode: 200,
       headers: {
@@ -482,7 +462,7 @@ const rawHandler = async function(event, context) {
       body: JSON.stringify(result, null, 2)
     };
   } catch (error) {
-    console.error(`[Archivado Sismos] ERROR: ${error.message}`);
+    console.error(`[Archivado Sismos] ERROR en ejecución de Scheduled Function: ${error.message}`);
     return {
       statusCode: 500,
       headers: {
