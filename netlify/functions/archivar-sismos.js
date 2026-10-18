@@ -7,7 +7,6 @@
  * Destino: Supabase PostgreSQL (tabla public.sismos).
  */
 
-const { schedule } = require('@netlify/functions');
 const { createClient } = require('@supabase/supabase-js');
 const { requestSource, parseEvents, dateFromLocal, classifyRegion } = require('./sismos');
 
@@ -500,7 +499,7 @@ const rawHandler = async function(event, context) {
 };
 
 module.exports = {
-  handler: schedule(CRON_SCHEDULE, rawHandler),
+  handler: rawHandler,
   rawHandler,
   runArchival,
   normalizeEvents,
