@@ -6,16 +6,22 @@
   <meta name="theme-color" content="#0B1116">
   <meta name="description" content="Monitor técnico e independiente de la actividad sísmica en Panamá con datos oficiales del Instituto de Geociencias de la Universidad de Panamá (IGC-UP). Observatorio geofísico en tiempo real.">
   <title>SismoData Panamá · Observatorio Geofísico | Datos IGC-UP</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SismoData">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="preconnect" href="https://unpkg.com">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoSA7CpccJkI1g6m4=" crossorigin="">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
   <link rel="stylesheet" href="assets/style.css">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261018c"></script>
+  <script defer src="assets/app.js?v=20261019a"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -42,6 +48,13 @@
       </nav>
 
       <div class="topbar-right">
+        <button type="button" id="pwaInstallBtn" class="pwa-install-btn" hidden aria-label="Instalar SismoData como aplicación web">
+          <svg class="pwa-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          </svg>
+          <span class="pwa-btn-text">Instalar SismoData</span>
+        </button>
         <div class="telemetry-clock">
           <span class="clock-label">UTC−5</span>
           <span id="panamaTime" class="panama-time">--:--:--</span>
@@ -61,9 +74,6 @@
             <button type="button" id="sismoCopyBtn" class="sismo-action-btn">
               <span aria-hidden="true">🔗</span> <span id="sismoCopyText">Copiar enlace</span>
             </button>
-            <a id="sismoOfficialLink" href="#" target="_blank" rel="noopener noreferrer" class="sismo-action-btn official">
-              Ficha oficial IGC-UP <span aria-hidden="true">↗</span>
-            </a>
           </div>
         </div>
 
@@ -122,6 +132,12 @@
                 <span class="param-label">LOCALIDAD MÁS CERCANA</span>
                 <strong id="sismoTown" class="param-val">—</strong>
                 <small id="sismoZone" class="param-sub">Zonificación IGC-UP</small>
+              </div>
+
+              <div class="sismo-param" id="sismoDistanceParam" hidden>
+                <span class="param-label">DISTANCIA A TU UBICACIÓN</span>
+                <strong id="sismoDistanceVal" class="param-val mono">—</strong>
+                <small class="param-sub">Distancia geodésica en línea recta</small>
               </div>
 
               <div class="sismo-param">
@@ -211,8 +227,8 @@
             <span class="live-pulse-dot" aria-hidden="true"></span>
             <span>MONITOREO TÉCNICO · REPÚBLICA DE PANAMÁ</span>
           </div>
-          <h1>Red Sísmica Nacional IGC-UP</h1>
-          <p>Supervisión continua de sismicidad registrada por el Instituto de Geociencias de la Universidad de Panamá. Datos técnicos actualizados automáticamente cada 5 minutos.</p>
+          <h1>Red Sísmica Nacional</h1>
+          <p>Datos técnicos actualizados automáticamente cada 5 minutos.</p>
           <div class="masthead-meta">
             <span class="meta-tag"><strong>FUENTE</strong> IGC-UP (Oficial)</span>
             <span class="meta-tag"><strong>ZONA HORARIA</strong> América/Panamá (UTC−5)</span>
@@ -244,6 +260,30 @@
             <span id="latestDepth" class="mono">—</span>
           </div>
 
+          <!-- MÓDULO INTERACTIVO: DISTANCIA AL EPICENTRO -->
+          <div class="user-distance-card" id="userDistanceCard">
+            <div class="distance-unprompted" id="distUnprompted">
+              <button type="button" class="geo-dist-btn" id="btnRequestGeo" aria-label="Calcular distancia entre tu ubicación y el último sismo">
+                <span class="geo-dist-icon" aria-hidden="true">📍</span>
+                <span>Mi distancia al sismo</span>
+              </button>
+            </div>
+            <div class="distance-active" id="distActive" hidden>
+              <div class="dist-val-line">
+                <span class="geo-dist-icon active" aria-hidden="true">📍</span>
+                <span class="dist-label">Tu distancia al epicentro:</span>
+                <strong id="distValue" class="dist-num mono">—</strong>
+              </div>
+              <small class="dist-note">Distancia aproximada en línea recta</small>
+              <div class="dist-actions">
+                <button type="button" class="dist-action-link" id="btnRefreshGeo" title="Actualizar ubicación del navegador">↻ Actualizar mi ubicación</button>
+                <span class="dist-sep">·</span>
+                <button type="button" class="dist-action-link danger" id="btnDisableGeo" title="Desactivar y borrar ubicación de la memoria">✕ Desactivar mi ubicación</button>
+              </div>
+            </div>
+            <div class="distance-status" id="distStatus" hidden></div>
+          </div>
+
           <div class="timer-box">
             <div class="timer-label">TIEMPO TRANSCURRIDO DESDE EL EVENTO</div>
             <div class="live-counter" aria-live="off">
@@ -259,7 +299,6 @@
 
           <div class="last-foot">
             <span id="snapshotStatus">Esperando primera lectura…</span>
-            <a id="latestLink" href="https://sismosgeociencias.up.ac.pa/" target="_blank" rel="noopener noreferrer">Ficha IGC-UP <span aria-hidden="true">↗</span></a>
           </div>
         </div>
       </section>
@@ -603,6 +642,7 @@
                 <th scope="col">FECHA Y HORA (UTC−5)</th>
                 <th scope="col">MAGNITUD</th>
                 <th scope="col">LOCALIDAD Y REGIÓN</th>
+                <th scope="col" id="colDistanceTh" hidden>DISTANCIA</th>
                 <th scope="col">PROFUNDIDAD</th>
                 <th scope="col">ESTADO</th>
                 <th scope="col" class="align-right">FICHA</th>
@@ -846,16 +886,43 @@
 
       <!-- PIE DE PÁGINA TÉCNICO -->
       <footer class="footer">
-        <div>
-          <span class="footer-brand">SISMO<span>DATA</span> <small>PANAMÁ</small></span>
-          <p>Visualizador técnico independiente. Información sismológica procedente exclusivamente del <a href="https://sismosgeociencias.up.ac.pa/" target="_blank" rel="noopener noreferrer">Instituto de Geociencias de la Universidad de Panamá (IGC-UP)</a>. SismoData no es un sitio oficial del IGC-UP ni un sistema de alerta temprana.</p>
-        </div>
-        <div class="footer-right">
-          <span id="sourceTimestamp" class="mono">Sin lectura reciente</span>
-          <span>Los eventos clasificados como preliminares son revisados posteriormente por el equipo de analistas del IGC-UP.</span>
-        </div>
+        <span id="sourceTimestamp" class="footer-timestamp">Sin lectura reciente</span>
       </footer>
     </main>
+  </div>
+
+  <!-- MODAL EDUCATIVO PWA PARA SAFARI / iOS -->
+  <div id="iosInstallModal" class="pwa-ios-modal" hidden role="dialog" aria-modal="true" aria-labelledby="iosInstallTitle">
+    <div class="pwa-ios-backdrop" id="iosModalBackdrop"></div>
+    <div class="pwa-ios-dialog">
+      <div class="pwa-ios-header">
+        <div class="pwa-ios-title-wrap">
+          <span class="pwa-ios-badge" aria-hidden="true">📱</span>
+          <h3 id="iosInstallTitle">Instalar SismoData en iOS</h3>
+        </div>
+        <button type="button" id="iosModalCloseBtn" class="pwa-ios-close" aria-label="Cerrar instrucciones">✕</button>
+      </div>
+      <div class="pwa-ios-body">
+        <p class="pwa-ios-intro">Para instalar SismoData como aplicación en tu pantalla de inicio con Safari:</p>
+        <ol class="pwa-ios-steps">
+          <li>
+            <span class="step-num">1</span>
+            <span>Toca el botón <strong>Compartir</strong> <svg class="ios-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> en la barra inferior de navegación.</span>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <span>En el menú de opciones, selecciona <strong>«Agregar al inicio»</strong> <svg class="ios-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>.</span>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <span>Confirma pulsando <strong>«Agregar»</strong> en la esquina superior derecha.</span>
+          </li>
+        </ol>
+      </div>
+      <div class="pwa-ios-footer">
+        <button type="button" id="iosModalOkBtn" class="pwa-ios-btn">Entendido</button>
+      </div>
+    </div>
   </div>
 </body>
 </html>

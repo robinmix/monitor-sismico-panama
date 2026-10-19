@@ -40,7 +40,10 @@
     historicalLoading: false,
     historicalRequestId: 0,
     historicalAbortCtrl: null,
-    lastHistoricalKey: null
+    lastHistoricalKey: null,
+    userCoords: null,
+    userLeafletMarker: null,
+    deferredPwaPrompt: null
   };
   const f = {
     period: ui.filterPeriod, zone: ui.filterZone, town: ui.filterTown, mag: ui.filterMag,
@@ -65,6 +68,200 @@
   const buckets = data => [data.filter(e => e.magnitud < 3).length, data.filter(e => e.magnitud >= 3 && e.magnitud < 4).length, data.filter(e => e.magnitud >= 4 && e.magnitud < 5).length, data.filter(e => e.magnitud >= 5).length];
   const sortNames = arr => arr.sort((a,b) => a.localeCompare(b,'es',{sensitivity:'base'}));
   const getEventUid = e => e.source_uid || e.uid || ('igc_' + (e.timestamp || e.fecha_hora));
+
+  // Constante y utilidades geodésicas Haversine (R = 6371.0088 km según IUGG)
+  const EARTH_RADIUS_KM = 6371.0088;
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+    const nLat1 = Number(lat1);
+    const nLon1 = Number(lon1);
+    const nLat2 = Number(lat2);
+    const nLon2 = Number(lon2);
+    if (isNaN(nLat1) || isNaN(nLon1) || isNaN(nLat2) || isNaN(nLon2)) return null;
+    if (nLat1 < -90 || nLat1 > 90 || nLat2 < -90 || nLat2 > 90) return null;
+    if (nLon1 < -180 || nLon1 > 180 || nLon2 < -180 || nLon2 > 180) return null;
+    const toRad = deg => (deg * Math.PI) / 180;
+    const dLat = toRad(nLat2 - nLat1);
+    const dLon = toRad(nLon2 - nLon1);
+    const sinDLat2 = Math.sin(dLat / 2);
+    const sinDLon2 = Math.sin(dLon / 2);
+    const a = sinDLat2 * sinDLat2 +
+              Math.cos(toRad(nLat1)) * Math.cos(toRad(nLat2)) *
+              sinDLon2 * sinDLon2;
+    const clampedA = Math.min(1, Math.max(0, a));
+    return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(clampedA), Math.sqrt(1 - clampedA));
+  }
+
+  function formatDistanceKm(km) {
+    if (km == null || isNaN(km) || km < 0) return '';
+    return `${Number(km).toFixed(1)} km`;
+  }
+
+  function updateUserDistanceDisplay() {
+    if (!ui.userDistanceCard) return;
+    if (state.userCoords && state.events.length) {
+      const e = state.events[0];
+      const lat = Number(e.latitud ?? e.lat);
+      const lon = Number(e.longitud ?? e.lon);
+      const d = haversineKm(state.userCoords.lat, state.userCoords.lon, lat, lon);
+      if (d != null) {
+        set('distValue', formatDistanceKm(d));
+        if (ui.distUnprompted) ui.distUnprompted.hidden = true;
+        if (ui.distActive) ui.distActive.hidden = false;
+        if (ui.distStatus) ui.distStatus.hidden = true;
+        return;
+      }
+    }
+    if (ui.distUnprompted) ui.distUnprompted.hidden = false;
+    if (ui.distActive) ui.distActive.hidden = true;
+  }
+
+  function requestUserLocation() {
+    if (!('geolocation' in navigator)) {
+      if (ui.distStatus) {
+        ui.distStatus.textContent = 'Tu navegador no soporta geolocalización.';
+        ui.distStatus.hidden = false;
+      }
+      return;
+    }
+    if (ui.distStatus) {
+      ui.distStatus.textContent = 'Consultando ubicación del dispositivo…';
+      ui.distStatus.hidden = false;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        // Almacenamiento EXCLUSIVO en memoria de sesión (sin persistencia en localStorage ni servidores)
+        state.userCoords = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude
+        };
+        if (ui.distStatus) ui.distStatus.hidden = true;
+        updateUserDistanceDisplay();
+        render();
+        updateUserLocationOnMap();
+        if (state.currentSismoId) {
+          updateFichaDistance();
+        }
+      },
+      (err) => {
+        let msg = 'No se pudo obtener tu ubicación.';
+        if (err.code === 1) msg = 'Permiso de ubicación no concedido.';
+        else if (err.code === 2) msg = 'Ubicación no disponible.';
+        else if (err.code === 3) msg = 'Tiempo de espera agotado al consultar ubicación.';
+        if (ui.distStatus) {
+          ui.distStatus.textContent = msg;
+          ui.distStatus.hidden = false;
+          setTimeout(() => { if (!state.userCoords && ui.distStatus) ui.distStatus.hidden = true; }, 5000);
+        }
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  function disableUserLocation() {
+    state.userCoords = null;
+    if (ui.distActive) ui.distActive.hidden = true;
+    if (ui.distUnprompted) ui.distUnprompted.hidden = false;
+    if (ui.distStatus) ui.distStatus.hidden = true;
+    updateUserDistanceDisplay();
+    render();
+    updateUserLocationOnMap();
+    if (ui.sismoDistanceParam) ui.sismoDistanceParam.hidden = true;
+  }
+
+  function updateFichaDistance(e, lat, lon) {
+    if (!ui.sismoDistanceParam) return;
+    if (!state.userCoords) {
+      ui.sismoDistanceParam.hidden = true;
+      return;
+    }
+    const evt = e || (state.events.find(x => getEventUid(x) === state.currentSismoId));
+    if (!evt) return;
+    const evtLat = lat != null ? lat : Number(evt.latitud ?? evt.lat);
+    const evtLon = lon != null ? lon : Number(evt.longitud ?? evt.lon);
+    const d = haversineKm(state.userCoords.lat, state.userCoords.lon, evtLat, evtLon);
+    if (d != null) {
+      ui.sismoDistanceParam.hidden = false;
+      ui.sismoDistanceVal.textContent = `A ${formatDistanceKm(d)} de tu ubicación`;
+    } else {
+      ui.sismoDistanceParam.hidden = true;
+    }
+  }
+
+  function updateUserLocationOnMap() {
+    if (state.generalMapLibre && state.generalMapLoaded) {
+      const map = state.generalMapLibre;
+      const geojson = state.userCoords ? {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [state.userCoords.lon, state.userCoords.lat]
+          },
+          properties: {
+            title: 'Tu ubicación aproximada'
+          }
+        }]
+      } : {
+        type: 'FeatureCollection',
+        features: []
+      };
+
+      const src = map.getSource('user-location-src');
+      if (src) {
+        src.setData(geojson);
+      } else if (state.userCoords) {
+        map.addSource('user-location-src', {
+          type: 'geojson',
+          data: geojson
+        });
+
+        map.addLayer({
+          id: 'user-location-halo',
+          type: 'circle',
+          source: 'user-location-src',
+          paint: {
+            'circle-radius': 14,
+            'circle-color': '#36DDF3',
+            'circle-opacity': 0.22,
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#36DDF3',
+            'circle-stroke-opacity': 0.5
+          }
+        });
+
+        map.addLayer({
+          id: 'user-location-dot',
+          type: 'circle',
+          source: 'user-location-src',
+          paint: {
+            'circle-radius': 5.5,
+            'circle-color': '#36DDF3',
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#0B1116'
+          }
+        });
+      }
+    }
+
+    if (state.map && typeof L !== 'undefined') {
+      if (state.userLeafletMarker) {
+        state.map.removeLayer(state.userLeafletMarker);
+        state.userLeafletMarker = null;
+      }
+      if (state.userCoords) {
+        state.userLeafletMarker = L.circleMarker([state.userCoords.lat, state.userCoords.lon], {
+          radius: 7,
+          fillColor: '#36DDF3',
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.9
+        }).addTo(state.map);
+      }
+    }
+  }
 
   function elapsedTime() {
     const now = new Date();
@@ -197,8 +394,8 @@
     set('latestRegion',e.region);
     set('latestDate',fullDate.format(new Date(e.timestamp)));
     set('latestDepth',`${e.profundidad} km de profundidad`);
-    ui.latestLink.href = e.detalle || SOURCE;
     elapsedTime();
+    updateUserDistanceDisplay();
   }
 
   function renderStats(base, filtered) {
@@ -312,7 +509,6 @@
 
   function makePopup(event) {
     const uid = getEventUid(event);
-    const link = event.detalle ? `<a href="${safe(event.detalle)}" target="_blank" rel="noopener noreferrer" class="popup-official-link">Ficha IGC-UP ↗</a>` : '';
     return `<div class="popup-card">
       <div class="popup-top">
         <span class="popup-mag ${magnitudeClass(event.magnitud)}" style="color:${magColor(event.magnitud)};">M ${magText(event.magnitud)}</span>
@@ -324,8 +520,7 @@
         <span><b>${safe(event.profundidad)} km</b></span>
       </div>
       <div class="popup-actions">
-        <a href="#/sismo/${encodeURIComponent(uid)}" class="popup-btn-epicenter">Ver epicentro →</a>
-        ${link}
+        <a href="#/sismo/${encodeURIComponent(uid)}" class="popup-btn-epicenter">Ver ficha técnica →</a>
       </div>
     </div>`;
   }
@@ -551,7 +746,6 @@
 
         const tsDate = props.timestamp ? new Date(props.timestamp) : null;
         const dateStr = tsDate && !isNaN(tsDate) ? fullDate.format(tsDate) : (props.fecha + ' ' + props.hora);
-        const link = props.detalle ? `<a href="${safe(props.detalle)}" target="_blank" rel="noopener noreferrer" class="popup-official-link">Ficha IGC-UP ↗</a>` : '';
 
         const html = `<div class="popup-card">
           <div class="popup-top">
@@ -564,8 +758,7 @@
             <span><b>${props.profundidad} km</b></span>
           </div>
           <div class="popup-actions">
-            <a href="#/sismo/${encodeURIComponent(props.uid)}" class="popup-btn-epicenter">Ver epicentro →</a>
-            ${link}
+            <a href="#/sismo/${encodeURIComponent(props.uid)}" class="popup-btn-epicenter">Ver ficha técnica →</a>
           </div>
         </div>`;
 
@@ -579,6 +772,7 @@
         map.getCanvas().style.cursor = '';
       });
 
+      updateUserLocationOnMap();
       map.resize();
     });
 
@@ -624,6 +818,7 @@
         dot.addTo(state.layer);
       });
       state.map.setView([8.4, -80.2], 7);
+      updateUserLocationOnMap();
     } catch (err) {
       console.warn('Mapa Leaflet no disponible; activando mapa por coordenadas.', err);
       drawCoordinateMap(mapped);
@@ -671,22 +866,48 @@
     const begin=(state.page-1)*LIMIT;
     const entries=data.slice(begin,begin+LIMIT);
     ui.recordsBody.replaceChildren();
+
+    const hasUserGeo = Boolean(state.userCoords);
+    if (ui.colDistanceTh) ui.colDistanceTh.hidden = !hasUserGeo;
+
     for(const e of entries) {
       const row=el('tr');
       const date=el('div','cell-date');date.append(el('strong','',e.fecha),el('span','',e.hora+' · PAN'));addCell(row,date);
       addCell(row,el('span','mag-chip '+magnitudeClass(e.magnitud),magText(e.magnitud)));
-      const place=el('div','cell-place');place.append(el('strong','',e.localidad),el('span','',e.region));addCell(row,place);
+      const place=el('div','cell-place');place.append(el('strong','',e.localidad),el('span','',e.region));
+
+      let distFormatted = null;
+      if (hasUserGeo) {
+        const d = haversineKm(state.userCoords.lat, state.userCoords.lon, e.latitud ?? e.lat, e.longitud ?? e.lon);
+        if (d != null) {
+          distFormatted = formatDistanceKm(d);
+          place.append(el('span', 'mobile-dist', ` · a ${distFormatted}`));
+        }
+      }
+
+      addCell(row,place);
+
+      if (hasUserGeo) {
+        addCell(row, el('span', 'cell-distance mono', distFormatted || '—'));
+      }
+
       addCell(row,`${e.profundidad} km`);
       addCell(row,el('span','state-chip '+(e.estado.toUpperCase()==='REVISADO'?'revisado':''),e.estado));
       const cell=addCell(row,'','align-right');
       const uid = getEventUid(e);
       const fichaLink = el('a', 'table-action-btn', 'Ficha');
       fichaLink.href = `#/sismo/${encodeURIComponent(uid)}`;
+      fichaLink.title = `Abrir ficha técnica del sismo M${e.magnitud} en ${e.localidad}`;
       cell.append(fichaLink);
-      const link=el('a','table-link','IGC-UP ↗');link.href=e.detalle||SOURCE;link.target='_blank';link.rel='noopener noreferrer';link.title='Consultar detalle en fuente oficial';cell.append(link);
       ui.recordsBody.append(row);
     }
-    if(!entries.length){const row=el('tr');const td=el('td','empty-table','No hay registros que coincidan con los filtros.');td.colSpan=6;row.append(td);ui.recordsBody.append(row);}
+    if(!entries.length){
+      const row=el('tr');
+      const td=el('td','empty-table','No hay registros que coincidan con los filtros.');
+      td.colSpan=hasUserGeo ? 7 : 6;
+      row.append(td);
+      ui.recordsBody.append(row);
+    }
     set('paginationText', total?`Mostrando ${num(begin+1)}–${num(Math.min(total,begin+LIMIT))} de ${num(total)}`:'No hay registros');
     set('pageNum',`${state.page} / ${pages}`);
     ui.pagePrev.disabled=state.page<=1;
@@ -826,8 +1047,10 @@
     ui.sismoTown.textContent = e.localidad || 'Localidad de referencia no especificada';
     ui.sismoZone.textContent = e.zona ? `Zonificación: ${e.zona}` : 'Región tectónica de Panamá';
 
+    // Distancia geográfica al visitante si la geolocalización está activa
+    updateFichaDistance(e, lat, lon);
+
     ui.sismoUidText.textContent = uid;
-    ui.sismoOfficialLink.href = e.detalle || SOURCE;
 
     // Color del indicador
     ui.sismoMapLegendDot.style.background = magColor(mag);
@@ -1644,8 +1867,82 @@
       if (!state.historicalData) loadHistoricalData();
     });
 
+    // Geolocalización y cálculo de distancia (almacenamiento exclusivo en sesión volátil)
+    if (ui.btnRequestGeo) ui.btnRequestGeo.addEventListener('click', requestUserLocation);
+    if (ui.btnRefreshGeo) ui.btnRefreshGeo.addEventListener('click', requestUserLocation);
+    if (ui.btnDisableGeo) ui.btnDisableGeo.addEventListener('click', disableUserLocation);
+
+    // Progressive Web App (PWA) e instalación en dispositivo
+    wirePwaAndServiceWorker();
+
     wireMapLayers();
     window.addEventListener('hashchange', handleRouting);
+  }
+
+  function wirePwaAndServiceWorker() {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          console.warn('[PWA] Service Worker registration failed:', err);
+        });
+      });
+    }
+
+    const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+    if (!isStandalone) {
+      // Flujo Chromium / Android con beforeinstallprompt
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        state.deferredPwaPrompt = e;
+        if (ui.pwaInstallBtn) ui.pwaInstallBtn.hidden = false;
+      });
+
+      window.addEventListener('appinstalled', () => {
+        state.deferredPwaPrompt = null;
+        if (ui.pwaInstallBtn) ui.pwaInstallBtn.hidden = true;
+      });
+
+      // Detección iOS Safari (no soporta beforeinstallprompt nativo)
+      if (isIos && ui.pwaInstallBtn) {
+        ui.pwaInstallBtn.hidden = false;
+      }
+    }
+
+    if (ui.pwaInstallBtn) {
+      ui.pwaInstallBtn.addEventListener('click', async () => {
+        if (state.deferredPwaPrompt) {
+          state.deferredPwaPrompt.prompt();
+          const { outcome } = await state.deferredPwaPrompt.userChoice;
+          if (outcome === 'accepted') {
+            ui.pwaInstallBtn.hidden = true;
+          }
+          state.deferredPwaPrompt = null;
+        } else if (isIos) {
+          if (ui.iosInstallModal) ui.iosInstallModal.hidden = false;
+        } else {
+          // Fallback informativo si el navegador no expuso prompt nativo ni es iOS
+          if (ui.iosInstallModal) ui.iosInstallModal.hidden = false;
+        }
+      });
+    }
+
+    if (ui.iosModalCloseBtn) {
+      ui.iosModalCloseBtn.addEventListener('click', () => {
+        if (ui.iosInstallModal) ui.iosInstallModal.hidden = true;
+      });
+    }
+    if (ui.iosModalOkBtn) {
+      ui.iosModalOkBtn.addEventListener('click', () => {
+        if (ui.iosInstallModal) ui.iosInstallModal.hidden = true;
+      });
+    }
+    if (ui.iosModalBackdrop) {
+      ui.iosModalBackdrop.addEventListener('click', () => {
+        if (ui.iosInstallModal) ui.iosInstallModal.hidden = true;
+      });
+    }
   }
 
   wire();

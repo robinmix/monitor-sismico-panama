@@ -1,0 +1,25 @@
+{
+  "name": "SismoData Panamá",
+  "short_name": "SismoData",
+  "description": "Monitor técnico e independiente de la actividad sísmica en Panamá con datos oficiales del IGC-UP.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0B1116",
+  "theme_color": "#0B1116",
+  "lang": "es-PA",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
