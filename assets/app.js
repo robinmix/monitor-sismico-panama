@@ -22,6 +22,11 @@
     page: 1,
     map: null,
     layer: null,
+    generalMapLibre: null,
+    generalMapLoaded: false,
+    generalMapSource: null,
+    generalMapPopup: null,
+    generalResizeObs: null,
     hasFitted: false,
     initialized: false,
     sismoMap: null,
@@ -326,31 +331,303 @@
   }
 
   function drawMap(data) {
-    const mapped = data.filter(e => Number.isFinite(e.latitud)&&Number.isFinite(e.longitud)&&Math.abs(e.latitud)<=90&&Math.abs(e.longitud)<=180);
-    set('mapCount',`${num(mapped.length)} epicentros`);
-    if(typeof window.L !== 'undefined') {
-      try {
-        if(!state.map) {
-          ui.map.replaceChildren();
-          state.map=L.map(ui.map,{zoomControl:true,preferCanvas:true,scrollWheelZoom:false}).setView([8.55,-80.9],7);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; OpenStreetMap · Cartografía solamente'}).addTo(state.map);
-          state.layer=L.layerGroup().addTo(state.map);
-          state.renderer=L.canvas({padding:0.5});
-          setTimeout(()=>state.map.invalidateSize(),100);
-        }
-        state.layer.clearLayers();
-        const bounds=[];
-        mapped.forEach(e => {
-          const c=magColor(e.magnitud);
-          const dot=L.circleMarker([e.latitud,e.longitud],{renderer:state.renderer,radius:Math.min(13,Math.max(3.5,3+e.magnitud*1.0)),color:c,weight:1,fillColor:c,fillOpacity:.64});
-          dot.bindPopup(makePopup(e));dot.addTo(state.layer);bounds.push([e.latitud,e.longitud]);
-        });
-        if(bounds.length)state.map.fitBounds(bounds,{padding:[30,30],maxZoom:10});
-        else state.map.setView([8.55,-80.9],7);
-        return;
-      } catch (err) {console.warn('Mapa cartográfico no disponible; activando mapa por coordenadas.',err);}
+    const mapped = data.filter(e => Number.isFinite(e.latitud) && Number.isFinite(e.longitud) && Math.abs(e.latitud) <= 90 && Math.abs(e.longitud) <= 180);
+    set('mapCount', `${num(mapped.length)} epicentros`);
+
+    const hasMapLibre = typeof window.maplibregl !== 'undefined';
+    const isSupported = hasMapLibre && (typeof maplibregl.supported === 'function' ? maplibregl.supported() : true);
+
+    if (isSupported) {
+      if (ui.generalMapFallback) ui.generalMapFallback.hidden = true;
+      renderGeneralMapLibre(mapped);
+      return;
     }
+
+    if (typeof window.L !== 'undefined') {
+      if (ui.generalMapFallback) ui.generalMapFallback.hidden = true;
+      drawLeafletMap(mapped);
+      return;
+    }
+
+    if (ui.generalMapFallback) ui.generalMapFallback.hidden = false;
     drawCoordinateMap(mapped);
+  }
+
+  function eventsToGeoJSON(events) {
+    return {
+      type: 'FeatureCollection',
+      features: events.map(e => {
+        const mag = Number(e.magnitud) || 0;
+        const color = magColor(mag);
+        const uid = getEventUid(e);
+        return {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [Number(e.longitud), Number(e.latitud)]
+          },
+          properties: {
+            uid: uid,
+            mag: mag,
+            color: color,
+            radius: Math.min(14, Math.max(3.8, 2.5 + mag * 1.5)),
+            region: e.region || '',
+            localidad: e.localidad || '',
+            profundidad: e.profundidad,
+            estado: e.estado || '',
+            timestamp: e.timestamp || '',
+            fecha: e.fecha || '',
+            hora: e.hora || '',
+            detalle: e.detalle || ''
+          }
+        };
+      })
+    };
+  }
+
+  async function renderGeneralMapLibre(mapped) {
+    const geojsonData = eventsToGeoJSON(mapped);
+
+    // Si el mapa ya está cargado, actualizar los datos del source GeoJSON reactivamente
+    if (state.generalMapLibre && state.generalMapLoaded) {
+      const src = state.generalMapLibre.getSource('general-epicenters');
+      if (src) {
+        src.setData(geojsonData);
+      }
+      return;
+    }
+
+    // Si ya se está inicializando, guardar para cuando termine
+    if (state.generalMapLibre && !state.generalMapLoaded) {
+      return;
+    }
+
+    const container = ui.map;
+    if (!container) return;
+    container.replaceChildren();
+
+    const style = await loadCustomOfmStyle();
+
+    const map = new maplibregl.Map({
+      container: container,
+      style: style,
+      center: [-80.2, 8.4],
+      zoom: 6.8,
+      minZoom: 5.5,
+      maxZoom: 16,
+      maxBounds: [[-86.5, 4.5], [-75.0, 12.0]],
+      attributionControl: false
+    });
+
+    state.generalMapLibre = map;
+
+    // Controles de navegación y atribución
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'bottom-right');
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+
+    map.on('load', () => {
+      state.generalMapLoaded = true;
+
+      // 1. Límites de placas tectónicas (PB2002)
+      map.addSource('general-tectonic-boundaries', {
+        type: 'geojson',
+        data: 'assets/data/tectonic-boundaries.geojson'
+      });
+      map.addLayer({
+        id: 'general-tectonic-boundaries-line',
+        type: 'line',
+        source: 'general-tectonic-boundaries',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          'visibility': ui.generalTogglePlates?.checked !== false ? 'visible' : 'none'
+        },
+        paint: {
+          'line-color': '#C68BEB',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.4, 8, 2.4, 12, 3.5],
+          'line-opacity': 0.85
+        }
+      });
+
+      // 2. Etiquetas de placas tectónicas
+      map.addSource('general-tectonic-labels', {
+        type: 'geojson',
+        data: 'assets/data/tectonic-labels.geojson'
+      });
+      map.addLayer({
+        id: 'general-tectonic-labels-text',
+        type: 'symbol',
+        source: 'general-tectonic-labels',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 11,
+          'text-letter-spacing': 0.08,
+          'text-max-width': 8,
+          'visibility': ui.generalToggleLabels?.checked !== false ? 'visible' : 'none'
+        },
+        paint: {
+          'text-color': '#C68BEB',
+          'text-halo-color': '#111417',
+          'text-halo-width': 1.6
+        }
+      });
+
+      // 3. Fallas geológicas activas (GEM)
+      map.addSource('general-geological-faults', {
+        type: 'geojson',
+        data: 'assets/data/geological-faults.geojson'
+      });
+      map.addLayer({
+        id: 'general-geological-faults-line',
+        type: 'line',
+        source: 'general-geological-faults',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          'visibility': ui.generalToggleFaults?.checked !== false ? 'visible' : 'none'
+        },
+        paint: {
+          'line-color': '#D99B69',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.8, 8, 1.5, 12, 2.4],
+          'line-dasharray': [3, 2],
+          'line-opacity': 0.75
+        }
+      });
+
+      // 4. Epicentros registrados
+      map.addSource('general-epicenters', {
+        type: 'geojson',
+        data: geojsonData
+      });
+
+      // Halo sutil bajo círculos para mejorar contraste
+      map.addLayer({
+        id: 'general-epicenters-halo',
+        type: 'circle',
+        source: 'general-epicenters',
+        layout: {
+          'visibility': ui.generalToggleEpicenters?.checked !== false ? 'visible' : 'none'
+        },
+        paint: {
+          'circle-radius': ['get', 'radius'],
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.25,
+          'circle-blur': 0.4
+        }
+      });
+
+      // Puntos de epicentro
+      map.addLayer({
+        id: 'general-epicenters-circle',
+        type: 'circle',
+        source: 'general-epicenters',
+        layout: {
+          'visibility': ui.generalToggleEpicenters?.checked !== false ? 'visible' : 'none'
+        },
+        paint: {
+          'circle-radius': ['get', 'radius'],
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.85,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 0.8,
+          'circle-stroke-opacity': 0.8
+        }
+      });
+
+      // Popup interactivo al hacer clic
+      const popup = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        offset: 12,
+        className: 'maplibre-sismo-popup'
+      });
+      state.generalMapPopup = popup;
+
+      map.on('click', 'general-epicenters-circle', (e) => {
+        if (!e.features || !e.features.length) return;
+        const feat = e.features[0];
+        const props = feat.properties;
+        const coords = feat.geometry.coordinates.slice();
+
+        const tsDate = props.timestamp ? new Date(props.timestamp) : null;
+        const dateStr = tsDate && !isNaN(tsDate) ? fullDate.format(tsDate) : (props.fecha + ' ' + props.hora);
+        const link = props.detalle ? `<a href="${safe(props.detalle)}" target="_blank" rel="noopener noreferrer" class="popup-official-link">Ficha IGC-UP ↗</a>` : '';
+
+        const html = `<div class="popup-card">
+          <div class="popup-top">
+            <span class="popup-mag ${magnitudeClass(props.mag)}" style="color:${props.color};">M ${magText(props.mag)}</span>
+            <span class="popup-state mono">${safe(props.estado)}</span>
+          </div>
+          <div class="popup-title">${safe(props.region)}</div>
+          <div class="popup-meta mono">
+            <span>${safe(dateStr)}</span>
+            <span><b>${props.profundidad} km</b></span>
+          </div>
+          <div class="popup-actions">
+            <a href="#/sismo/${encodeURIComponent(props.uid)}" class="popup-btn-epicenter">Ver epicentro →</a>
+            ${link}
+          </div>
+        </div>`;
+
+        popup.setLngLat(coords).setHTML(html).addTo(map);
+      });
+
+      map.on('mouseenter', 'general-epicenters-circle', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'general-epicenters-circle', () => {
+        map.getCanvas().style.cursor = '';
+      });
+
+      map.resize();
+    });
+
+    if (typeof ResizeObserver !== 'undefined' && ui.generalMapWrap && !state.generalResizeObs) {
+      state.generalResizeObs = new ResizeObserver(() => {
+        if (state.generalMapLibre) state.generalMapLibre.resize();
+      });
+      state.generalResizeObs.observe(ui.generalMapWrap);
+    }
+  }
+
+  function drawLeafletMap(mapped) {
+    try {
+      if (!state.map) {
+        ui.map.replaceChildren();
+        state.map = L.map(ui.map, {
+          zoomControl: true,
+          preferCanvas: true,
+          scrollWheelZoom: false
+        }).setView([8.4, -80.2], 7);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 17,
+          attribution: '&copy; OpenStreetMap · Cartografía solamente'
+        }).addTo(state.map);
+
+        state.layer = L.layerGroup().addTo(state.map);
+        state.renderer = L.canvas({ padding: 0.5 });
+        setTimeout(() => state.map.invalidateSize(), 100);
+      }
+      state.layer.clearLayers();
+      mapped.forEach(e => {
+        const c = magColor(e.magnitud);
+        const dot = L.circleMarker([e.latitud, e.longitud], {
+          renderer: state.renderer,
+          radius: Math.min(13, Math.max(3.5, 3 + e.magnitud * 1.0)),
+          color: c,
+          weight: 1,
+          fillColor: c,
+          fillOpacity: 0.64
+        });
+        dot.bindPopup(makePopup(e));
+        dot.addTo(state.layer);
+      });
+      state.map.setView([8.4, -80.2], 7);
+    } catch (err) {
+      console.warn('Mapa Leaflet no disponible; activando mapa por coordenadas.', err);
+      drawCoordinateMap(mapped);
+    }
   }
 
   function drawCoordinateMap(data) {
@@ -505,6 +782,7 @@
       window.location.hash = '#registros';
     }
     setTimeout(() => {
+      if (state.generalMapLibre) state.generalMapLibre.resize();
       if (state.map) state.map.invalidateSize();
     }, 150);
   }
@@ -938,6 +1216,60 @@
     if (ui.layerToggleFaults) {
       ui.layerToggleFaults.addEventListener('change', (ev) => {
         setVisibility('geological-faults-line', ev.target.checked);
+      });
+    }
+
+    // Controles de capas para el mapa general
+    if (ui.generalLayersBtn && ui.generalLayersPopover) {
+      ui.generalLayersBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const isHidden = ui.generalLayersPopover.hidden;
+        ui.generalLayersPopover.hidden = !isHidden;
+        ui.generalLayersBtn.setAttribute('aria-expanded', String(!isHidden));
+      });
+
+      document.addEventListener('click', (ev) => {
+        if (ui.generalLayersWidget && !ui.generalLayersWidget.contains(ev.target)) {
+          ui.generalLayersPopover.hidden = true;
+          ui.generalLayersBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
+    const setGeneralVisibility = (layerId, visible) => {
+      if (state.generalMapLibre && state.generalMapLoaded && state.generalMapLibre.getLayer(layerId)) {
+        state.generalMapLibre.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+      }
+    };
+
+    if (ui.generalToggleEpicenters) {
+      ui.generalToggleEpicenters.addEventListener('change', (ev) => {
+        const vis = ev.target.checked;
+        setGeneralVisibility('general-epicenters-circle', vis);
+        setGeneralVisibility('general-epicenters-halo', vis);
+        if (state.generalMapPopup) {
+          if (!vis && state.generalMapPopup.isOpen()) {
+            state.generalMapPopup.remove();
+          }
+        }
+      });
+    }
+
+    if (ui.generalTogglePlates) {
+      ui.generalTogglePlates.addEventListener('change', (ev) => {
+        setGeneralVisibility('general-tectonic-boundaries-line', ev.target.checked);
+      });
+    }
+
+    if (ui.generalToggleLabels) {
+      ui.generalToggleLabels.addEventListener('change', (ev) => {
+        setGeneralVisibility('general-tectonic-labels-text', ev.target.checked);
+      });
+    }
+
+    if (ui.generalToggleFaults) {
+      ui.generalToggleFaults.addEventListener('change', (ev) => {
+        setGeneralVisibility('general-geological-faults-line', ev.target.checked);
       });
     }
   }

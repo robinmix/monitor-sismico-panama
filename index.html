@@ -490,8 +490,48 @@
             </div>
             <span id="mapCount" class="badge-outline mono">— puntos</span>
           </div>
-          <div class="map-container" id="map">
-            <div class="map-placeholder" id="mapFallback">
+          <div class="map-wrap" id="generalMapWrap">
+            <div class="map-container" id="map"></div>
+
+            <!-- Control compacto de capas geofísicas para el mapa general -->
+            <div class="sismo-layers-widget" id="generalLayersWidget">
+              <button type="button" class="sismo-layers-btn" id="generalLayersBtn" aria-expanded="false" aria-label="Control de capas cartográficas y tectónicas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                  <polyline points="2 17 12 22 22 17"></polyline>
+                  <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+                <span>Capas</span>
+              </button>
+              <div class="sismo-layers-popover" id="generalLayersPopover" hidden>
+                <span class="layers-popover-title">Capas geofísicas</span>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalToggleEpicenters" checked>
+                  <span class="layer-chip dot"></span>
+                  <span class="layer-name">Epicentros (IGC-UP)</span>
+                </label>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalTogglePlates" checked>
+                  <span class="layer-chip line-violet"></span>
+                  <span class="layer-name">Límites tectónicos (PB2002)</span>
+                </label>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalToggleLabels" checked>
+                  <span class="layer-chip text-violet">Tt</span>
+                  <span class="layer-name">Etiquetas de placas</span>
+                </label>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalToggleFaults" checked>
+                  <span class="layer-chip line-fault"></span>
+                  <span class="layer-name">Fallas activas (GEM)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Fallback si WebGL no está disponible -->
+            <div id="generalMapFallback" class="sismo-map-fallback" hidden>
+              <span>Aviso cartográfico</span>
+              <p>El mapa interactivo vectorial requiere aceleración WebGL.</p>
               <div id="coordinateMap" class="coordinate-map"></div>
             </div>
           </div>
@@ -500,6 +540,9 @@
             <span><i class="legend-dot l-three"></i>M 3.0–3.9</span>
             <span><i class="legend-dot l-four"></i>M 4.0–4.9</span>
             <span><i class="legend-dot l-five"></i>M ≥ 5.0</span>
+          </div>
+          <div class="sismo-map-attributions" style="padding: 6px 14px 10px; font-size: 10px; color: var(--text-dim); border-top: 1px solid var(--border-subtle); line-height: 1.35;">
+            Cartografía base © <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · Límites tectónicos: Modelo PB2002 (P. Bird) · Fallas activas: GEM Global Active Faults.
           </div>
         </article>
 
