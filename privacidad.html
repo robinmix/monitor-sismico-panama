@@ -282,10 +282,16 @@
       </section>
 
       <section>
-        <h2>3. Finalidad del Tratamiento de Datos</h2>
+        <h2>3. Finalidad y Principios de Tratamiento</h2>
         <p>
-          sismoPA fue diseñada con una filosofía estricta de <strong>mínima recolección de datos</strong> y máxima privacidad para el ciudadano. La aplicación no recopila datos personales, no incluye rastreadores publicitarios ni analítica de terceros, no solicita contraseñas ni creación de perfiles, y no guarda la ubicación geográfica del usuario.
+          sismoPA fue diseñada bajo un principio de minimización de datos para la consulta técnica y visualización cívica de información sísmica. En concordancia con este principio:
         </p>
+        <ul>
+          <li><strong>Sin cuentas ni perfiles:</strong> La aplicación no requiere registro, no solicita creación de cuentas ni gestiona credenciales de usuario.</li>
+          <li><strong>Sin rastreadores comerciales ni publicidad:</strong> No se integran redes de publicidad, tecnologías de rastreo comercial entre sitios ni servicios de analítica publicitaria de terceros.</li>
+          <li><strong>Datos geofísicos abiertos:</strong> Las consultas de registros sísmicos corresponden a información científica pública accesible libremente sin vinculación a la identidad de los usuarios.</li>
+          <li><strong>Conexiones técnicas de red:</strong> Como parte normal del funcionamiento web sobre HTTPS, el dispositivo establece comunicaciones con los servidores de infraestructura necesarios para la entrega del servicio, en los términos detallados en la Sección 5.</li>
+        </ul>
       </section>
 
       <section>
@@ -294,12 +300,13 @@
           La aplicación incluye una función opcional denominada <strong>«Cerca de mí»</strong>, que permite calcular la distancia aproximada entre el usuario y los epicentros de los sismos registrados.
         </p>
         <div class="callout">
-          <strong>PROCESAMIENTO ESTRICTAMENTE LOCAL EN EL DISPOSITIVO:</strong>
+          <strong>PROCESAMIENTO LOCAL EN EL DISPOSITIVO:</strong>
           <ul>
-            <li><strong>Consentimiento explícito:</strong> La geolocalización solo se activa si el usuario pulsa de forma deliberada el botón o pestaña de ubicación en el navegador.</li>
-            <li><strong>Sin transmisión externa:</strong> Las coordenadas de latitud y longitud procesadas <strong>JAMÁS se transmiten fuera del dispositivo</strong>, ni a Netlify, ni a Supabase, ni a terceros.</li>
-            <li><strong>Sin almacenamiento persistente:</strong> Las coordenadas se retienen exclusivamente en la memoria RAM volátil del navegador durante la sesión activa. No se guardan en <code>localStorage</code>, bases de datos locales ni cookies.</li>
-            <li><strong>Cálculo geodésico en el cliente:</strong> La distancia se calcula en el propio dispositivo mediante la fórmula matemática de Haversine y se borra de inmediato al salir de la pestaña o cerrar la aplicación.</li>
+            <li><strong>Consentimiento explícito:</strong> La geolocalización solo se activa si el usuario pulsa de forma deliberada el botón o pestaña de ubicación en la aplicación.</li>
+            <li><strong>Sin transmisión de coordenadas:</strong> Las coordenadas exactas de latitud y longitud calculadas por el sensor del dispositivo no se transmiten al backend de sismoPA ni a Supabase.</li>
+            <li><strong>Sin persistencia en almacenamiento permanente:</strong> Las coordenadas no se guardan en el almacenamiento local persistente (<code>localStorage</code>, <code>IndexedDB</code>) ni en cookies del navegador.</li>
+            <li><strong>Permanencia en memoria durante la sesión:</strong> Las coordenadas se conservan en la memoria volátil de la aplicación durante la sesión activa para permitir el cálculo de distancias en las distintas vistas (como el catálogo sísmico y la visualización geográfica). El usuario puede eliminarlas en cualquier momento pulsando el botón «Desactivar ubicación», o se descartan de forma automática al cerrar o recargar la aplicación.</li>
+            <li><strong>Cálculo geodésico local:</strong> La estimación de distancias relativas respecto a los epicentros se ejecuta de manera local en el propio dispositivo mediante la fórmula matemática de Haversine.</li>
           </ul>
         </div>
       </section>
@@ -368,22 +375,23 @@
         </div>
 
         <p>
-          <strong>Tratamiento técnico de metadatos de red y distinción frente a recopilación de datos:</strong>
-          Los metadatos de red (tales como la dirección IP de conexión, User-Agent, fecha y hora de la solicitud HTTP) son procesados exclusivamente por los proveedores de infraestructura perimetral (Netlify, OpenFreeMap, OpenStreetMap, Google Fonts y UNPKG) en sus respectivos servidores de borde. Este procesamiento es intrínseco al funcionamiento técnico de la red Internet bajo el protocolo HTTP/HTTPS y tiene como únicos fines la entrega de los contenidos solicitados, el enrutamiento de paquetes y la mitigación de ataques o abusos cibernéticos (DDoS).
+          <strong>Tratamiento técnico de metadatos de red:</strong>
+          Al interactuar con la aplicación, el dispositivo establece conexiones directas cifradas (HTTPS) con los proveedores indicados para descargar la aplicación web, consultar las funciones de datos, cargar teselas cartográficas y obtener tipografías y librerías estáticas. En cada conexión, los servidores de dichos proveedores reciben y procesan los metadatos técnicos habituales del protocolo de red (dirección IP pública, User-Agent y marca temporal). Este procesamiento es inherente a la infraestructura web y se utiliza para el enrutamiento de paquetes, entrega de contenidos y protección perimetral contra abusos o ataques cibernéticos (DDoS).
         </p>
         <p>
-          <strong>sismoPA no consolida, no asocia a identidades, no almacena en bases de datos ni recopila estos metadatos de red como datos de usuario</strong>. Por este motivo técnico y normativo, en la declaración de Seguridad de los Datos (Data Safety) de Google Play Store se establece con fundamento que la aplicación <strong>no recopila datos de usuario</strong>, complementando dicha declaración con la divulgación transparente de los proveedores de infraestructura en este documento.
+          <strong>Transparencia y declaración en tiendas de aplicaciones:</strong>
+          sismoPA no consolida estos metadatos de infraestructura en bases de datos propias de perfiles de usuario ni los comercializa. La determinación final de cómo se clasificarán estos metadatos y las transferencias a proveedores de infraestructura en el formulario de Seguridad de los Datos (Data Safety) de Google Play Store se formalizará de conformidad con las directrices vigentes de la plataforma al momento de remitir la ficha oficial de la aplicación.
         </p>
       </section>
 
       <section>
         <h2>6. Permisos de la Aplicación Android</h2>
         <p>
-          La versión Android de sismoPA (pa.sismodata.app) opera como una Trusted Web Activity (TWA) y limita sus permisos a lo estrictamente indispensable:
+          La versión Android de sismoPA (<code>pa.sismodata.app</code>) opera mediante la arquitectura Trusted Web Activity (TWA) y restringe sus permisos a lo estrictamente operativo:
         </p>
         <ul>
-          <li><strong>POST_NOTIFICATIONS (Android 13+):</strong> Permiso de sistema reservado para la futura habilitación de notificaciones push de alerta sísmica temprana. La versión 1.0.x no emite alertas en segundo plano; el permiso se encuentra preparado para futuras actualizaciones sin requerir permisos invasivos.</li>
-          <li><strong>Sin permisos invasivos:</strong> La aplicación <strong>NO solicita</strong> acceso a la cámara, micrófono, almacenamiento interno, contactos, mensajes ni ubicación en segundo plano (Background Location).</li>
+          <li><strong>POST_NOTIFICATIONS (Android 13+):</strong> El paquete actual de pruebas de la aplicación incluye en su manifiesto la declaración del permiso de notificaciones del sistema. No obstante, en su estado actual la aplicación no emite notificaciones ni procesa alertas en segundo plano. La inclusión final de este permiso en la versión definitiva de publicación en Google Play Store está sujeta a revisión previa al lanzamiento, pudiendo mantenerse para futuras funciones o retirarse en el empaquetado final.</li>
+          <li><strong>Ausencia de permisos invasivos:</strong> La aplicación no solicita ni utiliza acceso a la cámara, micrófono, libreta de contactos, almacenamiento interno privado ni ubicación continua en segundo plano (Background Location).</li>
         </ul>
       </section>
 
@@ -404,7 +412,7 @@
       <section>
         <h2>9. Derechos de los Usuarios y Contacto</h2>
         <p>
-          Dado que sismoPA no recopila, no registra ni almacena datos personales de sus usuarios en bases de datos, no existen perfiles individuales que rectificar o suprimir. No obstante, cualquier consulta, observación técnica o solicitud relacionada con la privacidad y funcionamiento de esta aplicación puede ser remitida directamente a la dirección oficial de soporte y contacto: <a href="mailto:rbtservices507@gmail.com">rbtservices507@gmail.com</a>.
+          sismoPA no gestiona cuentas de usuario ni conserva registros con identificadores personales directos en bases de datos propias, por lo que no existen perfiles individuales que rectificar o suprimir. No obstante, cualquier consulta, observación técnica o solicitud relacionada con la privacidad y el funcionamiento de la aplicación puede ser canalizada directamente a través de la dirección oficial de soporte y contacto: <a href="mailto:rbtservices507@gmail.com">rbtservices507@gmail.com</a>.
         </p>
       </section>
 
