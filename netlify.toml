@@ -52,3 +52,16 @@
     Content-Type = "application/json; charset=utf-8"
     Cache-Control = "public, max-age=3600, must-revalidate"
     Access-Control-Allow-Origin = "*"
+
+# Página pública de Política de Privacidad
+[[redirects]]
+  from = "/privacidad"
+  to = "/privacidad.html"
+  status = 200
+
+[[headers]]
+  for = "/privacidad.html"
+  [headers.values]
+    Content-Type = "text/html; charset=utf-8"
+    Cache-Control = "public, max-age=3600, must-revalidate"
+

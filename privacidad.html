@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Política de Privacidad — sismoPA</title>
+  <meta name="description" content="Política de privacidad, transparencia y tratamiento de datos de la aplicación sismoPA.">
+  <meta name="theme-color" content="#0B1116">
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0B1116;
+      --bg-surface: #111A22;
+      --bg-card: #15222E;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(54, 221, 243, 0.35);
+      --text: #F0F6FC;
+      --text-muted: #8B949E;
+      --accent: #36DDF3;
+      --accent-glow: rgba(54, 221, 243, 0.12);
+      --font-sans: 'Rubik', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.65;
+      padding: 1.5rem 1rem 4rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 800px;
+    }
+
+    .header-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      padding: 0.5rem 0.85rem;
+      border-radius: 6px;
+      background: var(--accent-glow);
+      border: 1px solid var(--border-accent);
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    .btn-back:hover {
+      background: rgba(54, 221, 243, 0.22);
+      transform: translateY(-1px);
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+
+    .brand-title span {
+      color: var(--accent);
+    }
+
+    .policy-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem 1.75rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    @media (max-width: 640px) {
+      .policy-card {
+        padding: 1.5rem 1.25rem;
+      }
+    }
+
+    h1 {
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.35rem;
+      color: #fff;
+    }
+
+    .meta-date {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-bottom: 1.75rem;
+      display: block;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: 1.85rem;
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 1.25rem;
+      margin-bottom: 0.45rem;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      color: #D1D5DB;
+      font-size: 0.98rem;
+    }
+
+    ul {
+      margin-bottom: 1.25rem;
+      padding-left: 1.5rem;
+      color: #D1D5DB;
+    }
+
+    li {
+      margin-bottom: 0.45rem;
+      font-size: 0.96rem;
+    }
+
+    .callout {
+      background: rgba(54, 221, 243, 0.06);
+      border-left: 4px solid var(--accent);
+      padding: 1rem 1.15rem;
+      border-radius: 0 8px 8px 0;
+      margin: 1.25rem 0;
+      font-size: 0.94rem;
+    }
+
+    .callout strong {
+      color: #fff;
+    }
+
+    .callout-warning {
+      background: rgba(234, 179, 8, 0.08);
+      border-left: 4px solid #EAB308;
+    }
+
+    .callout-warning strong {
+      color: #FDE047;
+    }
+
+    .badge-status {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      vertical-align: middle;
+      margin-left: 0.5rem;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 1.25rem 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      min-width: 580px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.75rem;
+      text-align: left;
+    }
+
+    th {
+      background: var(--bg-card);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    td {
+      background: rgba(21, 34, 46, 0.4);
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    a:hover {
+      color: #82EBF8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <nav class="header-nav" aria-label="Navegación secundaria">
+      <a href="/" class="btn-back">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        Volver a sismoPA
+      </a>
+      <div class="brand-title">sismo<span>PA</span></div>
+    </nav>
+
+    <main class="policy-card">
+      <h1>Política de Privacidad</h1>
+      <time class="meta-date" datetime="2026-10-19">Última actualización: 19 de octubre de 2026</time>
+
+      <section>
+        <h2>1. Identidad del Proyecto y Contacto</h2>
+        <p>
+          <strong>sismoPA</strong> es un proyecto independiente de información y visualización sísmica en Panamá y sus zonas marítimas limítrofes.
+        </p>
+        <p>
+          La iniciativa opera de forma cívica y autónoma, sin vinculación orgánica con dependencias gubernamentales ni fines comerciales. Para cualquier consulta técnica, comunicación administrativa o solicitud de soporte respecto a la aplicación, se establecen los siguientes datos oficiales de referencia:
+        </p>
+        <ul>
+          <li><strong>Nombre del proyecto:</strong> sismoPA (<code>pa.sismodata.app</code>)</li>
+          <li><strong>Naturaleza:</strong> Proyecto independiente de información y visualización sísmica en Panamá.</li>
+          <li><strong>Correo oficial de soporte:</strong> <a href="mailto:rbtservices507@gmail.com">rbtservices507@gmail.com</a></li>
+          <li><strong>Sitio web oficial:</strong> <a href="https://sismospma.netlify.app/">https://sismospma.netlify.app/</a></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>2. Declaración de Independencia Institucional</h2>
+        <div class="callout callout-warning">
+          <strong>AVISO DE INDEPENDENCIA:</strong><br>
+          sismoPA es una aplicación independiente de consulta y visualización de información sísmica. No representa oficialmente al Gobierno de Panamá ni al Instituto de Geociencias de la Universidad de Panamá. La información presentada tiene fines informativos y no sustituye los comunicados ni las indicaciones de las autoridades competentes.
+        </div>
+      </section>
+
+      <section>
+        <h2>3. Finalidad y Principios de Tratamiento</h2>
+        <p>
+          sismoPA fue diseñada bajo un principio de minimización de datos para la consulta técnica y visualización cívica de información sísmica. En concordancia con este principio:
+        </p>
+        <ul>
+          <li><strong>Sin cuentas ni perfiles:</strong> La aplicación no requiere registro, no solicita creación de cuentas ni gestiona credenciales de usuario.</li>
+          <li><strong>Sin rastreadores comerciales ni publicidad:</strong> No se integran redes de publicidad, tecnologías de rastreo comercial entre sitios ni servicios de analítica publicitaria de terceros.</li>
+          <li><strong>Datos geofísicos abiertos:</strong> Las consultas de registros sísmicos corresponden a información científica pública accesible libremente sin vinculación a la identidad de los usuarios.</li>
+          <li><strong>Conexiones técnicas de red:</strong> Como parte normal del funcionamiento web sobre HTTPS, el dispositivo establece comunicaciones con los servidores de infraestructura necesarios para la entrega del servicio, en los términos detallados en la Sección 5.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Tratamiento de Datos de Ubicación Geográfica (GPS)</h2>
+        <p>
+          La aplicación incluye una función opcional denominada <strong>«Cerca de mí»</strong>, que permite calcular la distancia aproximada entre el usuario y los epicentros de los sismos registrados.
+        </p>
+        <div class="callout">
+          <strong>PROCESAMIENTO LOCAL EN EL DISPOSITIVO:</strong>
+          <ul>
+            <li><strong>Consentimiento explícito:</strong> La geolocalización solo se activa si el usuario pulsa de forma deliberada el botón o pestaña de ubicación en la aplicación.</li>
+            <li><strong>Sin transmisión de coordenadas:</strong> Las coordenadas exactas de latitud y longitud calculadas por el sensor del dispositivo no se transmiten al backend de sismoPA ni a Supabase.</li>
+            <li><strong>Sin persistencia en almacenamiento permanente:</strong> Las coordenadas no se guardan en el almacenamiento local persistente (<code>localStorage</code>, <code>IndexedDB</code>) ni en cookies del navegador.</li>
+            <li><strong>Permanencia en memoria durante la sesión:</strong> Las coordenadas se conservan en la memoria volátil de la aplicación durante la sesión activa para permitir el cálculo de distancias en las distintas vistas (como el catálogo sísmico y la visualización geográfica). El usuario puede eliminarlas en cualquier momento pulsando el botón «Desactivar ubicación», o se descartan de forma automática al cerrar o recargar la aplicación.</li>
+            <li><strong>Cálculo geodésico local:</strong> La estimación de distancias relativas respecto a los epicentros se ejecuta de manera local en el propio dispositivo mediante la fórmula matemática de Haversine.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>5. Infraestructura Técnica y Proveedores de Servicios</h2>
+        <p>
+          Para poner a disposición la aplicación y sus datos sísmicos públicos, sismoPA utiliza los siguientes servicios de infraestructura tecnológica. Es importante distinguir entre las conexiones directas del dispositivo del cliente y los procesos internos que ocurren de servidor a servidor:
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Proveedor / Servicio</th>
+                <th>Tipo de Conexión</th>
+                <th>Función</th>
+                <th>Datos Técnicos Procesados</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Netlify Inc.</strong></td>
+                <td>Cliente &rarr; Servidor</td>
+                <td>Alojamiento web perimetral y ejecución de funciones serverless para la entrega de datos sísmicos.</td>
+                <td>Registros técnicos estándar de servidor web (dirección IP pública transitoria, User-Agent, fecha y hora de la petición HTTP) necesarios para la entrega del contenido y la prevención de abusos o ataques DDoS.</td>
+              </tr>
+              <tr>
+                <td><strong>Supabase Inc.</strong></td>
+                <td>Servidor &rarr; Servidor (Exclusivo)</td>
+                <td>Base de datos del catálogo histórico de sismos públicos.</td>
+                <td><strong>El dispositivo del usuario NO se conecta a Supabase.</strong> Las consultas se ejecutan exclusivamente desde el backend de Netlify hacia Supabase. Almacena únicamente parámetros geofísicos públicos.</td>
+              </tr>
+              <tr>
+                <td><strong>Instituto de Geociencias (IGC-UP)</strong></td>
+                <td>Servidor &rarr; Servidor (Exclusivo)</td>
+                <td>Fuente científica de los datos de la Red Sísmica Nacional.</td>
+                <td><strong>El dispositivo del usuario NO se conecta a los servidores del IGC-UP.</strong> La función programada de Netlify descarga los registros técnicos abiertos periódicamente.</td>
+              </tr>
+              <tr>
+                <td><strong>OpenFreeMap</strong></td>
+                <td>Cliente &rarr; Servidor</td>
+                <td>Descarga de teselas vectoriales de mapa de código abierto.</td>
+                <td>Peticiones HTTP directas desde el navegador para descargar teselas cartográficas ($z, x, y$) correspondientes a la vista en pantalla, con la dirección IP del cliente para la entrega de red.</td>
+              </tr>
+              <tr>
+                <td><strong>OpenStreetMap</strong></td>
+                <td>Cliente &rarr; Servidor</td>
+                <td>Proveedor de respaldo cartográfico y datos geográficos abiertos.</td>
+                <td>Peticiones HTTP directas en caso de respaldo de teselas raster, procesadas bajo la infraestructura de OpenStreetMap.</td>
+              </tr>
+              <tr>
+                <td><strong>Google Fonts</strong></td>
+                <td>Cliente &rarr; Servidor</td>
+                <td>Descarga de fuentes tipográficas web de lectura accesible (Rubik e IBM Plex Mono).</td>
+                <td>Peticiones HTTP estándar para la entrega de archivos de fuentes (Woff2).</td>
+              </tr>
+              <tr>
+                <td><strong>UNPKG (Cloudflare)</strong></td>
+                <td>Cliente &rarr; Servidor</td>
+                <td>Distribución CDN de librerías de código abierto (Leaflet y MapLibre GL).</td>
+                <td>Peticiones HTTP para entrega de archivos estáticos de visualización.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          <strong>Tratamiento técnico de metadatos de red:</strong>
+          Al interactuar con la aplicación, el dispositivo establece conexiones directas cifradas (HTTPS) con los proveedores indicados para descargar la aplicación web, consultar las funciones de datos, cargar teselas cartográficas y obtener tipografías y librerías estáticas. En cada conexión, los servidores de dichos proveedores reciben y procesan los metadatos técnicos habituales del protocolo de red (dirección IP pública, User-Agent y marca temporal). Este procesamiento es inherente a la infraestructura web y se utiliza para el enrutamiento de paquetes, entrega de contenidos y protección perimetral contra abusos o ataques cibernéticos (DDoS).
+        </p>
+        <p>
+          <strong>Transparencia y declaración en tiendas de aplicaciones:</strong>
+          sismoPA no consolida estos metadatos de infraestructura en bases de datos propias de perfiles de usuario ni los comercializa. La determinación final de cómo se clasificarán estos metadatos y las transferencias a proveedores de infraestructura en el formulario de Seguridad de los Datos (Data Safety) de Google Play Store se formalizará de conformidad con las directrices vigentes de la plataforma al momento de remitir la ficha oficial de la aplicación.
+        </p>
+      </section>
+
+      <section>
+        <h2>6. Permisos de la Aplicación Android</h2>
+        <p>
+          La versión Android de sismoPA (<code>pa.sismodata.app</code>) opera mediante la arquitectura Trusted Web Activity (TWA) y restringe sus permisos a lo estrictamente operativo:
+        </p>
+        <ul>
+          <li><strong>POST_NOTIFICATIONS (Android 13+):</strong> El paquete actual de pruebas de la aplicación incluye en su manifiesto la declaración del permiso de notificaciones del sistema. No obstante, en su estado actual la aplicación no emite notificaciones ni procesa alertas en segundo plano. La inclusión final de este permiso en la versión definitiva de publicación en Google Play Store está sujeta a revisión previa al lanzamiento, pudiendo mantenerse para futuras funciones o retirarse en el empaquetado final.</li>
+          <li><strong>Ausencia de permisos invasivos:</strong> La aplicación no solicita ni utiliza acceso a la cámara, micrófono, libreta de contactos, almacenamiento interno privado ni ubicación continua en segundo plano (Background Location).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Almacenamiento Local y Caché de la Aplicación</h2>
+        <p>
+          sismoPA utiliza tecnologías estándar de Progressive Web App (Service Worker y CacheStorage) para almacenar localmente en el dispositivo los archivos de la interfaz (código HTML, CSS, JavaScript e iconos). Esto permite que la aplicación cargue de forma instantánea y funcione en condiciones de conectividad inestable. Esta caché contiene exclusivamente archivos estáticos de software y datos sísmicos públicos en caché temporal; no contiene información personal.
+        </p>
+      </section>
+
+      <section>
+        <h2>8. Seguridad de la Información</h2>
+        <p>
+          Todas las comunicaciones entre la aplicación y los servidores se realizan a través de conexiones cifradas seguras mediante el protocolo <strong>HTTPS / TLS</strong> (Transport Layer Security), protegiendo la integridad de los datos frente a interceptaciones o manipulaciones intermedias.
+        </p>
+      </section>
+
+      <section>
+        <h2>9. Derechos de los Usuarios y Contacto</h2>
+        <p>
+          sismoPA no gestiona cuentas de usuario ni conserva registros con identificadores personales directos en bases de datos propias, por lo que no existen perfiles individuales que rectificar o suprimir. No obstante, cualquier consulta, observación técnica o solicitud relacionada con la privacidad y el funcionamiento de la aplicación puede ser canalizada directamente a través de la dirección oficial de soporte y contacto: <a href="mailto:rbtservices507@gmail.com">rbtservices507@gmail.com</a>.
+        </p>
+      </section>
+
+      <section>
+        <h2>10. Modificaciones a esta Política</h2>
+        <p>
+          Esta Política de Privacidad podrá ser actualizada para reflejar mejoras en la aplicación, nuevas funcionalidades o cambios normativos. Cualquier actualización sustancial se reflejará con una nueva fecha de vigencia al inicio de este documento.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 sismoPA — Iniciativa de Divulgación Sísmica Independiente para Panamá.</p>
+    </footer>
+  </div>
+</body>
+</html>
