@@ -2513,11 +2513,13 @@ td.align-right {
   #dashboardView:not([data-active-tab]) > .chart-layout,
   #dashboardView:not([data-active-tab]) > .location-layout,
   #dashboardView:not([data-active-tab]) > .section-regions,
+  #dashboardView:not([data-active-tab]) > .section-transparency,
   #dashboardView:not([data-active-tab]) > .historico-section,
   #dashboardView[data-active-tab="sismos"] > .filter-panel,
   #dashboardView[data-active-tab="sismos"] > .chart-layout,
   #dashboardView[data-active-tab="sismos"] > .location-layout,
   #dashboardView[data-active-tab="sismos"] > .section-regions,
+  #dashboardView[data-active-tab="sismos"] > .section-transparency,
   #dashboardView[data-active-tab="sismos"] > .historico-section {
     display: none !important;
   }
@@ -2527,6 +2529,7 @@ td.align-right {
   #dashboardView[data-active-tab="mapa"] > .filter-panel,
   #dashboardView[data-active-tab="mapa"] > .chart-layout,
   #dashboardView[data-active-tab="mapa"] > .section-regions,
+  #dashboardView[data-active-tab="mapa"] > .section-transparency,
   #dashboardView[data-active-tab="mapa"] > .records-section,
   #dashboardView[data-active-tab="mapa"] > .historico-section {
     display: none !important;
@@ -2547,6 +2550,7 @@ td.align-right {
   #dashboardView[data-active-tab="cerca"] > .chart-layout,
   #dashboardView[data-active-tab="cerca"] > .location-layout,
   #dashboardView[data-active-tab="cerca"] > .section-regions,
+  #dashboardView[data-active-tab="cerca"] > .section-transparency,
   #dashboardView[data-active-tab="cerca"] > .historico-section {
     display: none !important;
   }
@@ -2569,6 +2573,7 @@ td.align-right {
   #dashboardView[data-active-tab="historial"] > .chart-layout,
   #dashboardView[data-active-tab="historial"] > .location-layout,
   #dashboardView[data-active-tab="historial"] > .section-regions,
+  #dashboardView[data-active-tab="historial"] > .section-transparency,
   #dashboardView[data-active-tab="historial"] > .records-section {
     display: none !important;
   }
@@ -2585,7 +2590,8 @@ td.align-right {
   }
   #dashboardView[data-active-tab="mas"] > .filter-panel,
   #dashboardView[data-active-tab="mas"] > .chart-layout,
-  #dashboardView[data-active-tab="mas"] > .section-regions {
+  #dashboardView[data-active-tab="mas"] > .section-regions,
+  #dashboardView[data-active-tab="mas"] > .section-transparency {
     display: block !important;
   }
   #dashboardView[data-active-tab="registros"] > .masthead,
@@ -2594,6 +2600,7 @@ td.align-right {
   #dashboardView[data-active-tab="registros"] > .chart-layout,
   #dashboardView[data-active-tab="registros"] > .location-layout,
   #dashboardView[data-active-tab="registros"] > .section-regions,
+  #dashboardView[data-active-tab="registros"] > .section-transparency,
   #dashboardView[data-active-tab="registros"] > .historico-section {
     display: none !important;
   }
@@ -3534,4 +3541,150 @@ td.align-right {
     scroll-behavior: auto !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   17. SECCIÓN DE TRANSPARENCIA, FUENTES Y POLÍTICA DE PRIVACIDAD
+   -------------------------------------------------------------------------- */
+.section-transparency {
+  display: block;
+  margin-top: var(--sp-4);
+}
+
+.transparency-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+}
+
+.transparency-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: rgba(255, 200, 87, 0.08);
+  border: 1px solid rgba(255, 200, 87, 0.35);
+  border-left: 4px solid var(--color-amber);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.transparency-notice-icon {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--color-amber);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.transparency-notice-text strong {
+  color: var(--text-main);
+  letter-spacing: 0.2px;
+}
+
+.sources-list {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.sources-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: var(--sp-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sources-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sources-items li {
+  line-height: 1.45;
+}
+
+.sources-items strong {
+  color: var(--text-main);
+}
+
+.source-link {
+  display: inline-block;
+  margin-left: var(--sp-1);
+  color: var(--color-cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.source-link:hover {
+  color: var(--color-cyan-hover, #82EBF8);
+}
+
+.transparency-footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.transparency-contact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.transparency-contact .contact-label {
+  color: var(--text-muted);
+}
+
+.transparency-contact .contact-email {
+  color: var(--color-cyan);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.transparency-contact .contact-email:hover {
+  color: var(--color-cyan-hover, #82EBF8);
+}
+
+.privacy-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-cyan);
+  text-decoration: none;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: rgba(54, 221, 243, 0.08);
+  border: 1px solid rgba(54, 221, 243, 0.3);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.privacy-link:hover {
+  background: rgba(54, 221, 243, 0.18);
+  border-color: var(--color-cyan);
+}
+
 
