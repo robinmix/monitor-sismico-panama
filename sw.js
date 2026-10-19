@@ -149,9 +149,10 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // REGLA CRÍTICA 1: INTEGRIDAD SÍSMICA (Network-Only)
-  // NUNCA cachear llamadas a endpoints de datos dinámicos ni APIs externas de sismos.
+  // REGLA CRÍTICA 1: INTEGRIDAD SÍSMICA Y ASSET LINKS (Network-Only)
+  // NUNCA cachear llamadas a endpoints de datos dinámicos, APIs externas de sismos ni Digital Asset Links.
   if (
+    url.pathname.includes('/.well-known/') ||
     url.pathname.includes('/.netlify/functions/') ||
     url.pathname.includes('/functions/') ||
     url.hostname.includes('supabase.co') ||
