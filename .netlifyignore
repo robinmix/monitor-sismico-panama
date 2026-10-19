@@ -1,0 +1,21 @@
+# Scripts internos de desarrollo y pruebas
+scripts/
+tests/
+*.test.js
+
+# Capturas locales en raíz
+captura-*.png
+
+# Documentación interna y metadatos de dependencias
+LEEME.md
+README.md
+deno.lock
+package.json
+package-lock.json
+
+# Entorno y git
+.git/
+.gitignore
+.netlify/
+.env*
+node_modules/

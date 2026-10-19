@@ -1,5 +1,7 @@
 (() => {
   'use strict';
+  const APP_BUILD_VERSION = '20261019f';
+  console.info(`[SismoData] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
@@ -43,7 +45,8 @@
     lastHistoricalKey: null,
     userCoords: null,
     userLeafletMarker: null,
-    deferredPwaPrompt: null
+    deferredPwaPrompt: null,
+    activeMobileTab: 'sismos'
   };
   const f = {
     period: ui.filterPeriod, zone: ui.filterZone, town: ui.filterTown, mag: ui.filterMag,
@@ -95,6 +98,20 @@
   function formatDistanceKm(km) {
     if (km == null || isNaN(km) || km < 0) return '';
     return `${Number(km).toFixed(1)} km`;
+  }
+
+  function formatCardDate(fecha, hora) {
+    let datePart = fecha || '';
+    if (fecha && String(fecha).includes('-')) {
+      const parts = String(fecha).split('-');
+      if (parts.length === 3) datePart = `${parts[2]}/${parts[1]}`;
+    }
+    let timePart = '';
+    if (hora) {
+      const m = String(hora).trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP]M)?$/i);
+      timePart = m ? `${m[1]}:${m[2]}${m[3] ? ' ' + m[3].toUpperCase() : ''}` : String(hora).slice(0, 5);
+    }
+    return timePart ? `${datePart} · ${timePart}` : (datePart || '—');
   }
 
   function updateUserDistanceDisplay() {
@@ -867,58 +884,137 @@
     return td;
   }
 
+  function syncRecordsA11y() {
+    if (typeof window === 'undefined') return;
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+    if (ui.desktopRecordsWrap) ui.desktopRecordsWrap.setAttribute('aria-hidden', isMobile ? 'true' : 'false');
+    if (ui.mobileRecordsList) ui.mobileRecordsList.setAttribute('aria-hidden', isMobile ? 'false' : 'true');
+  }
+
   function drawTable(data) {
-    const total=data.length,pages=Math.max(1,Math.ceil(total/LIMIT));
-    state.page=Math.max(1,Math.min(pages,state.page));
-    const begin=(state.page-1)*LIMIT;
-    const entries=data.slice(begin,begin+LIMIT);
+    const total = data.length, pages = Math.max(1, Math.ceil(total / LIMIT));
+    state.page = Math.max(1, Math.min(pages, state.page));
+    const begin = (state.page - 1) * LIMIT;
+    const entries = data.slice(begin, begin + LIMIT);
     ui.recordsBody.replaceChildren();
+    if (ui.mobileRecordsList) ui.mobileRecordsList.replaceChildren();
 
     const hasUserGeo = Boolean(state.userCoords);
     if (ui.colDistanceTh) ui.colDistanceTh.hidden = !hasUserGeo;
 
-    for(const e of entries) {
-      const row=el('tr');
-      const date=el('div','cell-date');date.append(el('strong','',e.fecha),el('span','',e.hora+' · PAN'));addCell(row,date);
-      addCell(row,el('span','mag-chip '+magnitudeClass(e.magnitud),magText(e.magnitud)));
-      const place=el('div','cell-place');place.append(el('strong','',e.localidad),el('span','',e.region));
+    syncRecordsA11y();
 
+    for (const e of entries) {
+      const uid = getEventUid(e);
       let distFormatted = null;
       if (hasUserGeo) {
         const d = haversineKm(state.userCoords.lat, state.userCoords.lon, e.latitud ?? e.lat, e.longitud ?? e.lon);
         if (d != null) {
           distFormatted = formatDistanceKm(d);
-          place.append(el('span', 'mobile-dist', ` · a ${distFormatted}`));
         }
       }
 
-      addCell(row,place);
+      // --- FILA DE TABLA (VISTA ESCRITORIO) ---
+      const row = el('tr');
+      const date = el('div', 'cell-date');
+      date.append(el('strong', '', e.fecha), el('span', '', e.hora + ' · PAN'));
+      addCell(row, date);
+
+      addCell(row, el('span', 'mag-chip ' + magnitudeClass(e.magnitud), magText(e.magnitud)));
+
+      const place = el('div', 'cell-place');
+      place.append(el('strong', '', e.localidad), el('span', '', e.region));
+      if (hasUserGeo && distFormatted) {
+        place.append(el('span', 'mobile-dist', ` · a ${distFormatted}`));
+      }
+      addCell(row, place);
 
       if (hasUserGeo) {
         addCell(row, el('span', 'cell-distance mono', distFormatted || '—'));
       }
 
-      addCell(row,`${e.profundidad} km`);
-      addCell(row,el('span','state-chip '+(e.estado.toUpperCase()==='REVISADO'?'revisado':''),e.estado));
-      const cell=addCell(row,'','align-right');
-      const uid = getEventUid(e);
+      addCell(row, `${e.profundidad} km`);
+      addCell(row, el('span', 'state-chip ' + (e.estado.toUpperCase() === 'REVISADO' ? 'revisado' : ''), e.estado));
+
+      const cell = addCell(row, '', 'align-right');
       const fichaLink = el('a', 'table-action-btn', 'Ficha');
       fichaLink.href = `#/sismo/${encodeURIComponent(uid)}`;
       fichaLink.title = `Abrir ficha técnica del sismo M${e.magnitud} en ${e.localidad}`;
       cell.append(fichaLink);
       ui.recordsBody.append(row);
+
+      // --- TARJETA COMPACTA RESPONSIVA (VISTA MÓVIL) ---
+      if (ui.mobileRecordsList) {
+        const card = el('article', 'sismo-mobile-card');
+
+        // Fila 1: Magnitud, Localidad, Región y Chip de Estado
+        const main = el('div', 'card-main-row');
+
+        const magBadge = el('span', 'card-mag-badge ' + magnitudeClass(e.magnitud), `M ${magText(e.magnitud)}`);
+        main.append(magBadge);
+
+        const titleBox = el('div', 'card-title-box');
+        const placeRow = el('div', 'card-place-line');
+        placeRow.append(el('strong', 'card-place-name', e.localidad));
+        placeRow.append(el('span', 'state-chip ' + (e.estado.toUpperCase() === 'REVISADO' ? 'revisado' : ''), e.estado));
+        titleBox.append(placeRow);
+
+        titleBox.append(el('div', 'card-region-name', e.region));
+        main.append(titleBox);
+        card.append(main);
+
+        // Fila 2: Barra de metadatos técnicos (3 columnas balanceadas)
+        const paramsGrid = el('div', 'card-params-grid');
+
+        const paramTime = el('div', 'card-param-item');
+        paramTime.append(el('span', 'card-param-lbl', 'HORA (UTC−5)'));
+        paramTime.append(el('span', 'card-param-txt mono', formatCardDate(e.fecha, e.hora)));
+        paramsGrid.append(paramTime);
+
+        const paramDepth = el('div', 'card-param-item');
+        paramDepth.append(el('span', 'card-param-lbl', 'PROFUNDIDAD'));
+        paramDepth.append(el('span', 'card-param-txt mono', `${e.profundidad} km`));
+        paramsGrid.append(paramDepth);
+
+        const paramDist = el('div', 'card-param-item');
+        paramDist.append(el('span', 'card-param-lbl', 'DISTANCIA'));
+        const distSpan = el('span', 'card-param-txt mono ' + (distFormatted ? 'dist-active' : 'dist-empty'));
+        distSpan.textContent = distFormatted ? `📍 ${distFormatted}` : '📍 —';
+        if (!distFormatted) distSpan.title = 'Ubicación no activada o no disponible';
+        paramDist.append(distSpan);
+        paramsGrid.append(paramDist);
+        card.append(paramsGrid);
+
+        // Fila 3: Botón de acción táctil Ver ficha técnica
+        const actionRow = el('div', 'card-action-row');
+        const cardFichaLink = el('a', 'card-ficha-btn', 'Ver ficha →');
+        cardFichaLink.href = `#/sismo/${encodeURIComponent(uid)}`;
+        cardFichaLink.title = `Abrir ficha técnica completa del sismo M${e.magnitud} en ${e.localidad}`;
+        cardFichaLink.setAttribute('aria-label', `Ver ficha técnica del sismo M${e.magnitud} en ${e.localidad}`);
+        actionRow.append(cardFichaLink);
+        card.append(actionRow);
+
+        ui.mobileRecordsList.append(card);
+      }
     }
-    if(!entries.length){
-      const row=el('tr');
-      const td=el('td','empty-table','No hay registros que coincidan con los filtros.');
-      td.colSpan=hasUserGeo ? 7 : 6;
+
+    if (!entries.length) {
+      const row = el('tr');
+      const td = el('td', 'empty-table', 'No hay registros que coincidan con los filtros.');
+      td.colSpan = hasUserGeo ? 7 : 6;
       row.append(td);
       ui.recordsBody.append(row);
+
+      if (ui.mobileRecordsList) {
+        const emptyDiv = el('div', 'empty-cards', 'No hay registros que coincidan con los filtros de búsqueda.');
+        ui.mobileRecordsList.append(emptyDiv);
+      }
     }
-    set('paginationText', total?`Mostrando ${num(begin+1)}–${num(Math.min(total,begin+LIMIT))} de ${num(total)}`:'No hay registros');
-    set('pageNum',`${state.page} / ${pages}`);
-    ui.pagePrev.disabled=state.page<=1;
-    ui.pageNext.disabled=state.page>=pages;
+
+    set('paginationText', total ? `Mostrando ${num(begin + 1)}–${num(Math.min(total, begin + LIMIT))} de ${num(total)}` : 'No hay registros');
+    set('pageNum', `${state.page} / ${pages}`);
+    ui.pagePrev.disabled = state.page <= 1;
+    ui.pageNext.disabled = state.page >= pages;
   }
 
   function render() {
@@ -1007,7 +1103,8 @@
     ui.sismoView.hidden = true;
     ui.dashboardView.hidden = false;
     if (updateHash && window.location.hash.startsWith('#/sismo/')) {
-      window.location.hash = '#registros';
+      const returnTab = state.activeMobileTab || 'sismos';
+      window.location.hash = `#${returnTab}`;
     }
     setTimeout(() => {
       if (state.generalMapLibre) state.generalMapLibre.resize();
@@ -1812,6 +1909,45 @@
   }
 
   /* ------------------------------------------------------------------------
+     ESTRUCTURA DE NAVEGACIÓN MÓVIL ANDROID (BOTTOM NAVIGATION)
+     ------------------------------------------------------------------------ */
+  function setMobileTab(tabId, updateHash = true) {
+    const validTabs = ['sismos', 'mapa', 'cerca', 'historial', 'mas', 'registros'];
+    if (!validTabs.includes(tabId)) tabId = 'sismos';
+    state.activeMobileTab = tabId;
+
+    if (ui.dashboardView) {
+      ui.dashboardView.setAttribute('data-active-tab', tabId);
+    }
+
+    const buttons = document.querySelectorAll('.mobile-nav-btn');
+    buttons.forEach((btn) => {
+      const isTarget = btn.getAttribute('data-tab') === tabId || (tabId === 'registros' && btn.getAttribute('data-tab') === 'sismos');
+      btn.classList.toggle('active', isTarget);
+      btn.setAttribute('aria-selected', isTarget ? 'true' : 'false');
+    });
+
+    if (tabId === 'mapa') {
+      setTimeout(() => {
+        if (state.generalMapLibre) state.generalMapLibre.resize();
+        if (state.map) state.map.invalidateSize();
+      }, 120);
+    } else if (tabId === 'historial') {
+      if (!state.historicalData) {
+        loadHistoricalData();
+      }
+    }
+
+    if (ui.sismoView && !ui.sismoView.hidden) {
+      closeSismoDetail(false);
+    }
+
+    if (updateHash && window.location.hash !== `#${tabId}`) {
+      window.location.hash = `#${tabId}`;
+    }
+  }
+
+  /* ------------------------------------------------------------------------
      ENRUTAMIENTO Y VINCULACIÓN DE EVENTOS
      ------------------------------------------------------------------------ */
   function handleRouting() {
@@ -1821,7 +1957,31 @@
       showSismoDetail(id);
     } else {
       closeSismoDetail(false);
-      if (hash === '#historico' && !state.historicalData) {
+      const tabMap = {
+        '': 'sismos',
+        '#inicio': 'sismos',
+        '#resumen': 'sismos',
+        '#sismos': 'sismos',
+        '#registros': 'registros',
+        '#mapa': 'mapa',
+        '#geografia': 'mapa',
+        '#cerca': 'cerca',
+        '#historial': 'historial',
+        '#historico': 'historial',
+        '#mas': 'mas',
+        '#filtros': 'mas'
+      };
+      const targetTab = tabMap[hash] || 'sismos';
+      setMobileTab(targetTab, false);
+
+      if (hash === '#registros') {
+        setTimeout(() => {
+          const target = document.getElementById('registros');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        }, 80);
+      }
+
+      if ((hash === '#historico' || hash === '#historial' || targetTab === 'historial') && !state.historicalData) {
         loadHistoricalData();
       }
     }
@@ -1879,17 +2039,48 @@
     if (ui.btnRefreshGeo) ui.btnRefreshGeo.addEventListener('click', requestUserLocation);
     if (ui.btnDisableGeo) ui.btnDisableGeo.addEventListener('click', disableUserLocation);
 
+    // Navegación móvil tipo aplicación Android
+    document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const tab = btn.getAttribute('data-tab');
+        if (tab) setMobileTab(tab, true);
+      });
+    });
+
     // Progressive Web App (PWA) e instalación en dispositivo
     wirePwaAndServiceWorker();
 
     wireMapLayers();
     window.addEventListener('hashchange', handleRouting);
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      window.matchMedia('(max-width: 640px)').addEventListener('change', syncRecordsA11y);
+    }
+    handleRouting();
   }
 
   function wirePwaAndServiceWorker() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(err => {
+        navigator.serviceWorker.register('./sw.js').then((registration) => {
+          // Monitoreo de nuevas versiones sin forzar recargas inesperadas mientras el usuario interactúa
+          registration.addEventListener('updatefound', () => {
+            const installingWorker = registration.installing;
+            if (!installingWorker) return;
+            installingWorker.addEventListener('statechange', () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.info('[PWA] Nueva versión disponible en segundo plano. Se activará limpiamente en la próxima apertura sin interrumpir la sesión activa.');
+              }
+            });
+          });
+
+          // Comprobar si hay actualizaciones al volver al primer plano (foreground)
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+              registration.update().catch(() => {});
+            }
+          });
+        }).catch((err) => {
           console.warn('[PWA] Service Worker registration failed:', err);
         });
       });

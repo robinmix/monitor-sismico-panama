@@ -2,6 +2,7 @@
   "name": "SismoData Panamá",
   "short_name": "SismoData",
   "description": "Monitor técnico e independiente de la actividad sísmica en Panamá con datos oficiales del IGC-UP.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
