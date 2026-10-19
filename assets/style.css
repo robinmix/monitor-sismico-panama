@@ -1794,7 +1794,896 @@ tbody tr:hover {
 }
 
 /* --------------------------------------------------------------------------
-   13. ACCESSIBILITY & PREFERS-REDUCED-MOTION
+   14. FICHA INDIVIDUAL DE EVENTO SÍSMICO (MÓDULO A)
+   -------------------------------------------------------------------------- */
+.sismo-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+
+.sismo-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.sismo-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-cyan);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  padding: 6px 12px;
+  border-radius: var(--radius-xs);
+  transition: all 0.15s ease;
+}
+
+.sismo-back-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--color-cyan);
+  color: #fff;
+}
+
+.sismo-view-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.sismo-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  padding: 6px 12px;
+  border-radius: var(--radius-xs);
+  transition: all 0.15s ease;
+}
+
+.sismo-action-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+}
+
+.sismo-action-btn.official {
+  color: var(--color-cyan);
+}
+
+.sismo-status-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8) var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  gap: var(--sp-2);
+}
+
+.sismo-status-box.not-found {
+  border-color: var(--color-amber);
+}
+
+.sismo-status-box .warning-icon {
+  font-size: 32px;
+  color: var(--color-amber);
+}
+
+.sismo-status-box strong {
+  font-size: 16px;
+  color: var(--text-main);
+}
+
+.sismo-status-box p {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 500px;
+  margin: 0;
+}
+
+.sismo-return-btn {
+  margin-top: var(--sp-3);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-cyan);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  padding: 8px 16px;
+  border-radius: var(--radius-xs);
+  transition: all 0.15s ease;
+}
+
+.sismo-return-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--color-cyan);
+}
+
+.pulse-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--color-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: var(--sp-2);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sismo-card-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1.15fr;
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.sismo-tech-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding: var(--sp-5);
+}
+
+.sismo-tech-header {
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--sp-4);
+}
+
+.sismo-tech-badge-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.sismo-mag-chip {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  display: inline-block;
+  letter-spacing: 0.5px;
+}
+
+.sismo-mag-chip.mBelow {
+  background: rgba(54, 221, 243, 0.15);
+  color: var(--color-cyan);
+  border: 1px solid var(--color-cyan);
+}
+
+.sismo-mag-chip.m3 {
+  background: rgba(185, 243, 77, 0.15);
+  color: var(--color-lime);
+  border: 1px solid var(--color-lime);
+}
+
+.sismo-mag-chip.m4 {
+  background: rgba(255, 200, 87, 0.15);
+  color: var(--color-amber);
+  border: 1px solid var(--color-amber);
+}
+
+.sismo-mag-chip.m5 {
+  background: rgba(255, 107, 98, 0.15);
+  color: var(--color-coral);
+  border: 1px solid var(--color-coral);
+}
+
+.sismo-state-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+}
+
+.sismo-level-text {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sismo-region-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: var(--sp-2) 0 var(--sp-1);
+  line-height: 1.25;
+}
+
+.sismo-location-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.sismo-params-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-4) var(--sp-5);
+}
+
+.sismo-param {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.param-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.param-val {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.param-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sismo-tech-footer {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--sp-3);
+}
+
+.sismo-uid-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.uid-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.sismo-uid-box code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-surface-2);
+  padding: 4px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  word-break: break-all;
+}
+
+.sismo-map-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.sismo-map-header-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.sismo-map-wrap {
+  width: 100%;
+  height: 400px;
+  min-height: 400px;
+  max-height: 400px;
+  position: relative;
+  overflow: hidden;
+  background: #111417;
+}
+
+.sismo-map-canvas {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+/* Control compacto de capas geofísicas */
+.sismo-layers-widget {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.sismo-layers-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+  background: rgba(20, 29, 35, 0.92);
+  border: 1px solid var(--border-default);
+  padding: 5px 10px;
+  border-radius: var(--radius-xs);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.sismo-layers-btn:hover, .sismo-layers-btn[aria-expanded="true"] {
+  background: var(--bg-surface-active);
+  border-color: var(--color-cyan);
+  color: #fff;
+}
+
+.sismo-layers-popover {
+  margin-top: 6px;
+  background: rgba(20, 29, 35, 0.96);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 205px;
+}
+
+.layers-popover-title {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.layer-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.layer-switch:hover {
+  color: var(--text-main);
+}
+
+.layer-switch input[type="checkbox"] {
+  accent-color: var(--color-cyan);
+  cursor: pointer;
+  margin: 0;
+}
+
+.layer-chip {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.layer-chip.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-cyan);
+}
+
+.layer-chip.line-violet {
+  width: 14px;
+  height: 2px;
+  background: #C68BEB;
+}
+
+.layer-chip.text-violet {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #C68BEB;
+}
+
+.layer-chip.line-fault {
+  width: 14px;
+  height: 2px;
+  background: #D99B69;
+  border-bottom: 1px dashed #D99B69;
+}
+
+.sismo-map-note {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-surface-2);
+  border-top: 1px solid var(--border-default);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sismo-map-note .legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.sismo-map-disclaimer {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.sismo-map-attributions {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 4px;
+  line-height: 1.3;
+}
+
+.sismo-map-attributions a {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.sismo-map-fallback {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--sp-4);
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  z-index: 5;
+}
+
+/* MapLibre GL Overrides for Dark Industrial Finish */
+.maplibregl-ctrl-group {
+  background: rgba(20, 29, 35, 0.9) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-xs) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  overflow: hidden;
+}
+
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.maplibregl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: var(--bg-surface-hover) !important;
+}
+
+.maplibregl-ctrl-icon {
+  filter: invert(85%) contrast(150%);
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgba(11, 17, 22, 0.8) !important;
+  color: var(--text-dim) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 9px !important;
+  padding: 2px 6px !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--text-muted) !important;
+}
+
+.maplibregl-popup-content {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-xs) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
+  padding: 8px 12px !important;
+  color: var(--text-main) !important;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: var(--bg-surface) !important;
+  border-bottom-color: var(--bg-surface) !important;
+}
+
+.maplibregl-popup-close-button {
+  color: var(--text-muted) !important;
+  font-size: 16px !important;
+  padding: 2px 6px !important;
+}
+
+.maplibregl-popup-close-button:hover {
+  color: #fff !important;
+  background: transparent !important;
+}
+
+@media (max-width: 900px) {
+  .sismo-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .sismo-map-wrap {
+    height: 350px;
+    min-height: 350px;
+    max-height: 350px;
+  }
+}
+
+@media (max-width: 600px) {
+  .sismo-map-wrap {
+    height: 300px;
+    min-height: 300px;
+    max-height: 300px;
+  }
+  .sismo-params-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Acciones en la tabla de registros y popups */
+.table-action-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-cyan);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  margin-right: 6px;
+  display: inline-block;
+  transition: all 0.15s ease;
+}
+
+.table-action-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--color-cyan);
+  color: #fff;
+}
+
+.popup-card {
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 180px;
+}
+
+.popup-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.popup-mag {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.popup-state {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.popup-title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.popup-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.popup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.popup-btn-epicenter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-cyan);
+  text-decoration: underline;
+}
+
+.popup-official-link {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   15. DASHBOARD HISTÓRICO (MÓDULO B)
+   -------------------------------------------------------------------------- */
+.historico-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  margin-top: var(--sp-5);
+  padding: var(--sp-5);
+}
+
+.historico-head {
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: var(--sp-3);
+}
+
+.historico-head-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.coverage-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: rgba(255, 200, 87, 0.06);
+  border: 1px solid rgba(255, 200, 87, 0.35);
+  border-left: 4px solid var(--color-amber);
+  border-radius: var(--radius-xs);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.coverage-notice-icon {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--color-amber);
+  font-weight: 700;
+}
+
+.coverage-notice-text strong {
+  color: var(--text-main);
+  letter-spacing: 0.3px;
+}
+
+.historico-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  flex-wrap: wrap;
+}
+
+.hist-filter-group {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.field.compact {
+  gap: 3px;
+}
+
+.field.compact span {
+  font-size: 10px;
+}
+
+.field.compact select {
+  padding: 6px 10px;
+  font-size: 13px;
+  min-width: 140px;
+}
+
+.hist-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-origin {
+  font-size: 11px;
+  color: var(--color-cyan);
+}
+
+.hist-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--sp-3);
+}
+
+.hist-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+}
+
+.hist-subcharts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+}
+
+.hist-mag-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+.hist-mag-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hist-mag-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.hist-mag-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.hist-mag-count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.hist-mag-pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.hist-mag-track {
+  height: 10px;
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.hist-mag-fill {
+  height: 100%;
+  border-radius: var(--radius-xs);
+  transition: width 0.3s ease;
+}
+
+/* SVG Chart Elements for Histórico */
+.svg-hist-chart {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hist-bar {
+  transition: opacity 0.15s ease;
+}
+
+.hist-bar:hover {
+  opacity: 0.8;
+}
+
+.hist-bar-no-coverage {
+  fill: rgba(61, 74, 85, 0.25);
+  stroke: #2B353D;
+  stroke-dasharray: 2,2;
+}
+
+/* Responsive Overrides */
+@media (max-width: 1100px) {
+  .hist-kpis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .sismo-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .hist-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hist-charts-grid,
+  .hist-subcharts-grid {
+    grid-template-columns: 1fr;
+  }
+  .sismo-params-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 500px) {
+  .hist-kpis {
+    grid-template-columns: 1fr;
+  }
+  .sismo-view-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   16. ACCESSIBILITY & PREFERS-REDUCED-MOTION
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1804,3 +2693,4 @@ tbody tr:hover {
     scroll-behavior: auto !important;
   }
 }
+

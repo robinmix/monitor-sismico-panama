@@ -1,0 +1,75 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "PLACA DEL CARIBE",
+        "code": "CA"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -78.5,
+          12.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "PLACA DE COCOS",
+        "code": "CO"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -85.8,
+          7.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "PLACA DE NAZCA",
+        "code": "NZ"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -81.5,
+          4.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "BLOQUE DE PANAMÁ",
+        "code": "PM"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -80.2,
+          9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "BLOQUE NORANDINO",
+        "code": "ND"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -75.2,
+          6
+        ]
+      }
+    }
+  ]
+}
