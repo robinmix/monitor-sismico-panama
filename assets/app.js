@@ -328,7 +328,14 @@
 
   function status(type, text) {
     ui.sourceStatus.className = 'status-pill ' + type;
-    ui.sourceStatus.lastChild.textContent = ` ${text}`;
+    ui.sourceStatus.title = text;
+    ui.sourceStatus.setAttribute('aria-label', text);
+    const textEl = ui.sourceStatus.querySelector('.status-text');
+    if (textEl) {
+      textEl.textContent = text;
+    } else {
+      ui.sourceStatus.lastChild.textContent = ` ${text}`;
+    }
   }
   function message(title, description) {
     ui.alertBox.hidden = false;

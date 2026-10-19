@@ -82,11 +82,14 @@ html {
   scroll-padding-top: 76px;
   background-color: var(--bg-root);
   color-scheme: dark;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
+  max-width: 100vw;
   font-family: var(--font-sans);
   font-size: 14.5px;
   font-weight: 400;
@@ -2178,6 +2181,30 @@ td.align-right {
   }
   .pwa-btn-text {
     display: none;
+  }
+  .topbar {
+    gap: var(--sp-2);
+  }
+  .topbar-right {
+    gap: 8px;
+  }
+  .status-pill {
+    padding: 0;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    gap: 0;
+  }
+  .status-pill .status-text {
+    display: none !important;
+  }
+  .status-pill i {
+    width: 9px;
+    height: 9px;
+    margin: 0;
+    box-shadow: 0 0 6px currentColor;
   }
 }
 
