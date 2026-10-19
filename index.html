@@ -11,9 +11,11 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoSA7CpccJkI1g6m4=" crossorigin="">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
   <link rel="stylesheet" href="assets/style.css">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script defer src="assets/app.js"></script>
+  <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
+  <script defer src="assets/app.js?v=20261018c"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -36,6 +38,7 @@
         <a href="#filtros"><span class="nav-idx">02</span> Filtros</a>
         <a href="#geografia"><span class="nav-idx">03</span> Geografía</a>
         <a href="#registros"><span class="nav-idx">04</span> Registros</a>
+        <a href="#historico" id="navHistorico"><span class="nav-idx">05</span> Histórico</a>
       </nav>
 
       <div class="topbar-right">
@@ -48,6 +51,159 @@
     </header>
 
     <main id="inicio">
+      <!-- VISTA INDIVIDUAL DE EVENTO SÍSMICO (FICHA COMPARTIBLE) -->
+      <section id="sismoView" class="sismo-view" hidden aria-label="Ficha individual de evento sísmico">
+        <div class="sismo-view-bar">
+          <button type="button" id="sismoBackBtn" class="sismo-back-btn">
+            <span aria-hidden="true">←</span> Volver al mapa general
+          </button>
+          <div class="sismo-view-actions">
+            <button type="button" id="sismoCopyBtn" class="sismo-action-btn">
+              <span aria-hidden="true">🔗</span> <span id="sismoCopyText">Copiar enlace</span>
+            </button>
+            <a id="sismoOfficialLink" href="#" target="_blank" rel="noopener noreferrer" class="sismo-action-btn official">
+              Ficha oficial IGC-UP <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+
+        <div id="sismoLoading" class="sismo-status-box" hidden>
+          <div class="pulse-spinner" aria-hidden="true"></div>
+          <strong>Cargando registro sísmico…</strong>
+          <p>Consultando base de datos histórica de SismoData Panamá.</p>
+        </div>
+
+        <div id="sismoNotFound" class="sismo-status-box not-found" hidden>
+          <span class="warning-icon" aria-hidden="true">⚠</span>
+          <strong>Evento sísmico no encontrado</strong>
+          <p>El identificador especificado no corresponde a ningún evento registrado en la lista reciente ni en el archivo histórico de Supabase.</p>
+          <button type="button" class="sismo-return-btn" id="sismoNotFoundBackBtn">← Volver al observatorio</button>
+        </div>
+
+        <div id="sismoCardContent" class="sismo-card-grid">
+          <!-- Tarjeta técnica de datos -->
+          <article class="panel sismo-tech-panel">
+            <div class="sismo-tech-header">
+              <div class="sismo-tech-badge-row">
+                <span id="sismoMagChip" class="sismo-mag-chip m4">M 0.0</span>
+                <span id="sismoStateChip" class="sismo-state-chip">REVISADO</span>
+                <span id="sismoLevelText" class="sismo-level-text">Sismo</span>
+              </div>
+              <h2 id="sismoRegionTitle" class="sismo-region-title">Región Sísmica</h2>
+              <div id="sismoLocationDesc" class="sismo-location-desc">Descripción de ubicación oficial</div>
+            </div>
+
+            <div class="sismo-params-grid">
+              <div class="sismo-param">
+                <span class="param-label">FECHA Y HORA LOCAL (PANAMÁ)</span>
+                <strong id="sismoTimeLocal" class="param-val mono">—</strong>
+                <small class="param-sub">Zona horaria América/Panamá (UTC−5)</small>
+              </div>
+
+              <div class="sismo-param">
+                <span class="param-label">FECHA Y HORA UNIVERSAL (UTC)</span>
+                <strong id="sismoTimeUtc" class="param-val mono">—</strong>
+                <small class="param-sub">Tiempo Universal Coordinado</small>
+              </div>
+
+              <div class="sismo-param">
+                <span class="param-label">PROFUNDIDAD HIPOCENTRAL</span>
+                <strong id="sismoDepth" class="param-val mono">— km</strong>
+                <small id="sismoDepthCat" class="param-sub">Superficial (&lt; 10 km)</small>
+              </div>
+
+              <div class="sismo-param">
+                <span class="param-label">COORDENADAS EPICENTRALES</span>
+                <strong id="sismoCoordinates" class="param-val mono">—</strong>
+                <small id="sismoCoordDecimal" class="param-sub">Latitud / Longitud en grados decimales</small>
+              </div>
+
+              <div class="sismo-param">
+                <span class="param-label">LOCALIDAD MÁS CERCANA</span>
+                <strong id="sismoTown" class="param-val">—</strong>
+                <small id="sismoZone" class="param-sub">Zonificación IGC-UP</small>
+              </div>
+
+              <div class="sismo-param">
+                <span class="param-label">FUENTE CIENTÍFICA</span>
+                <strong class="param-val">IGC-UP</strong>
+                <small class="param-sub">Instituto de Geociencias · Univ. de Panamá</small>
+              </div>
+            </div>
+
+            <div class="sismo-tech-footer">
+              <div class="sismo-uid-box">
+                <span class="uid-label">IDENTIFICADOR ESTABLE (UID)</span>
+                <code id="sismoUidText" class="mono">—</code>
+              </div>
+            </div>
+          </article>
+
+          <!-- Mapa individual del epicentro (MapLibre GL JS + OpenFreeMap) -->
+          <article class="panel sismo-map-panel">
+            <div class="panel-head">
+              <div>
+                <span class="section-kicker">CARTOGRAFÍA LOCAL</span>
+                <h3>Epicentro registrado por el IGC-UP</h3>
+              </div>
+              <div class="sismo-map-header-tools">
+                <span id="sismoMapCoords" class="badge-outline mono">—</span>
+              </div>
+            </div>
+
+            <div class="sismo-map-wrap" id="sismoMapWrap">
+              <div id="sismoMap" class="sismo-map-canvas" aria-label="Mapa cartográfico vectorial centrado en el epicentro del sismo"></div>
+
+              <!-- Control compacto de capas geofísicas -->
+              <div class="sismo-layers-widget" id="sismoLayersWidget">
+                <button type="button" class="sismo-layers-btn" id="sismoLayersBtn" aria-expanded="false" title="Alternar capas cartográficas">
+                  <span class="layers-icon" aria-hidden="true">☷</span> Capas
+                </button>
+                <div class="sismo-layers-popover" id="sismoLayersPopover" hidden>
+                  <div class="layers-popover-title">Capas geofísicas</div>
+                  <label class="layer-switch">
+                    <input type="checkbox" id="layerToggleEpicenter" checked>
+                    <span class="layer-chip dot" id="layerLegendDot"></span>
+                    <span class="layer-name">Epicentro registrado</span>
+                  </label>
+                  <label class="layer-switch">
+                    <input type="checkbox" id="layerTogglePlates" checked>
+                    <span class="layer-chip line-violet"></span>
+                    <span class="layer-name">Límites tectónicos (PB2002)</span>
+                  </label>
+                  <label class="layer-switch">
+                    <input type="checkbox" id="layerToggleLabels" checked>
+                    <span class="layer-chip text-violet">Tt</span>
+                    <span class="layer-name">Etiquetas de placas</span>
+                  </label>
+                  <label class="layer-switch">
+                    <input type="checkbox" id="layerToggleFaults" checked>
+                    <span class="layer-chip line-fault"></span>
+                    <span class="layer-name">Fallas activas (GEM)</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Fallback si WebGL no está disponible -->
+              <div id="sismoMapFallback" class="sismo-map-fallback" hidden>
+                <span>Aviso cartográfico</span>
+                <p>El mapa interactivo vectorial requiere aceleración WebGL.</p>
+              </div>
+            </div>
+
+            <div class="sismo-map-note">
+              <span><i class="legend-dot" id="sismoMapLegendDot"></i> Epicentro oficial registrado por analistas del IGC-UP.</span>
+              <p class="sismo-map-disclaimer">Nota: El marcador y círculo gráfico destacan visualmente la ubicación y magnitud relativa del evento. No representan radio de daño, percepción ciudadana ni área de impacto en superficie.</p>
+              <div class="sismo-map-attributions">
+                Cartografía base © <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · Límites tectónicos: Modelo PB2002 (P. Bird) · Fallas activas: GEM Global Active Faults.
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- VISTA PRINCIPAL DEL DASHBOARD (MONITOR RECIENTE Y ARCHIVO HISTÓRICO) -->
+      <div id="dashboardView">
       <!-- CABECERA COMPACTA DE OBSERVATORIO -->
       <section class="masthead" id="resumen">
         <div class="masthead-copy">
@@ -334,8 +490,48 @@
             </div>
             <span id="mapCount" class="badge-outline mono">— puntos</span>
           </div>
-          <div class="map-container" id="map">
-            <div class="map-placeholder" id="mapFallback">
+          <div class="map-wrap" id="generalMapWrap">
+            <div class="map-container" id="map"></div>
+
+            <!-- Control compacto de capas geofísicas para el mapa general -->
+            <div class="sismo-layers-widget" id="generalLayersWidget">
+              <button type="button" class="sismo-layers-btn" id="generalLayersBtn" aria-expanded="false" aria-label="Control de capas cartográficas y tectónicas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                  <polyline points="2 17 12 22 22 17"></polyline>
+                  <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+                <span>Capas</span>
+              </button>
+              <div class="sismo-layers-popover" id="generalLayersPopover" hidden>
+                <span class="layers-popover-title">Capas geofísicas</span>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalToggleEpicenters" checked>
+                  <span class="layer-chip dot"></span>
+                  <span class="layer-name">Epicentros (IGC-UP)</span>
+                </label>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalTogglePlates" checked>
+                  <span class="layer-chip line-violet"></span>
+                  <span class="layer-name">Límites tectónicos (PB2002)</span>
+                </label>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalToggleLabels" checked>
+                  <span class="layer-chip text-violet">Tt</span>
+                  <span class="layer-name">Etiquetas de placas</span>
+                </label>
+                <label class="layer-switch">
+                  <input type="checkbox" id="generalToggleFaults" checked>
+                  <span class="layer-chip line-fault"></span>
+                  <span class="layer-name">Fallas activas (GEM)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Fallback si WebGL no está disponible -->
+            <div id="generalMapFallback" class="sismo-map-fallback" hidden>
+              <span>Aviso cartográfico</span>
+              <p>El mapa interactivo vectorial requiere aceleración WebGL.</p>
               <div id="coordinateMap" class="coordinate-map"></div>
             </div>
           </div>
@@ -344,6 +540,9 @@
             <span><i class="legend-dot l-three"></i>M 3.0–3.9</span>
             <span><i class="legend-dot l-four"></i>M 4.0–4.9</span>
             <span><i class="legend-dot l-five"></i>M ≥ 5.0</span>
+          </div>
+          <div class="sismo-map-attributions" style="padding: 6px 14px 10px; font-size: 10px; color: var(--text-dim); border-top: 1px solid var(--border-subtle); line-height: 1.35;">
+            Cartografía base © <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · Límites tectónicos: Modelo PB2002 (P. Bird) · Fallas activas: GEM Global Active Faults.
           </div>
         </article>
 
@@ -426,6 +625,217 @@
           </div>
         </div>
       </section>
+
+      <!-- SECCIÓN HISTÓRICO: ARCHIVO ACUMULATIVO Y ANÁLISIS ESTADÍSTICO -->
+      <section id="historico" class="panel historico-section" aria-label="Archivo histórico y estadísticas acumulativas">
+        <div class="panel-head historico-head">
+          <div>
+            <span class="section-kicker">05 / OBSERVATORIO HISTÓRICO</span>
+            <h2>Historial y Estadísticas Acumulativas</h2>
+          </div>
+          <div class="historico-head-meta">
+            <span class="badge-outline mono" id="histCoverageBadge">Base de datos Supabase</span>
+          </div>
+        </div>
+
+        <!-- AVISO DE COBERTURA HISTÓRICA REAL -->
+        <div class="coverage-notice" role="note">
+          <div class="coverage-notice-icon" aria-hidden="true">ℹ</div>
+          <div class="coverage-notice-text">
+            <strong>COBERTURA DEL ARCHIVO HISTÓRICO:</strong>
+            El sistema de archivado acumulativo de SismoData Panamá inició su recopilación automática el <strong>18 de octubre de 2026</strong>, recuperando registros oficiales vigentes del IGC-UP a partir del <strong>12 de octubre de 2026</strong>. Para fechas anteriores al 12 de octubre de 2026 no se dispone de datos archivados en este observatorio; la falta de registros en dichos lapsos refleja ausencia de cobertura acumulada y no ausencia de actividad sísmica.
+          </div>
+        </div>
+
+        <!-- FILTROS HISTÓRICOS -->
+        <div class="historico-controls">
+          <div class="hist-filter-group">
+            <label class="field compact">
+              <span>AÑO DE CONSULTA</span>
+              <select id="histYear">
+                <option value="2026">2026</option>
+              </select>
+            </label>
+
+            <label class="field compact">
+              <span>MES</span>
+              <select id="histMonth">
+                <option value="">Todos los meses del año</option>
+                <option value="1">Enero</option>
+                <option value="2">Febrero</option>
+                <option value="3">Marzo</option>
+                <option value="4">Abril</option>
+                <option value="5">Mayo</option>
+                <option value="6">Junio</option>
+                <option value="7">Julio</option>
+                <option value="8">Agosto</option>
+                <option value="9">Septiembre</option>
+                <option value="10">Octubre</option>
+                <option value="11">Noviembre</option>
+                <option value="12">Diciembre</option>
+              </select>
+            </label>
+
+            <button type="button" id="histFilterBtn" class="refresh-button">↻ Consultar archivo</button>
+          </div>
+
+          <div class="hist-status-line">
+            <span id="histPeriodLabel" class="mono">Consultando base de datos…</span>
+            <span id="histDataOrigin" class="status-origin mono"></span>
+          </div>
+        </div>
+
+        <!-- MÉTRICAS HISTÓRICAS (INDICADORES CLAVE) -->
+        <div class="hist-kpis" aria-label="Indicadores históricos de sismicidad">
+          <div class="metric primary">
+            <div class="metric-tag">
+              <span>SISMOS EN PERÍODO</span>
+              <span class="metric-badge">HISTÓRICO</span>
+            </div>
+            <strong id="histTotal" class="mono">—</strong>
+            <div class="metric-bottom">
+              <span id="histCoverageDetail">Eventos archivados</span>
+              <span class="metric-mark">∑</span>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-tag">
+              <span>MAGNITUD MÁXIMA</span>
+              <span class="indicator coral"></span>
+            </div>
+            <strong id="histMagMax" class="mono">—</strong>
+            <div class="metric-bottom">
+              <span>Evento más potente</span>
+              <span class="mono">MW/MD</span>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-tag">
+              <span>MAGNITUD MÍNIMA</span>
+              <span class="indicator cyan"></span>
+            </div>
+            <strong id="histMagMin" class="mono">—</strong>
+            <div class="metric-bottom">
+              <span>Límite de detección</span>
+              <span class="mono">MW/MD</span>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-tag">
+              <span>MAGNITUD PROMEDIO</span>
+              <span class="indicator amber"></span>
+            </div>
+            <strong id="histMagAvg" class="mono">—</strong>
+            <div class="metric-bottom">
+              <span>Media aritmética</span>
+              <span class="mono">MW/MD</span>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-tag">
+              <span>PROFUNDIDAD MEDIA</span>
+              <span class="indicator gentle"></span>
+            </div>
+            <strong id="histDepthAvg" class="mono">—</strong>
+            <div class="metric-bottom">
+              <span>Hipocentro promedio</span>
+              <span class="mono">KM</span>
+            </div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-tag">
+              <span>REGISTRO MÁS ANTIGUO</span>
+              <span class="indicator violet"></span>
+            </div>
+            <strong id="histOldestDate" class="mono" style="font-size: 15px; margin: 4px 0;">—</strong>
+            <div class="metric-bottom">
+              <span id="histOldestInfo">Fecha límite</span>
+              <span class="mono">UTC−5</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRÁFICOS HISTÓRICOS -->
+        <div class="hist-charts-grid">
+          <!-- Gráfica mensual -->
+          <article class="panel chart-box">
+            <div class="panel-head">
+              <div>
+                <span class="section-kicker">EVOLUCIÓN TEMPORAL</span>
+                <h3>Distribución mensual de sismos</h3>
+              </div>
+              <span id="histMonthlyTotal" class="badge-outline mono">—</span>
+            </div>
+            <div class="plot-area" id="histMonthlyChart">
+              <div class="empty-plot">Consultando datos mensuales…</div>
+            </div>
+            <div class="panel-note">
+              <span>Recuento de eventos clasificados por mes calendario local</span>
+              <span class="mono">AÑO SELECCIONADO</span>
+            </div>
+          </article>
+
+          <!-- Gráfica diaria -->
+          <article class="panel chart-box">
+            <div class="panel-head">
+              <div>
+                <span class="section-kicker">CADENCIA DIARIA</span>
+                <h3>Actividad sísmica por día</h3>
+              </div>
+              <span id="histDailyTotal" class="badge-outline mono">—</span>
+            </div>
+            <div class="plot-area" id="histDailyChart">
+              <div class="empty-plot">Consultando datos diarios…</div>
+            </div>
+            <div class="panel-note">
+              <span>Eventos por fecha local de Panamá (UTC−5)</span>
+              <span class="mono">RANGO ACTIVO</span>
+            </div>
+          </article>
+        </div>
+
+        <!-- DISTRIBUCIÓN POR MAGNITUD Y REGIONES -->
+        <div class="hist-subcharts-grid">
+          <article class="panel hist-mag-box">
+            <div class="panel-head">
+              <div>
+                <span class="section-kicker">ESCALA DE ENERGÍA</span>
+                <h3>Distribución por magnitud</h3>
+              </div>
+              <span class="mono">4 RANGOS</span>
+            </div>
+
+            <div class="hist-mag-bars" id="histMagBars">
+              <div class="empty-plot">Esperando datos…</div>
+            </div>
+            <div class="panel-note">
+              <span>Intervalos normalizados sin solapamientos (M &lt; 3.0, 3.0–3.9, 4.0–4.9, ≥ 5.0)</span>
+            </div>
+          </article>
+
+          <article class="panel hist-reg-box">
+            <div class="panel-head">
+              <div>
+                <span class="section-kicker">ACTIVIDAD ESPACIAL</span>
+                <h3>Top regiones sismotectónicas</h3>
+              </div>
+              <span id="histRegionTotal" class="badge-outline mono">—</span>
+            </div>
+            <div id="histRegionBars" class="bar-rows">
+              <div class="empty-plot">Esperando datos…</div>
+            </div>
+            <div class="panel-note">
+              <span>Regiones geocientíficas con mayor frecuencia acumulada</span>
+            </div>
+          </article>
+        </div>
+      </section>
+      </div><!-- /#dashboardView -->
 
       <!-- NOTIFICACIÓN DE ESTADO O ERROR -->
       <div id="alertBox" class="alertbox" role="status" hidden>
