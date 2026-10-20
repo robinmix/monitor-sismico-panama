@@ -13,7 +13,7 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261019f`,
+  core: `${CACHE_PREFIX}core-v20261019cf1`,
   static: `${CACHE_PREFIX}static-v1`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
@@ -153,6 +153,7 @@ self.addEventListener('fetch', (event) => {
   // NUNCA cachear llamadas a endpoints de datos dinámicos, APIs externas de sismos ni Digital Asset Links.
   if (
     url.pathname.includes('/.well-known/') ||
+    url.pathname.includes('/api/') ||
     url.pathname.includes('/.netlify/functions/') ||
     url.pathname.includes('/functions/') ||
     url.hostname.includes('supabase.co') ||

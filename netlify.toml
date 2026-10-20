@@ -65,3 +65,19 @@
     Content-Type = "text/html; charset=utf-8"
     Cache-Control = "public, max-age=3600, must-revalidate"
 
+
+# Rutas API compartidas con Cloudflare Pages, sin cambiar la API de Netlify original.
+[[redirects]]
+  from = "/api/sismos"
+  to = "/.netlify/functions/sismos"
+  status = 200
+
+[[redirects]]
+  from = "/api/historico-sismos"
+  to = "/.netlify/functions/historico-sismos"
+  status = 200
+
+[[redirects]]
+  from = "/api/detalle-sismo"
+  to = "/.netlify/functions/detalle-sismo"
+  status = 200

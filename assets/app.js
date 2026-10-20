@@ -1,17 +1,17 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261019f';
+  const APP_BUILD_VERSION = '20261019cf1';
   console.info(`[SismoData] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   const PROD_BASE = 'https://sismospma.netlify.app';
 
-  const API = '/.netlify/functions/sismos';
+  const API = '/api/sismos';
   const HISTORICO_API = IS_LOCAL
-    ? `${PROD_BASE}/.netlify/functions/historico-sismos`
-    : '/.netlify/functions/historico-sismos';
-  const DETALLE_API = '/.netlify/functions/detalle-sismo';
+    ? `${PROD_BASE}/api/historico-sismos`
+    : '/api/historico-sismos';
+  const DETALLE_API = '/api/detalle-sismo';
   const SOURCE = 'https://sismosgeociencias.up.ac.pa/';
   const INTERVAL_MS = 5 * 60 * 1000;
   const LIMIT = 25;
@@ -400,7 +400,7 @@
         message('No se pudo actualizar la fuente', `Se mantienen los datos de la última consulta. Motivo: ${err.message}`);
       } else {
         status('error','Sin conexión');
-        message('No se pudieron obtener los datos del IGC-UP', `${err.message}. Este proyecto necesita publicarse en Netlify con la función incluida; abrir index.html directamente no activa la conexión oficial.`);
+        message('No se pudieron obtener los datos del IGC-UP', `${err.message}. Este proyecto necesita las funciones de servidor activas para consultar los sismos.`);
         set('snapshotStatus','Sin conexión con la fuente');
       }
     } finally {
