@@ -5,9 +5,6 @@
 [functions]
   node_bundler = "esbuild"
 
-[functions."archivar-sismos"]
-  schedule = "*/30 * * * *"
-
 [[headers]]
   for = "/*"
   [headers.values]
@@ -65,8 +62,8 @@
     Content-Type = "text/html; charset=utf-8"
     Cache-Control = "public, max-age=3600, must-revalidate"
 
-
-# Rutas API compartidas con Cloudflare Pages, sin cambiar la API de Netlify original.
+# Rutas API compartidas con Cloudflare Pages,
+# sin cambiar la API de Netlify original.
 [[redirects]]
   from = "/api/sismos"
   to = "/.netlify/functions/sismos"
