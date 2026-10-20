@@ -255,7 +255,7 @@
 
     <main class="policy-card">
       <h1>Política de Privacidad</h1>
-      <time class="meta-date" datetime="2026-10-19">Última actualización: 19 de octubre de 2026</time>
+      <time class="meta-date" datetime="2026-10-20">Última actualización: 20 de octubre de 2026</time>
 
       <section>
         <h2>1. Identidad del Proyecto y Contacto</h2>
@@ -390,7 +390,8 @@
           La versión Android de sismoPA (<code>pa.sismodata.app</code>) opera mediante la arquitectura Trusted Web Activity (TWA) y restringe sus permisos a lo estrictamente operativo:
         </p>
         <ul>
-          <li><strong>POST_NOTIFICATIONS (Android 13+):</strong> El paquete actual de pruebas de la aplicación incluye en su manifiesto la declaración del permiso de notificaciones del sistema. No obstante, en su estado actual la aplicación no emite notificaciones ni procesa alertas en segundo plano. La inclusión final de este permiso en la versión definitiva de publicación en Google Play Store está sujeta a revisión previa al lanzamiento, pudiendo mantenerse para futuras funciones o retirarse en el empaquetado final.</li>
+          <li><strong>Ausencia de permiso de notificaciones (POST_NOTIFICATIONS):</strong> El paquete oficial de distribución para Google Play Store no incluye el permiso <code>POST_NOTIFICATIONS</code> en su manifiesto. La versión actual de la aplicación no ofrece notificaciones push, avisos del sistema operativo ni procesamiento de alertas en segundo plano.</li>
+          <li><strong>Permisos web en la arquitectura TWA:</strong> Las funciones que requieren interacción con el dispositivo (como el cálculo voluntario de proximidad en «Cerca de mí») utilizan las interfaces estándar del navegador web (como <code>navigator.geolocation</code>), requiriendo el consentimiento explícito del usuario a través del navegador. La aplicación no solicita permisos nativos de ubicación en segundo plano en su manifiesto Android.</li>
           <li><strong>Ausencia de permisos invasivos:</strong> La aplicación no solicita ni utiliza acceso a la cámara, micrófono, libreta de contactos, almacenamiento interno privado ni ubicación continua en segundo plano (Background Location).</li>
         </ul>
       </section>
