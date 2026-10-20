@@ -1,5 +1,5 @@
 /**
- * SismoData Panamá — Service Worker (PWA)
+ * sismoPA — Service Worker (PWA)
  *
  * Políticas de caché y actualización seguras:
  * 1. Bypass total (Network-Only) para APIs de sismicidad dinámica, Supabase e IGC-UP.
@@ -13,8 +13,8 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261019cf1`,
-  static: `${CACHE_PREFIX}static-v1`,
+  core: `${CACHE_PREFIX}core-v20261020brand1`,
+  static: `${CACHE_PREFIX}static-v20261020brand1`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
 
@@ -31,7 +31,11 @@ const STATIC_ASSETS = [
   './manifest.webmanifest',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
-  './assets/icons/apple-touch-icon.png'
+  './assets/icons/apple-touch-icon.png',
+  './assets/icons/favicon-32.png',
+  './assets/icons/favicon-16.png',
+  './assets/icons/icon-maskable-512.png',
+  './favicon.ico'
 ];
 
 // Instalación: precachear el caparazón estático básico
@@ -44,7 +48,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activación: eliminar de forma segura SOLO cachés obsoletas de SismoData
+// Activación: eliminar de forma segura SOLO cachés obsoletas de la aplicación
 self.addEventListener('activate', (event) => {
   const expectedCaches = new Set(Object.values(CURRENT_CACHES));
 

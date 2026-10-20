@@ -1,7 +1,7 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261019cf1';
-  console.info(`[SismoData] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
+  const APP_BUILD_VERSION = '20261020brand1';
+  console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');

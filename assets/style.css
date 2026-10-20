@@ -177,9 +177,11 @@ a {
   overflow: hidden;
 }
 
-.identity-mark svg {
+.identity-logo {
+  display: block;
   width: 100%;
   height: 100%;
+  object-fit: contain;
 }
 
 .identity-name {
@@ -196,8 +198,12 @@ a {
   color: var(--text-main);
 }
 
-.identity-name b span {
-  color: var(--color-cyan);
+.identity-name b .brand-sismo {
+  color: #EA1834;
+}
+
+.identity-name b .brand-pa {
+  color: #FFFFFF;
 }
 
 .identity-name small {

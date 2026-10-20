@@ -15,9 +15,9 @@ test('Service worker omite cache para API dinamica de Cloudflare', () => {
   assert.ok(get('sw.js').includes("url.pathname.includes('/api/')"));
 });
 
-test('Netlify mantiene endpoints de compatibilidad y su tarea cron', () => {
+test('Netlify mantiene endpoints de compatibilidad sin cron duplicado', () => {
   const config = get('netlify.toml');
-  assert.ok(config.includes('schedule = "*/30 * * * *"'));
+  assert.ok(!config.includes('schedule = "*/30 * * * *"')); 
   for (const name of ['sismos', 'historico-sismos', 'detalle-sismo']) {
     assert.ok(config.includes(`from = "/api/${name}"`));
     assert.ok(fs.existsSync(path.join(root, 'functions', 'api', `${name}.js`)));

@@ -1,6 +1,6 @@
 {
-  "name": "SismoData Panamá",
-  "short_name": "SismoData",
+  "name": "sismoPA",
+  "short_name": "sismoPA",
   "description": "Monitor técnico e independiente de la actividad sísmica en Panamá con datos oficiales del IGC-UP.",
   "id": "/",
   "start_url": "/",
@@ -14,13 +14,19 @@
       "src": "assets/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "assets/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
