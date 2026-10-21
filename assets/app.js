@@ -418,6 +418,16 @@
     set('latestRegion',e.region);
     set('latestDate',fullDate.format(new Date(e.timestamp)));
     set('latestDepth',`${e.profundidad} km de profundidad`);
+    if (ui.lastEventPanel) {
+      ui.lastEventPanel.dataset.magRange = magnitudeClass(e.magnitud);
+    }
+    if (ui.heroMagCircle) {
+      ui.heroMagCircle.className = 'hero-circle-dial ' + magnitudeClass(e.magnitud);
+    }
+    if (ui.heroDetailBtn) {
+      const uid = e.source_uid || e.id || `${e.fecha}|${e.hora}|${e.latitud}|${e.longitud}|${e.magnitud}`;
+      ui.heroDetailBtn.href = `#/sismo/${encodeURIComponent(uid)}`;
+    }
     elapsedTime();
     updateUserDistanceDisplay();
   }
@@ -429,6 +439,23 @@
     ['Below3','3','4','5'].forEach((k,i) => {set('stat'+k,num(vals[i]));set('pct'+k,pct(vals[i],all));set('legend'+k,num(vals[i]));});
     set('statTotal',num(all));
     set('statTotalHint',`${num(state.events.length)} en la lista de la fuente`);
+    if (all) {
+      const pLow = (low / all * 100);
+      const p3 = (three / all * 100);
+      const p4 = (four / all * 100);
+      const p5 = (five / all * 100);
+      const bLow = document.getElementById('distBarBelow3');
+      const b3 = document.getElementById('distBar3');
+      const b4 = document.getElementById('distBar4');
+      const b5 = document.getElementById('distBar5');
+      if (bLow) bLow.style.width = `${pLow}%`;
+      if (b3) b3.style.width = `${p3}%`;
+      if (b4) b4.style.width = `${p4}%`;
+      if (b5) b5.style.width = `${p5}%`;
+      set('distLeg3', `${Math.round(p3)}% Menores (M3.x)`);
+      set('distLeg4', `${Math.round(p4)}% Moderados (M4.x)`);
+      set('distLeg5', `${Math.round(p5)}% Fuertes (≥5)`);
+    }
     set('filterInfo',`${num(filtered.length)} evento${filtered.length === 1 ? '' : 's'} visible${filtered.length === 1 ? '' : 's'}`);
     set('donutTotal',num(all));
     set('recordCount',num(filtered.length));
@@ -484,7 +511,7 @@
     if (!bins.length) {parent.append(el('div','empty-plot','No hay eventos para graficar.'));return;}
     set('timelineDescription',hourly?'Por hora local':'Por día');
     set('timelineTotal',`${num(data.length)} eventos`);
-    const W = 720,H = 236,left = 45,right=18,top=13,bottom=37,plotW=W-left-right,plotH=H-top-bottom;
+    const W = 520, H = 160, left = 36, right = 12, top = 10, bottom = 26, plotW = W - left - right, plotH = H - top - bottom;
     const svg = svgNode('svg',{class:'svg-timeline',viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':'Gráfica de barras de actividad sísmica por fecha'});
     const maxV = Math.max(...bins.map(b=>b.value),1);
     const nice = maxV<=4 ? 4 : Math.ceil(maxV / 4) * 4;
@@ -541,7 +568,7 @@
       <div class="popup-title">${safe(event.region)}</div>
       <div class="popup-meta mono">
         <span>${safe(fullDate.format(new Date(event.timestamp)))}</span>
-        <span><b>${safe(event.profundidad)} km</b></span>
+        <span>Profundidad: <b>${safe(event.profundidad)} km</b></span>
       </div>
       <div class="popup-actions">
         <a href="#/sismo/${encodeURIComponent(uid)}" class="popup-btn-epicenter">Ver ficha técnica →</a>
@@ -639,6 +666,12 @@
     });
 
     state.generalMapLibre = map;
+    if (typeof window !== 'undefined') window.__generalMapLibre = map;
+    if (IS_LOCAL && typeof window !== 'undefined') {
+      window.__sismoState = state;
+      window.__updateUserDistanceDisplay = updateUserDistanceDisplay;
+      window.__render = render;
+    }
 
     // Controles de navegación y atribución
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true }), 'bottom-right');
@@ -779,7 +812,7 @@
           <div class="popup-title">${safe(props.region)}</div>
           <div class="popup-meta mono">
             <span>${safe(dateStr)}</span>
-            <span><b>${props.profundidad} km</b></span>
+            <span>Profundidad: <b>${props.profundidad} km</b></span>
           </div>
           <div class="popup-actions">
             <a href="#/sismo/${encodeURIComponent(props.uid)}" class="popup-btn-epicenter">Ver ficha técnica →</a>
@@ -947,23 +980,21 @@
       if (ui.mobileRecordsList) {
         const card = el('article', 'sismo-mobile-card');
 
-        // Fila 1: Magnitud, Localidad, Región y Chip de Estado
-        const main = el('div', 'card-main-row');
+        // Badge circular de magnitud (a la izquierda)
+        const magBadge = el('span', 'card-mag-badge ' + magnitudeClass(e.magnitud), magText(e.magnitud));
+        card.append(magBadge);
 
-        const magBadge = el('span', 'card-mag-badge ' + magnitudeClass(e.magnitud), `M ${magText(e.magnitud)}`);
-        main.append(magBadge);
+        // Columna central con información del sismo
+        const infoStack = el('div', 'card-info-stack');
 
-        const titleBox = el('div', 'card-title-box');
         const placeRow = el('div', 'card-place-line');
         placeRow.append(el('strong', 'card-place-name', e.localidad));
         placeRow.append(el('span', 'state-chip ' + (e.estado.toUpperCase() === 'REVISADO' ? 'revisado' : ''), e.estado));
-        titleBox.append(placeRow);
+        infoStack.append(placeRow);
 
-        titleBox.append(el('div', 'card-region-name', e.region));
-        main.append(titleBox);
-        card.append(main);
+        infoStack.append(el('div', 'card-region-name', e.region));
 
-        // Fila 2: Barra de metadatos técnicos (3 columnas balanceadas)
+        // Metadatos técnicos (tiempo, profundidad, distancia)
         const paramsGrid = el('div', 'card-params-grid');
 
         const paramTime = el('div', 'card-param-item');
@@ -983,13 +1014,15 @@
         if (!distFormatted) distSpan.title = 'Ubicación no activada o no disponible';
         paramDist.append(distSpan);
         paramsGrid.append(paramDist);
-        card.append(paramsGrid);
 
-        // Fila 3: Botón de acción táctil Ver ficha técnica
+        infoStack.append(paramsGrid);
+        card.append(infoStack);
+
+        // Botón de acción táctil Ver ficha técnica (a la derecha)
         const actionRow = el('div', 'card-action-row');
-        const cardFichaLink = el('a', 'card-ficha-btn', 'Ver ficha →');
+        const cardFichaLink = el('a', 'card-ficha-btn', 'Ficha ›');
+        cardFichaLink.title = 'Ver ficha →';
         cardFichaLink.href = `#/sismo/${encodeURIComponent(uid)}`;
-        cardFichaLink.title = `Abrir ficha técnica completa del sismo M${e.magnitud} en ${e.localidad}`;
         cardFichaLink.setAttribute('aria-label', `Ver ficha técnica del sismo M${e.magnitud} en ${e.localidad}`);
         actionRow.append(cardFichaLink);
         card.append(actionRow);
@@ -1222,7 +1255,7 @@
       <div class="popup-title">${safe(e.region)}</div>
       <div class="popup-meta mono">
         <span>${safe(isValidDate ? fullDate.format(dateObj) : '')}</span>
-        <span><b>${prof} km</b></span>
+        <span>Profundidad: <b>${prof} km</b></span>
       </div>
     </div>`;
 
@@ -1473,7 +1506,7 @@
         <div class="popup-title">${safe(e.region)}</div>
         <div class="popup-meta mono">
           <span>${safe(isValidDate ? fullDate.format(dateObj) : '')}</span>
-          <span><b>${prof} km</b></span>
+          <span>Profundidad: <b>${prof} km</b></span>
         </div>
       </div>`;
       marker.bindPopup(popupHtml);
@@ -1730,7 +1763,7 @@
 
     set('histMonthlyTotal', `${num(totalInYear)} sismos en ${year}`);
 
-    const W = 720, H = 220, left = 45, right = 18, top = 15, bottom = 35;
+    const W = 520, H = 160, left = 36, right = 12, top = 10, bottom = 24;
     const plotW = W - left - right, plotH = H - top - bottom;
     const svg = svgNode('svg', { class: 'svg-hist-chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Distribución mensual de sismos' });
 
@@ -1796,7 +1829,7 @@
     const totalInDays = days.reduce((sum, d) => sum + (daily[d] || 0), 0);
     set('histDailyTotal', `${num(days.length)} días registrados · ${num(totalInDays)} sismos`);
 
-    const W = 720, H = 220, left = 45, right = 18, top = 15, bottom = 35;
+    const W = 520, H = 160, left = 36, right = 12, top = 10, bottom = 24;
     const plotW = W - left - right, plotH = H - top - bottom;
     const svg = svgNode('svg', { class: 'svg-hist-chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Actividad sísmica diaria' });
 

@@ -237,54 +237,68 @@
           </div>
         </div>
 
-        <!-- INSTRUMENTO TELEMÉTRICO: ÚLTIMO EVENTO -->
+        <!-- INSTRUMENTO TELEMÉTRICO: ÚLTIMO EVENTO (FUSIÓN ESTILO 3 + ESTILO 4) -->
+        <!-- INSTRUMENTO TELEMÉTRICO: ÚLTIMO EVENTO (PROTOTIPO B REFINADO) -->
         <div class="last-event" id="lastEventPanel">
           <div class="last-top">
             <span class="last-header-tag"><span class="live-dot" aria-hidden="true"></span> ÚLTIMO SISMO REGISTRADO</span>
-            <span class="mono" id="latestState">—</span>
+            <span class="state-chip revisado" id="latestState">—</span>
           </div>
 
-          <div class="last-magnitude-row">
-            <div class="last-magnitude">
-              <span class="last-prefix">M</span>
-              <strong id="latestMagnitude">—</strong>
-            </div>
-            <div class="last-badges">
-              <span id="latestLevel" class="last-level">CONSULTANDO</span>
-            </div>
-          </div>
-
-          <div id="latestRegion" class="last-region">Consultando registros oficiales del IGC-UP…</div>
-
-          <div class="last-time-line">
-            <span id="latestDate" class="mono">—</span>
-            <span id="latestDepth" class="mono">—</span>
-          </div>
-
-          <!-- MÓDULO INTERACTIVO: DISTANCIA AL EPICENTRO -->
-          <div class="user-distance-card" id="userDistanceCard">
-            <div class="distance-unprompted" id="distUnprompted">
-              <button type="button" class="geo-dist-btn" id="btnRequestGeo" aria-label="Calcular distancia entre tu ubicación y el último sismo">
-                <span class="geo-dist-icon" aria-hidden="true">📍</span>
-                <span>Mi distancia al sismo</span>
-              </button>
-            </div>
-            <div class="distance-active" id="distActive" hidden>
-              <div class="dist-val-line">
-                <span class="geo-dist-icon active" aria-hidden="true">📍</span>
-                <span class="dist-label">Tu distancia al epicentro:</span>
-                <strong id="distValue" class="dist-num mono">—</strong>
-              </div>
-              <small class="dist-note">Distancia aproximada en línea recta</small>
-              <div class="dist-actions">
-                <button type="button" class="dist-action-link" id="btnRefreshGeo" title="Actualizar ubicación del navegador">↻ Actualizar mi ubicación</button>
-                <span class="dist-sep">·</span>
-                <button type="button" class="dist-action-link danger" id="btnDisableGeo" title="Desactivar y borrar ubicación de la memoria">✕ Desactivar mi ubicación</button>
+          <!-- COMPOSICIÓN HORIZONTAL COMPACTA: DIAL + INFORMACIÓN -->
+          <div class="hero-center-row">
+            <div class="hero-circle-container">
+              <div class="hero-circle-dial" id="heroMagCircle">
+                <strong id="latestMagnitude" class="hero-circle-val">—</strong>
+                <span class="hero-circle-prefix">MAGNITUD</span>
+                <span id="latestLevel" class="hero-circle-level" hidden>CONSULTANDO</span>
               </div>
             </div>
-            <div class="distance-status" id="distStatus" hidden></div>
+
+            <div class="hero-info-stack">
+              <h2 id="latestRegion" class="hero-region-title">Consultando registros oficiales del IGC-UP…</h2>
+              <div class="hero-params-line">
+                <span id="latestDate" class="hero-param-val mono">—</span>
+                <span class="hero-param-sep">•</span>
+                <span id="latestDepth" class="hero-param-val mono">—</span>
+              </div>
+            </div>
           </div>
 
+          <!-- FILA DE BOTONES DE ACCIÓN (2 COLUMNAS EN MÓVIL) -->
+          <div class="hero-actions-grid">
+            <a id="heroDetailBtn" href="#registros" class="hero-btn-primary" aria-label="Ver detalles técnicos del último sismo">
+              <span>Ver detalles</span>
+              <svg class="hero-btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </a>
+
+            <!-- MÓDULO INTERACTIVO: DISTANCIA AL EPICENTRO -->
+            <!-- MÓDULO INTERACTIVO: DISTANCIA AL EPICENTRO (ORIGINAL RESTAURADO) -->
+            <div class="user-distance-card" id="userDistanceCard">
+              <div class="distance-unprompted" id="distUnprompted">
+                <button type="button" class="geo-dist-btn" id="btnRequestGeo" aria-label="Calcular distancia entre tu ubicación y el último sismo">
+                  <span class="geo-dist-icon" aria-hidden="true">📍</span>
+                  <span>Mi distancia al sismo</span>
+                </button>
+              </div>
+              <div class="distance-active" id="distActive" hidden>
+                <div class="dist-val-line">
+                  <span class="geo-dist-icon active" aria-hidden="true">📍</span>
+                  <span class="dist-label">Tu distancia al epicentro:</span>
+                  <strong id="distValue" class="dist-num mono">—</strong>
+                </div>
+                <small class="dist-note">Distancia aproximada en línea recta</small>
+                <div class="dist-actions">
+                  <button type="button" class="dist-action-link" id="btnRefreshGeo" title="Actualizar ubicación del navegador">↻ Actualizar mi ubicación</button>
+                  <span class="dist-sep">·</span>
+                  <button type="button" class="dist-action-link danger" id="btnDisableGeo" title="Desactivar y borrar ubicación de la memoria">✕ Desactivar mi ubicación</button>
+                </div>
+              </div>
+              <div class="distance-status" id="distStatus" hidden></div>
+            </div>
+          </div>
+
+          <!-- RELOJ DE CONTEO EN VIVO INTEGRADO -->
           <div class="timer-box">
             <div class="timer-label">TIEMPO TRANSCURRIDO DESDE EL EVENTO</div>
             <div class="live-counter" aria-live="off">
@@ -305,16 +319,24 @@
       </section>
 
       <!-- PÁNEL DE INDICADORES PRINCIPALES (ALTA DENSIDAD) -->
+      <!-- PÁNEL DE INDICADORES: TOTAL DESTACADO + CUADRÍCULA 2x2 TINTADA -->
       <section class="metrics" aria-label="Estadísticas por rango de magnitud">
         <div class="metric primary">
           <div class="metric-tag">
             <span>TOTAL EN PERÍODO</span>
-            <span class="metric-badge">REGISTROS</span>
+            <span id="statTotalHint">Eventos registrados</span>
           </div>
           <strong id="statTotal">—</strong>
-          <div class="metric-bottom">
-            <span id="statTotalHint">Eventos registrados</span>
-            <span class="metric-mark">∑</span>
+          <div class="stat-dist-bar" id="statDistributionBar" aria-hidden="true">
+            <div class="bar-seg c-cyan" id="distBarBelow3" style="width: 0%;"></div>
+            <div class="bar-seg c-lime" id="distBar3" style="width: 0%;"></div>
+            <div class="bar-seg c-amber" id="distBar4" style="width: 0%;"></div>
+            <div class="bar-seg c-coral" id="distBar5" style="width: 0%;"></div>
+          </div>
+          <div class="stat-dist-legend" id="statDistributionLegend">
+            <span id="distLeg3">—</span>
+            <span id="distLeg4">—</span>
+            <span id="distLeg5">—</span>
           </div>
         </div>
 
@@ -526,7 +548,7 @@
           <div class="panel-head">
             <div>
               <span class="section-kicker">04 / CARTOGRAFÍA</span>
-              <h2>Distribución geográfica de epicentros</h2>
+              <h2 class="map-heading-text"><span class="map-title-short">Epicentros</span><span class="map-title-full">Distribución geográfica de epicentros</span></h2>
             </div>
             <span id="mapCount" class="badge-outline mono">— puntos</span>
           </div>
@@ -574,13 +596,16 @@
               <p>El mapa interactivo vectorial requiere aceleración WebGL.</p>
               <div id="coordinateMap" class="coordinate-map"></div>
             </div>
+
+            <!-- Leyenda moderna flotante integrada en el mapa -->
+            <div class="map-legend" id="generalMapLegend">
+              <span><i class="legend-dot l-below"></i>&lt; 3.0</span>
+              <span><i class="legend-dot l-three"></i>3.0–3.9</span>
+              <span><i class="legend-dot l-four"></i>4.0–4.9</span>
+              <span><i class="legend-dot l-five"></i>≥ 5.0</span>
+            </div>
           </div>
-          <div class="map-legend">
-            <span><i class="legend-dot l-below"></i>M &lt; 3.0</span>
-            <span><i class="legend-dot l-three"></i>M 3.0–3.9</span>
-            <span><i class="legend-dot l-four"></i>M 4.0–4.9</span>
-            <span><i class="legend-dot l-five"></i>M ≥ 5.0</span>
-          </div>
+
           <div class="sismo-map-attributions" style="padding: 6px 14px 10px; font-size: 10px; color: var(--text-dim); border-top: 1px solid var(--border-subtle); line-height: 1.35;">
             Cartografía base © <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · Límites tectónicos: Modelo PB2002 (P. Bird) · Fallas activas: GEM Global Active Faults.
           </div>
@@ -678,19 +703,18 @@
         <div class="panel-head historico-head">
           <div>
             <span class="section-kicker">05 / OBSERVATORIO HISTÓRICO</span>
-            <h2>Historial y Estadísticas Acumulativas</h2>
+            <h2>Historial sísmico</h2>
           </div>
           <div class="historico-head-meta">
-            <span class="badge-outline mono" id="histCoverageBadge">Base de datos Supabase</span>
+            <span class="badge-outline mono" id="histCoverageBadge">Archivo histórico</span>
           </div>
         </div>
 
-        <!-- AVISO DE COBERTURA HISTÓRICA REAL -->
+        <!-- AVISO DE COBERTURA HISTÓRICA COMPACTO -->
         <div class="coverage-notice" role="note">
-          <div class="coverage-notice-icon" aria-hidden="true">ℹ</div>
+          <span class="coverage-notice-tag">COBERTURA</span>
           <div class="coverage-notice-text">
-            <strong>COBERTURA DEL ARCHIVO HISTÓRICO:</strong>
-            El sistema de archivado acumulativo de sismoPA inició su recopilación automática el <strong>18 de octubre de 2026</strong>, recuperando registros oficiales vigentes del IGC-UP a partir del <strong>12 de octubre de 2026</strong>. Para fechas anteriores al 12 de octubre de 2026 no se dispone de datos archivados en este observatorio; la falta de registros en dichos lapsos refleja ausencia de cobertura acumulada y no ausencia de actividad sísmica.
+            Registros acumulados desde el <strong>12 de octubre de 2026</strong> (recopilación activa desde el 10–18 de octubre). Fechas anteriores sin datos reflejan límite de archivo acumulado, no ausencia de sismos.
           </div>
         </div>
 
@@ -773,7 +797,7 @@
           <div class="metric">
             <div class="metric-tag">
               <span>MAGNITUD PROMEDIO</span>
-              <span class="indicator amber"></span>
+              <span class="indicator lime"></span>
             </div>
             <strong id="histMagAvg" class="mono">—</strong>
             <div class="metric-bottom">
@@ -796,7 +820,7 @@
 
           <div class="metric">
             <div class="metric-tag">
-              <span>REGISTRO MÁS ANTIGUO</span>
+              <span>PRIMER REGISTRO DISPONIBLE</span>
               <span class="indicator violet"></span>
             </div>
             <strong id="histOldestDate" class="mono" style="font-size: 15px; margin: 4px 0;">—</strong>
@@ -822,7 +846,7 @@
               <div class="empty-plot">Consultando datos mensuales…</div>
             </div>
             <div class="panel-note">
-              <span>Recuento de eventos clasificados por mes calendario local</span>
+              <span>Recuento mensual · <b style="color: #38BDF8;">■ Con registros</b> · <span style="color: #94A3B8;">⬚ Sin cobertura</span></span>
               <span class="mono">AÑO SELECCIONADO</span>
             </div>
           </article>
