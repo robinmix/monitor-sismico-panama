@@ -11,7 +11,9 @@
   const HISTORICO_API = IS_LOCAL
     ? `${PROD_BASE}/api/historico-sismos`
     : '/api/historico-sismos';
-  const DETALLE_API = '/api/detalle-sismo';
+  const DETALLE_API = IS_LOCAL
+    ? `${PROD_BASE}/api/detalle-sismo`
+    : '/api/detalle-sismo';
   const SOURCE = 'https://sismosgeociencias.up.ac.pa/';
   const INTERVAL_MS = 5 * 60 * 1000;
   const LIMIT = 25;
@@ -1694,8 +1696,30 @@
         return;
       }
       if (currentRequestId === state.historicalRequestId) {
-        ui.histPeriodLabel.textContent = `Error: ${err.message}`;
+        ui.histPeriodLabel.replaceChildren();
+        const errSpan = document.createElement('span');
+        errSpan.textContent = 'No se pudo consultar el archivo histórico. ';
+        const retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'hist-inline-retry-btn';
+        retryBtn.textContent = '↻ Reintentar';
+        retryBtn.setAttribute('aria-label', 'Reintentar consulta del historial');
+        retryBtn.addEventListener('click', () => loadHistoricalData(true));
+        ui.histPeriodLabel.append(errSpan, retryBtn);
+
+        ui.histDataOrigin.textContent = '⚠️ Error de conexión';
         ui.histTotal.textContent = '—';
+        ui.histCoverageDetail.textContent = 'Error al consultar datos';
+        ui.histMagMax.textContent = '—';
+        ui.histMagMin.textContent = '—';
+        ui.histMagAvg.textContent = '—';
+        ui.histDepthAvg.textContent = '—';
+        ui.histOldestDate.textContent = '—';
+        ui.histOldestInfo.textContent = 'Error de consulta';
+        if (ui.histMonthlyChart) ui.histMonthlyChart.innerHTML = '<div class="hist-empty-notice">Error al cargar datos mensuales.</div>';
+        if (ui.histDailyChart) ui.histDailyChart.innerHTML = '<div class="hist-empty-notice">Error al cargar distribución diaria.</div>';
+        if (ui.histMagBars) ui.histMagBars.innerHTML = '<div class="hist-empty-notice">Error al cargar magnitudes.</div>';
+        if (ui.histRegionsTable) ui.histRegionsTable.innerHTML = '<div class="hist-empty-notice">Error al cargar regiones.</div>';
       }
     } finally {
       if (currentRequestId === state.historicalRequestId) {
@@ -1711,6 +1735,25 @@
 
     const monthNames = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const periodName = filters.mes ? `${monthNames[filters.mes]} de ${filters.anio}` : `Año completo ${filters.anio}`;
+
+    if (!stats || stats.total === 0) {
+      ui.histPeriodLabel.textContent = `${periodName} · Período sin registros`;
+      ui.histDataOrigin.textContent = 'ℹ️ Sin registros';
+      ui.histTotal.textContent = '0';
+      ui.histCoverageDetail.textContent = 'El archivo histórico inició el 12 de octubre de 2026';
+      ui.histMagMax.textContent = '—';
+      ui.histMagMin.textContent = '—';
+      ui.histMagAvg.textContent = '—';
+      ui.histDepthAvg.textContent = '—';
+      ui.histOldestDate.textContent = 'Sin datos';
+      ui.histOldestInfo.textContent = 'Sin eventos en este período';
+      if (ui.histMonthlyChart) ui.histMonthlyChart.innerHTML = '<div class="hist-empty-notice">Sin eventos en este período.</div>';
+      if (ui.histDailyChart) ui.histDailyChart.innerHTML = '<div class="hist-empty-notice">Sin eventos en este período.</div>';
+      if (ui.histMagBars) ui.histMagBars.innerHTML = '<div class="hist-empty-notice">Sin eventos en este período.</div>';
+      if (ui.histRegionsTable) ui.histRegionsTable.innerHTML = '<div class="hist-empty-notice">Sin eventos en este período.</div>';
+      return;
+    }
+
     ui.histPeriodLabel.textContent = `Mostrando: ${periodName}`;
 
     ui.histTotal.textContent = num(stats.total);

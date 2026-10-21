@@ -434,3 +434,26 @@ test('Caché: segunda llamada idéntica devuelve HIT desde memoria', async () =>
   const b2 = JSON.parse(r2.body);
   assert.equal(b2.origen_datos, 'cache');
 });
+
+
+// --------------------------------------------------------------------------
+// 9. Consulta Histórica Específica (Octubre 2026)
+// --------------------------------------------------------------------------
+test('Consulta histórica: octubre de 2026 calcula estadísticas válidas con datos representativos', async () => {
+  const mockDb = createMockSupabase();
+  const response = await handler({
+    httpMethod: 'GET',
+    queryStringParameters: { anio: '2026', mes: '10', include_events: 'false' }
+  }, {}, { supabase: mockDb, noCache: true });
+
+  assert.equal(response.statusCode, 200);
+  const data = JSON.parse(response.body);
+  assert.equal(data.ok, true);
+  assert.ok(data.estadisticas);
+  assert.equal(typeof data.estadisticas.total, 'number');
+  assert.ok(data.estadisticas.total >= 0);
+  assert.equal(data.filtros_aplicados.anio, 2026);
+  assert.equal(data.filtros_aplicados.mes, 10);
+  assert.ok(data.estadisticas.por_magnitud);
+  assert.ok(data.estadisticas.distribucion_diaria);
+});

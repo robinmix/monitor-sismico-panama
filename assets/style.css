@@ -4514,6 +4514,37 @@ td.align-right {
   border: 1px solid rgba(56, 189, 248, 0.25);
 }
 
+.hist-inline-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  min-height: 28px;
+}
+
+.hist-inline-retry-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.hist-empty-notice {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: #64748B;
+  text-align: center;
+  padding: 18px 12px;
+}
+
 /* Tarjetas de estadísticas históricas coloreadas con coherencia sísmica */
 .hist-kpis {
   display: grid;

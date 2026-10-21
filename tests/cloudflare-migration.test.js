@@ -31,3 +31,20 @@ test('Secrets Supabase solo en servidor, Pages se conecta desde env', () => {
     assert.ok(!mod.includes('process.env.SUPABASE_SECRET_KEY'));
   }
 });
+
+test('Seguridad de proxy en Pages: solo lectura, sin reenvío de secretos y falla en producción', () => {
+  for (const name of ['historico-sismos', 'detalle-sismo']) {
+    const fn = get(`functions/api/${name}.js`);
+    // 1. Métodos autorizados únicamente GET y OPTIONS
+    assert.ok(fn.includes("['GET', 'OPTIONS'].includes(context.request.method)"));
+    assert.ok(fn.includes('status: 405'));
+    // 2. En producción o identidad desconocida debe fallar de manera detectable si no hay credenciales (no proxy silencioso)
+    assert.ok(fn.includes("branchName !== 'main'"));
+    assert.ok(fn.includes("!isExplicitPreview"));
+    // 3. Endpoint oficial hardcoded sin permitir URLs arbitrarias
+    assert.ok(fn.includes('https://sismospma.netlify.app/api/'));
+    // 4. No divulga ni reenvía secretos
+    assert.ok(!fn.includes('SUPABASE_SECRET_KEY"'));
+    assert.ok(!fn.includes('authorization'));
+  }
+});
