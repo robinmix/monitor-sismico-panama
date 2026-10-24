@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261020brand1';
+  const APP_BUILD_VERSION = '20261024amoled3';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
@@ -1281,9 +1281,23 @@
           ? (e.geo_corregimiento + ', ' + e.geo_distrito + ' (' + e.geo_provincia + ')')
           : (e.geo_provincia || e.region));
     ui.sismoRegionTitle.textContent = detailTitle || e.region || 'Región geocientífica de Panamá';
-    ui.sismoLocationDesc.textContent = e.geo_ubicacion_texto
-      ? (e.geo_ubicacion_texto + ' · [Registro IGC: ' + (e.ubicacion || e.region) + ']')
-      : (e.ubicacion || e.region || 'Sin descripción adicional reportada');
+    if (e.geo_ubicacion_texto) {
+      ui.sismoLocationDesc.innerHTML = '';
+      const geoSpan = document.createElement('span');
+      geoSpan.className = 'geo-location-highlight';
+      geoSpan.textContent = e.geo_ubicacion_texto;
+      ui.sismoLocationDesc.appendChild(geoSpan);
+
+      const igcDesc = e.ubicacion || e.region;
+      if (igcDesc) {
+        const igcSpan = document.createElement('span');
+        igcSpan.className = 'sismo-igc-desc';
+        igcSpan.textContent = ' · [Registro IGC: ' + igcDesc + ']';
+        ui.sismoLocationDesc.appendChild(igcSpan);
+      }
+    } else {
+      ui.sismoLocationDesc.textContent = e.ubicacion || e.region || 'Sin descripción adicional reportada';
+    }
 
     // Parámetros técnicos
     const isValidDate = !isNaN(dateObj.getTime());
@@ -1300,9 +1314,13 @@
     ui.sismoCoordDecimal.textContent = `Latitud: ${lat.toFixed(5)} · Longitud: ${lon.toFixed(5)}`;
     ui.sismoMapCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}° · ${prof} km`;
 
-    ui.sismoTown.textContent = e.geo_poblado_ref 
-      ? (e.geo_poblado_ref + ' (' + e.geo_distancia_km + ' km ' + (e.geo_rumbo || '') + ')') 
-      : (e.localidad || 'Localidad de referencia no especificada');
+    if (e.geo_poblado_ref) {
+      ui.sismoTown.className = 'param-val geo-location-highlight';
+      ui.sismoTown.textContent = `${e.geo_poblado_ref} (${e.geo_distancia_km} km ${e.geo_rumbo || ''})`.trim();
+    } else {
+      ui.sismoTown.className = 'param-val';
+      ui.sismoTown.textContent = e.localidad || 'Localidad de referencia no especificada';
+    }
     ui.sismoZone.textContent = e.geo_tipo === 'MARITIMO'
       ? ('Clasificación: Marítimo · ' + (e.geo_zona_maritima || 'ZEE') + ' [IGC: ' + e.region + ']')
       : (e.geo_provincia

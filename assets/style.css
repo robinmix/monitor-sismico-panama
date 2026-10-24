@@ -3863,6 +3863,19 @@ td.align-right {
   line-height: 1.45;
 }
 
+/* RESALTADO DE GEOLOCALIZACIÓN PRECISA (AMOLED 5.1) */
+.geo-location-highlight {
+  color: #FFE16A !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 700 !important;
+}
+
+.sismo-igc-desc {
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+
 .sismo-params-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
