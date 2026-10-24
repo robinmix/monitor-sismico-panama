@@ -1,4 +1,5 @@
 [build]
+  ignore = "exit 0" # Congelado: cancela compilaciones Netlify
   publish = "."
   functions = "netlify/functions"
 

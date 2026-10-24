@@ -17,7 +17,7 @@
   const SOURCE = 'https://sismosgeociencias.up.ac.pa/';
   const INTERVAL_MS = 5 * 60 * 1000;
   const LIMIT = 25;
-  const COLORS = ['#36DDF3', '#B9F34D', '#FFC857', '#FF6B62'];
+  const COLORS = ['#54D6A5', '#F7C843', '#F58A35', '#EF4655'];
   const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map(el => [el.id, el]));
   const state = {
     events: [],
@@ -409,6 +409,71 @@
       state.loading = false;
       ui.refreshBtn.disabled = false;
     }
+  }
+
+  
+  function formatRelativeTime(timestamp) {
+    if (!timestamp) return '—';
+    const diffMs = Date.now() - new Date(timestamp).getTime();
+    if (diffMs < 0) return 'Hace un momento';
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHours = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 0) {
+      const remHours = diffHours % 24;
+      return diffDays === 1 
+        ? (remHours > 0 ? `Hace 1 d ${remHours} h` : 'Hace 1 día')
+        : `Hace ${diffDays} días`;
+    }
+    if (diffHours > 0) {
+      const remMin = diffMin % 60;
+      return `Hace ${diffHours} h ${remMin} min`;
+    }
+    if (diffMin > 0) {
+      return `Hace ${diffMin} min`;
+    }
+    return 'Hace unos segundos';
+  }
+
+  function formatCardTimestamp(timestamp) {
+    if (!timestamp) return '—';
+    const d = new Date(timestamp);
+    const now = new Date();
+    const panamaNow = new Date(now.getTime() - (5 * 3600000));
+    const panamaD = new Date(d.getTime() - (5 * 3600000));
+    
+    const isToday = panamaNow.getUTCDate() === panamaD.getUTCDate() &&
+                    panamaNow.getUTCMonth() === panamaD.getUTCMonth() &&
+                    panamaNow.getUTCFullYear() === panamaD.getUTCFullYear();
+                    
+    const yesterday = new Date(panamaNow.getTime() - 86400000);
+    const isYesterday = yesterday.getUTCDate() === panamaD.getUTCDate() &&
+                        yesterday.getUTCMonth() === panamaD.getUTCMonth() &&
+                        yesterday.getUTCFullYear() === panamaD.getUTCFullYear();
+
+    let hours = panamaD.getUTCHours();
+    const minutes = String(panamaD.getUTCMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'p. m.' : 'a. m.';
+    hours = hours % 12 || 12;
+    const timeStr = `${hours}:${minutes} ${ampm}`;
+
+    if (isToday) return `Hoy, ${timeStr}`;
+    if (isYesterday) return `Ayer, ${timeStr}`;
+    
+    const day = panamaD.getUTCDate();
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const month = months[panamaD.getUTCMonth()];
+    return `${day} ${month}, ${timeStr}`;
+  }
+
+  function magnitudeCategoryName(mag) {
+    const m = Number(mag);
+    if (m >= 5.0) return 'Fuerte';
+    if (m >= 4.0) return 'Moderado';
+    if (m >= 3.0) return 'Ligero';
+    return 'Menor';
   }
 
   function renderLatest() {
