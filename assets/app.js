@@ -539,7 +539,15 @@
     const holder = ui[target];
     holder.replaceChildren();
     const counter = new Map();
-    data.forEach(e => {const key = target === 'townBars' ? e.localidad : e.zona; counter.set(key,(counter.get(key)||0)+1);});
+    data.forEach(e => {
+      let key;
+      if (target === 'townBars') {
+        key = e.geo_poblado_ref || e.localidad || 'Sin referencia';
+      } else {
+        key = e.geo_provincia || (e.geo_tipo === 'MARITIMO' ? (e.geo_zona_maritima ? 'Marítimo (' + e.geo_zona_maritima.split('(')[0].trim() + ')' : 'Marítimo') : (e.zona || 'Sin clasificar'));
+      }
+      counter.set(key, (counter.get(key) || 0) + 1);
+    });
     const list = [...counter].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'es')).slice(0,limit);
     if(!list.length){if(target==='regionBars')set('regionCount','0 regiones');holder.append(el('div','empty-plot','No hay sismos con esos filtros.'));return;}
     const maximum = Math.max(...list.map(x=>x[1]),1);
@@ -567,7 +575,7 @@
         <span class="popup-mag ${magnitudeClass(event.magnitud)}" style="color:${magColor(event.magnitud)};">M ${magText(event.magnitud)}</span>
         <span class="popup-state mono">${safe(event.estado || '')}</span>
       </div>
-      <div class="popup-title">${safe(event.region)}</div>
+      <div class="popup-title">${safe(event.geo_ubicacion_texto || event.region)}</div>
       <div class="popup-meta mono">
         <span>${safe(fullDate.format(new Date(event.timestamp)))}</span>
         <span>Profundidad: <b>${safe(event.profundidad)} km</b></span>
@@ -626,7 +634,12 @@
             timestamp: e.timestamp || '',
             fecha: e.fecha || '',
             hora: e.hora || '',
-            detalle: e.detalle || ''
+            detalle: e.detalle || '',
+            geo_tipo: e.geo_tipo || '',
+            geo_provincia: e.geo_provincia || '',
+            geo_ubicacion_texto: e.geo_ubicacion_texto || '',
+            geo_zona_maritima: e.geo_zona_maritima || '',
+            geo_poblado_ref: e.geo_poblado_ref || ''
           }
         };
       })
@@ -811,7 +824,7 @@
             <span class="popup-mag ${magnitudeClass(props.mag)}" style="color:${props.color};">M ${magText(props.mag)}</span>
             <span class="popup-state mono">${safe(props.estado)}</span>
           </div>
-          <div class="popup-title">${safe(props.region)}</div>
+          <div class="popup-title">${safe(props.geo_ubicacion_texto || props.region)}</div>
           <div class="popup-meta mono">
             <span>${safe(dateStr)}</span>
             <span>Profundidad: <b>${props.profundidad} km</b></span>
@@ -958,7 +971,13 @@
       addCell(row, el('span', 'mag-chip ' + magnitudeClass(e.magnitud), magText(e.magnitud)));
 
       const place = el('div', 'cell-place');
-      place.append(el('strong', '', e.localidad), el('span', '', e.region));
+      const deskTitle = e.geo_tipo === 'MARITIMO'
+        ? (e.geo_zona_maritima || 'Marítimo')
+        : (e.geo_corregimiento && e.geo_provincia
+            ? (e.geo_corregimiento + ', ' + (e.geo_distrito ? e.geo_distrito + ' · ' : '') + e.geo_provincia)
+            : (e.geo_provincia || e.localidad));
+      const deskSub = e.geo_ubicacion_texto || e.region;
+      place.append(el('strong', '', deskTitle || e.localidad), el('span', '', deskSub));
       if (hasUserGeo && distFormatted) {
         place.append(el('span', 'mobile-dist', ` · a ${distFormatted}`));
       }
@@ -990,11 +1009,22 @@
         const infoStack = el('div', 'card-info-stack');
 
         const placeRow = el('div', 'card-place-line');
-        placeRow.append(el('strong', 'card-place-name', e.localidad));
+        const primaryCardTitle = e.geo_tipo === 'MARITIMO'
+          ? (e.geo_zona_maritima ? e.geo_zona_maritima.split('(')[0].trim() : 'Océano Pacífico')
+          : (e.geo_tipo === 'INSULAR'
+              ? (e.geo_poblado_ref || e.geo_corregimiento || e.localidad)
+              : (e.geo_tipo === 'FRONTERIZO'
+                  ? (e.geo_provincia || 'Región Fronteriza')
+                  : (e.geo_corregimiento && e.geo_provincia
+                      ? (e.geo_corregimiento + ', ' + e.geo_provincia)
+                      : (e.geo_provincia || e.localidad))));
+
+        placeRow.append(el('strong', 'card-place-name', primaryCardTitle || e.localidad));
         placeRow.append(el('span', 'state-chip ' + (e.estado.toUpperCase() === 'REVISADO' ? 'revisado' : ''), e.estado));
         infoStack.append(placeRow);
 
-        infoStack.append(el('div', 'card-region-name', e.region));
+        const subCardText = e.geo_ubicacion_texto || e.region;
+        infoStack.append(el('div', 'card-region-name', subCardText));
 
         // Metadatos técnicos (tiempo, profundidad, distancia)
         const paramsGrid = el('div', 'card-params-grid');
@@ -1165,8 +1195,15 @@
                                     'Microactividad sísmica (M < 3.0)';
 
     // Título y ubicación
-    ui.sismoRegionTitle.textContent = e.region || 'Región geocientífica de Panamá';
-    ui.sismoLocationDesc.textContent = e.ubicacion || e.region || 'Sin descripción adicional reportada';
+    const detailTitle = e.geo_tipo === 'MARITIMO'
+      ? (e.geo_zona_maritima || e.region)
+      : (e.geo_corregimiento && e.geo_distrito
+          ? (e.geo_corregimiento + ', ' + e.geo_distrito + ' (' + e.geo_provincia + ')')
+          : (e.geo_provincia || e.region));
+    ui.sismoRegionTitle.textContent = detailTitle || e.region || 'Región geocientífica de Panamá';
+    ui.sismoLocationDesc.textContent = e.geo_ubicacion_texto
+      ? (e.geo_ubicacion_texto + ' · [Registro IGC: ' + (e.ubicacion || e.region) + ']')
+      : (e.ubicacion || e.region || 'Sin descripción adicional reportada');
 
     // Parámetros técnicos
     const isValidDate = !isNaN(dateObj.getTime());
@@ -1183,8 +1220,14 @@
     ui.sismoCoordDecimal.textContent = `Latitud: ${lat.toFixed(5)} · Longitud: ${lon.toFixed(5)}`;
     ui.sismoMapCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}° · ${prof} km`;
 
-    ui.sismoTown.textContent = e.localidad || 'Localidad de referencia no especificada';
-    ui.sismoZone.textContent = e.zona ? `Zonificación: ${e.zona}` : 'Región tectónica de Panamá';
+    ui.sismoTown.textContent = e.geo_poblado_ref 
+      ? (e.geo_poblado_ref + ' (' + e.geo_distancia_km + ' km ' + (e.geo_rumbo || '') + ')') 
+      : (e.localidad || 'Localidad de referencia no especificada');
+    ui.sismoZone.textContent = e.geo_tipo === 'MARITIMO'
+      ? ('Clasificación: Marítimo · ' + (e.geo_zona_maritima || 'ZEE') + ' [IGC: ' + e.region + ']')
+      : (e.geo_provincia
+          ? ('Provincia: ' + e.geo_provincia + (e.geo_distrito ? ' · Distrito de ' + e.geo_distrito : '') + (e.geo_corregimiento ? ' · Corr. ' + e.geo_corregimiento : '') + ' [IGC: ' + e.region + ']')
+          : (e.zona ? ('Zonificación: ' + e.zona) : 'Región tectónica de Panamá'));
 
     // Distancia geográfica al visitante si la geolocalización está activa
     updateFichaDistance(e, lat, lon);

@@ -1,5 +1,7 @@
 'use strict';
 
+import { enrichEvent, enrichEvents, resolveLocation } from './geo-resolver.mjs';
+
 /**
  * SISMODATA PANAMÁ — API DE CONSULTA HISTÓRICA
  * Función HTTP (Netlify): Consulta analítica y estadística de registros sísmicos en Supabase.
@@ -415,9 +417,19 @@ function calculateStatistics(rows) {
       }
     }
 
-    const reg = (r.region || 'Sin especificar').trim();
-    if (reg) {
-      regionCounts[reg] = (regionCounts[reg] || 0) + 1;
+    let regKey = (r.region || 'Sin especificar').trim();
+    if (r.latitud != null && r.longitud != null && !isNaN(Number(r.latitud)) && !isNaN(Number(r.longitud))) {
+      const geo = r.geo_provincia ? r : resolveLocation(r.latitud, r.longitud);
+      if (geo.geo_tipo === 'MARITIMO') {
+        regKey = geo.geo_zona_maritima ? 'Marítimo (' + geo.geo_zona_maritima + ')' : 'Marítimo (ZEE)';
+      } else if (geo.geo_tipo === 'FRONTERIZO') {
+        regKey = geo.geo_provincia || 'Región Fronteriza';
+      } else if (geo.geo_provincia) {
+        regKey = geo.geo_provincia;
+      }
+    }
+    if (regKey) {
+      regionCounts[regKey] = (regionCounts[regKey] || 0) + 1;
     }
   }
 

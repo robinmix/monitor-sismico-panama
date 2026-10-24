@@ -1,5 +1,7 @@
 'use strict';
 
+const { enrichEvents } = require('../../lib/geo-resolver.js');
+
 // ÚNICA fuente de eventos sísmicos: Instituto de Geociencias, Universidad de Panamá.
 const SOURCE_URLS = [
   'https://sismosgeociencias.up.ac.pa/',
@@ -106,7 +108,7 @@ function parseEvents(html) {
     });
   }
   results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  return results;
+  return enrichEvents(results);
 }
 async function requestSource() {
   const errors = [];

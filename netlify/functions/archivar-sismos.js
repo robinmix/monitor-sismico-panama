@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveLocation } = require('../../lib/geo-resolver.js');
+
 /**
  * SISMODATA PANAMÁ — ARCHIVADO SÍSMICO HISTÓRICO
  * Scheduled Function (Netlify): Ingesta periódica cada 30 minutos (horario UTC).
@@ -198,7 +200,9 @@ function buildNormalizedRecord(ev, sourceUid, incidencia = null) {
   const safeTimeId = ev.hora.replace(/[^0-9A-Za-z]/g, '');
   const sourceEventId = `IGC-${ev.fecha.replace(/-/g, '')}-${safeTimeId}`;
 
+  const calculoGeo = resolveLocation(ev.latitud, ev.longitud, ev.region);
   const datosOriginales = {
+    geolocalizacion_calculada: calculoGeo,
     estado_fuente: ev.estado,
     fecha_fuente: ev.fecha,
     hora_fuente: ev.hora,

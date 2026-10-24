@@ -1,5 +1,7 @@
 'use strict';
 
+import { enrichEvent } from './geo-resolver.mjs';
+
 /**
  * SISMODATA PANAMÁ — CONSULTA DE DETALLE INDIVIDUAL DE SISMO
  * Función HTTP (Netlify): Recupera un evento sísmico específico desde Supabase
@@ -161,7 +163,8 @@ const handler = async function(event, context, options = {}) {
       const oldestKey = memoryCache.keys().next().value;
       memoryCache.delete(oldestKey);
     }
-    memoryCache.set(cleanId, { timestamp: Date.now(), data: publicEvent });
+    const enrichedEvent = enrichEvent(publicEvent);
+    memoryCache.set(cleanId, { timestamp: Date.now(), data: enrichedEvent });
 
     return {
       statusCode: 200,
@@ -169,7 +172,7 @@ const handler = async function(event, context, options = {}) {
       body: JSON.stringify({
         ok: true,
         origen: 'supabase',
-        evento: publicEvent
+        evento: enrichedEvent
       }, null, 2)
     };
   } catch (err) {
