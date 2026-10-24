@@ -3,33 +3,36 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
-  /* Surfaces & Backgrounds � Deep Navy Professional Palette (#0B1220) */
-  --bg-root: #0B1220;
-  --bg-surface: #152235;
-  --bg-surface-2: #1B2B40;
-  --bg-surface-hover: #1F324B;
-  --bg-surface-active: #243B58;
-  --bg-card: #152235;
-  --bg-elevated: #1B2B40;
-  --bg-input: #0E1726;
+  /* Surfaces & Backgrounds – AMOLED 5.0 High Definition Palette */
+  --bg-root: #05070B;
+  --bg-secondary: #080D15;
+  --bg-surface: #0D1624;
+  --bg-surface-2: #111F30;
+  --bg-surface-hover: #162B42;
+  --bg-surface-active: #102A43;
+  --bg-card: #0D1624;
+  --bg-elevated: #111F30;
+  --bg-input: #090F18;
 
-  /* Borders � Crisp, subtle, modern */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.09);
-  --border-card: #1E2F45;
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --border-highlight: rgba(74, 158, 255, 0.35);
-  --border-focus: #4A9EFF;
+  /* Borders – Crisp 1px AMOLED precision */
+  --border-subtle: #14283B;
+  --border-default: #18334D;
+  --border-card: #18334D;
+  --border-strong: #1B2C40;
+  --border-highlight: rgba(63, 169, 255, 0.40);
+  --border-focus: #3FA9FF;
 
   /* Typography / Text Colors (High Contrast WCAG AA) */
-  --text-main: #F3F6FB;
-  --text-secondary: #9DAFC9;
-  --text-muted: #6C82A3;
-  --text-dim: #4B5E78;
+  --text-main: #F5F8FF;
+  --text-secondary: #A6BAD3;
+  --text-muted: #839AB5;
+  --text-dim: #5B728D;
 
-  /* Professional Color System */
-  --color-blue: #4A9EFF;
-  --color-cyan: #2BC4D4;
+  /* Professional Color System & Accents */
+  --color-blue: #3FA9FF;
+  --color-blue-hover: #73C1FF;
+  --color-cyan: #22B8E8;
+  --color-interactive: #102A43;
   --color-green: #54D6A5;
   --color-yellow: #F7C843;
   --color-orange: #F58A35;
@@ -44,7 +47,7 @@
 
   /* Legacy mappings */
   --color-lime: var(--mag-below);
-  --color-amber: var(--mag-4);
+  --color-amber: var(--mag-3);
   --color-coral: var(--mag-5);
 
   /* Spacing Grid (4px system) */
@@ -146,7 +149,7 @@ a {
   justify-content: space-between;
   gap: var(--sp-6);
   border-bottom: 1px solid var(--border-subtle);
-  background-color: rgba(6, 9, 14, 0.90);
+  background-color: rgba(5, 7, 11, 0.95);
   position: sticky;
   top: 0;
   z-index: 50;
@@ -560,65 +563,65 @@ a {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Variaciones dinámicas según rango de magnitud (color real, coherente con catálogo, sin neón) */
+/* Variaciones dinámicas según rango de magnitud AMOLED 5.0 */
 .hero-circle-dial.mBelow,
 .last-event[data-mag-range="mBelow"] .hero-circle-dial {
-  background: rgba(6, 182, 212, 0.10) !important;
-  border-color: #06B6D4 !important;
-  box-shadow: 0 0 16px rgba(6, 182, 212, 0.22) !important;
+  background: rgba(84, 214, 165, 0.10) !important;
+  border-color: var(--mag-below) !important;
+  box-shadow: 0 0 16px rgba(84, 214, 165, 0.22) !important;
 }
 .hero-circle-dial.mBelow .hero-circle-val,
 .last-event[data-mag-range="mBelow"] .hero-circle-val {
-  color: #22D3EE !important;
+  color: var(--mag-below) !important;
 }
 .hero-circle-dial.mBelow .hero-circle-prefix,
 .last-event[data-mag-range="mBelow"] .hero-circle-prefix {
-  color: #06B6D4 !important;
+  color: var(--mag-below) !important;
 }
 
 .hero-circle-dial.m3,
 .last-event[data-mag-range="m3"] .hero-circle-dial {
-  background: rgba(16, 185, 129, 0.10) !important;
-  border-color: #10B981 !important;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.22) !important;
+  background: rgba(247, 200, 67, 0.10) !important;
+  border-color: var(--mag-3) !important;
+  box-shadow: 0 0 16px rgba(247, 200, 67, 0.22) !important;
 }
 .hero-circle-dial.m3 .hero-circle-val,
 .last-event[data-mag-range="m3"] .hero-circle-val {
-  color: #34D399 !important;
+  color: var(--mag-3) !important;
 }
 .hero-circle-dial.m3 .hero-circle-prefix,
 .last-event[data-mag-range="m3"] .hero-circle-prefix {
-  color: #10B981 !important;
+  color: var(--mag-3) !important;
 }
 
 .hero-circle-dial.m4,
 .last-event[data-mag-range="m4"] .hero-circle-dial {
-  background: rgba(245, 158, 11, 0.10) !important;
-  border-color: #F59E0B !important;
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.22) !important;
+  background: rgba(245, 138, 53, 0.10) !important;
+  border-color: var(--mag-4) !important;
+  box-shadow: 0 0 16px rgba(245, 138, 53, 0.22) !important;
 }
 .hero-circle-dial.m4 .hero-circle-val,
 .last-event[data-mag-range="m4"] .hero-circle-val {
-  color: #FBBF24 !important;
+  color: var(--mag-4) !important;
 }
 .hero-circle-dial.m4 .hero-circle-prefix,
 .last-event[data-mag-range="m4"] .hero-circle-prefix {
-  color: #F59E0B !important;
+  color: var(--mag-4) !important;
 }
 
 .hero-circle-dial.m5,
 .last-event[data-mag-range="m5"] .hero-circle-dial {
-  background: rgba(239, 68, 68, 0.12) !important;
-  border-color: #EF4444 !important;
-  box-shadow: 0 0 18px rgba(239, 68, 68, 0.28) !important;
+  background: rgba(239, 70, 85, 0.12) !important;
+  border-color: var(--mag-5) !important;
+  box-shadow: 0 0 18px rgba(239, 70, 85, 0.28) !important;
 }
 .hero-circle-dial.m5 .hero-circle-val,
 .last-event[data-mag-range="m5"] .hero-circle-val {
-  color: #F87171 !important;
+  color: var(--mag-5) !important;
 }
 .hero-circle-dial.m5 .hero-circle-prefix,
 .last-event[data-mag-range="m5"] .hero-circle-prefix {
-  color: #EF4444 !important;
+  color: var(--mag-5) !important;
 }
 
 .hero-circle-prefix {
@@ -832,7 +835,7 @@ a {
   gap: 8px;
   margin-top: 3px;
   padding-top: 5px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-default);
 }
 
 .dist-action-link {
@@ -983,43 +986,43 @@ a {
 }
 
 .metric.primary {
-  background: linear-gradient(145deg, #121E33 0%, #0D1524 100%);
-  border-color: rgba(56, 130, 246, 0.28);
+  background: var(--bg-surface);
+  border-color: var(--border-default);
 }
 .metric.primary::after {
   background: var(--color-blue);
 }
 
 .metric.m-below-btn {
-  background: linear-gradient(145deg, rgba(6, 182, 212, 0.12) 0%, rgba(9, 16, 28, 0.95) 100%);
-  border-color: rgba(6, 182, 212, 0.35);
+  background: var(--bg-surface);
+  border-color: rgba(84, 214, 165, 0.28);
 }
-.metric.m-below-btn strong { color: #22D3EE; }
+.metric.m-below-btn strong { color: var(--mag-below); }
 
 .metric.m-3-btn {
-  background: linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, rgba(9, 16, 28, 0.95) 100%);
-  border-color: rgba(16, 185, 129, 0.35);
+  background: var(--bg-surface);
+  border-color: rgba(247, 200, 67, 0.28);
 }
-.metric.m-3-btn strong { color: #34D399; }
+.metric.m-3-btn strong { color: var(--mag-3); }
 
 .metric.m-4-btn {
-  background: linear-gradient(145deg, rgba(245, 158, 11, 0.12) 0%, rgba(9, 16, 28, 0.95) 100%);
-  border-color: rgba(245, 158, 11, 0.35);
+  background: var(--bg-surface);
+  border-color: rgba(245, 138, 53, 0.28);
 }
-.metric.m-4-btn strong { color: #FBBF24; }
+.metric.m-4-btn strong { color: var(--mag-4); }
 
 .metric.m-5-btn {
-  background: linear-gradient(145deg, rgba(239, 68, 68, 0.15) 0%, rgba(9, 16, 28, 0.95) 100%);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--bg-surface);
+  border-color: rgba(239, 70, 85, 0.30);
 }
-.metric.m-5-btn strong { color: #F87171; }
+.metric.m-5-btn strong { color: var(--mag-5); }
 
 .stat-dist-bar {
   display: flex;
   height: 6px;
   border-radius: 3px;
   overflow: hidden;
-  background: #080D16;
+  background: #080D15;
   gap: 2px;
   margin-top: 6px;
 }
@@ -1027,10 +1030,10 @@ a {
   height: 100%;
   transition: width 0.3s ease;
 }
-.bar-seg.c-cyan { background: var(--color-cyan); }
-.bar-seg.c-lime { background: var(--color-lime); }
-.bar-seg.c-amber { background: var(--color-amber); }
-.bar-seg.c-coral { background: var(--color-coral); }
+.bar-seg.c-cyan { background: var(--mag-below); }
+.bar-seg.c-lime { background: var(--mag-3); }
+.bar-seg.c-amber { background: var(--mag-4); }
+.bar-seg.c-coral { background: var(--mag-5); }
 
 .stat-dist-legend {
   display: flex;
@@ -1041,10 +1044,10 @@ a {
   margin-top: 6px;
 }
 
-.m-below-btn::after { background: var(--color-cyan); }
-.m-3-btn::after { background: var(--color-lime); }
-.m-4-btn::after { background: var(--color-amber); }
-.m-5-btn::after { background: var(--color-coral); }
+.m-below-btn::after { background: var(--mag-below); }
+.m-3-btn::after { background: var(--mag-3); }
+.m-4-btn::after { background: var(--mag-4); }
+.m-5-btn::after { background: var(--mag-5); }
 
 .metric-button:hover {
   transform: translateY(-2px);
@@ -1943,27 +1946,27 @@ tbody tr:hover {
 }
 
 .mag-chip.mBelow {
-  background: rgba(54, 221, 243, 0.12);
-  color: var(--color-cyan);
-  border-color: rgba(54, 221, 243, 0.35);
+  background: rgba(84, 214, 165, 0.12);
+  color: var(--mag-below);
+  border-color: rgba(84, 214, 165, 0.35);
 }
 
 .mag-chip.m3 {
-  background: rgba(185, 243, 77, 0.12);
-  color: var(--color-lime);
-  border-color: rgba(185, 243, 77, 0.35);
+  background: rgba(247, 200, 67, 0.12);
+  color: var(--mag-3);
+  border-color: rgba(247, 200, 67, 0.35);
 }
 
 .mag-chip.m4 {
-  background: rgba(255, 200, 87, 0.14);
-  color: var(--color-amber);
-  border-color: rgba(255, 200, 87, 0.4);
+  background: rgba(245, 138, 53, 0.14);
+  color: var(--mag-4);
+  border-color: rgba(245, 138, 53, 0.4);
 }
 
 .mag-chip.m5 {
-  background: rgba(255, 107, 98, 0.16);
-  color: var(--color-coral);
-  border-color: rgba(255, 107, 98, 0.45);
+  background: rgba(239, 70, 85, 0.16);
+  color: var(--mag-5);
+  border-color: rgba(239, 70, 85, 0.45);
 }
 
 /* State chips */
@@ -2383,7 +2386,7 @@ td.align-right {
     z-index: 100;
     height: 54px;
     padding-top: env(safe-area-inset-top, 0px);
-    background: rgba(9, 14, 23, 0.95);
+    background: rgba(5, 7, 11, 0.95);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--border-subtle);
@@ -2450,61 +2453,61 @@ td.align-right {
     flex-shrink: 0 !important;
   }
 
-  /* Coloración real del dial móvil coherente con catálogo y sin neón */
+  /* Coloración semántica del dial móvil AMOLED 5.0 */
   .hero-circle-dial.mBelow,
   .last-event[data-mag-range="mBelow"] .hero-circle-dial {
-    background: rgba(6, 182, 212, 0.12) !important;
-    border-color: #06B6D4 !important;
+    background: rgba(84, 214, 165, 0.12) !important;
+    border-color: var(--mag-below) !important;
   }
   .hero-circle-dial.mBelow .hero-circle-val,
   .last-event[data-mag-range="mBelow"] .hero-circle-val {
-    color: #22D3EE !important;
+    color: var(--mag-below) !important;
   }
   .hero-circle-dial.mBelow .hero-circle-prefix,
   .last-event[data-mag-range="mBelow"] .hero-circle-prefix {
-    color: #06B6D4 !important;
+    color: var(--mag-below) !important;
   }
 
   .hero-circle-dial.m3,
   .last-event[data-mag-range="m3"] .hero-circle-dial {
-    background: rgba(16, 185, 129, 0.12) !important;
-    border-color: #10B981 !important;
+    background: rgba(247, 200, 67, 0.12) !important;
+    border-color: var(--mag-3) !important;
   }
   .hero-circle-dial.m3 .hero-circle-val,
   .last-event[data-mag-range="m3"] .hero-circle-val {
-    color: #34D399 !important;
+    color: var(--mag-3) !important;
   }
   .hero-circle-dial.m3 .hero-circle-prefix,
   .last-event[data-mag-range="m3"] .hero-circle-prefix {
-    color: #10B981 !important;
+    color: var(--mag-3) !important;
   }
 
   .hero-circle-dial.m4,
   .last-event[data-mag-range="m4"] .hero-circle-dial {
-    background: rgba(245, 158, 11, 0.12) !important;
-    border-color: #F59E0B !important;
+    background: rgba(245, 138, 53, 0.12) !important;
+    border-color: var(--mag-4) !important;
   }
   .hero-circle-dial.m4 .hero-circle-val,
   .last-event[data-mag-range="m4"] .hero-circle-val {
-    color: #FBBF24 !important;
+    color: var(--mag-4) !important;
   }
   .hero-circle-dial.m4 .hero-circle-prefix,
   .last-event[data-mag-range="m4"] .hero-circle-prefix {
-    color: #F59E0B !important;
+    color: var(--mag-4) !important;
   }
 
   .hero-circle-dial.m5,
   .last-event[data-mag-range="m5"] .hero-circle-dial {
-    background: rgba(239, 68, 68, 0.15) !important;
-    border-color: #EF4444 !important;
+    background: rgba(239, 70, 85, 0.15) !important;
+    border-color: var(--mag-5) !important;
   }
   .hero-circle-dial.m5 .hero-circle-val,
   .last-event[data-mag-range="m5"] .hero-circle-val {
-    color: #F87171 !important;
+    color: var(--mag-5) !important;
   }
   .hero-circle-dial.m5 .hero-circle-prefix,
   .last-event[data-mag-range="m5"] .hero-circle-prefix {
-    color: #EF4444 !important;
+    color: var(--mag-5) !important;
   }
 
   .hero-circle-val {
@@ -2620,7 +2623,7 @@ td.align-right {
   }
 
   .timer-box {
-    background: #0B1220 !important;
+    background: var(--bg-input) !important;
     border: 1px solid var(--border-subtle) !important;
     border-radius: var(--radius-sm) !important;
     padding: 8px 12px !important;
@@ -2806,21 +2809,21 @@ td.align-right {
   }
 
   .sismo-mobile-card {
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(11, 19, 36, 0.95) 100%) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border-subtle) !important;
     border-radius: var(--radius-md) !important;
     padding: 10px 12px !important;
     display: grid !important;
     grid-template-columns: 44px 1fr !important;
     gap: 6px 10px !important;
     align-items: start !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
     transition: border-color 0.15s ease, background 0.15s ease !important;
   }
 
   .sismo-mobile-card:active {
-    background: linear-gradient(135deg, rgba(20, 32, 54, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
-    border-color: rgba(56, 189, 248, 0.4) !important;
+    background: var(--bg-surface-2) !important;
+    border-color: var(--border-default) !important;
   }
 
   /* Compatibilidad semántica con tests */
@@ -2828,7 +2831,7 @@ td.align-right {
     display: contents;
   }
 
-  /* Chip circular de magnitud: Únicamente el número con coloración real */
+  /* Chip circular de magnitud AMOLED 5.0 */
   .card-mag-badge {
     grid-column: 1 !important;
     grid-row: 1 !important;
@@ -2849,24 +2852,24 @@ td.align-right {
   }
 
   .card-mag-badge.mBelow {
-    background: rgba(6, 182, 212, 0.12) !important;
-    color: #22D3EE !important;
-    border-color: #06B6D4 !important;
+    background: rgba(84, 214, 165, 0.12) !important;
+    color: var(--mag-below) !important;
+    border-color: var(--mag-below) !important;
   }
   .card-mag-badge.m3 {
-    background: rgba(16, 185, 129, 0.12) !important;
-    color: #34D399 !important;
-    border-color: #10B981 !important;
+    background: rgba(247, 200, 67, 0.12) !important;
+    color: var(--mag-3) !important;
+    border-color: var(--mag-3) !important;
   }
   .card-mag-badge.m4 {
-    background: rgba(245, 158, 11, 0.12) !important;
-    color: #FBBF24 !important;
-    border-color: #F59E0B !important;
+    background: rgba(245, 138, 53, 0.12) !important;
+    color: var(--mag-4) !important;
+    border-color: var(--mag-4) !important;
   }
   .card-mag-badge.m5 {
-    background: rgba(239, 68, 68, 0.15) !important;
-    color: #F87171 !important;
-    border-color: #EF4444 !important;
+    background: rgba(239, 70, 85, 0.15) !important;
+    color: var(--mag-5) !important;
+    border-color: var(--mag-5) !important;
   }
 
   /* Columna de información del sismo: Ancho completo sin compresión */
@@ -3067,7 +3070,7 @@ td.align-right {
     z-index: 120;
     height: auto;
     min-height: 58px;
-    background: rgba(6, 9, 14, 0.94);
+    background: rgba(5, 7, 11, 0.96);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-top: 1px solid var(--border-subtle);
@@ -3745,27 +3748,27 @@ td.align-right {
 }
 
 .sismo-mag-chip.mBelow {
-  background: rgba(54, 221, 243, 0.15);
-  color: var(--color-cyan);
-  border: 1px solid var(--color-cyan);
+  background: rgba(84, 214, 165, 0.15);
+  color: var(--mag-below);
+  border: 1px solid var(--mag-below);
 }
 
 .sismo-mag-chip.m3 {
-  background: rgba(185, 243, 77, 0.15);
-  color: var(--color-lime);
-  border: 1px solid var(--color-lime);
+  background: rgba(247, 200, 67, 0.15);
+  color: var(--mag-3);
+  border: 1px solid var(--mag-3);
 }
 
 .sismo-mag-chip.m4 {
-  background: rgba(255, 200, 87, 0.15);
-  color: var(--color-amber);
-  border: 1px solid var(--color-amber);
+  background: rgba(245, 138, 53, 0.15);
+  color: var(--mag-4);
+  border: 1px solid var(--mag-4);
 }
 
 .sismo-mag-chip.m5 {
-  background: rgba(255, 107, 98, 0.15);
-  color: var(--color-coral);
-  border: 1px solid var(--color-coral);
+  background: rgba(239, 70, 85, 0.15);
+  color: var(--mag-5);
+  border: 1px solid var(--mag-5);
 }
 
 .sismo-state-chip {
