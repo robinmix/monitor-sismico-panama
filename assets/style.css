@@ -1,6 +1,6 @@
 :root {
   /* Fonts: Inter Professional */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
   /* Surfaces & Backgrounds – AMOLED 5.0 High Definition Palette */
@@ -39,11 +39,12 @@
   --color-red: #EF4655;
   --color-violet: #8B5CF6;
 
-  /* Semantic Magnitude Classes */
-  --mag-below: #54D6A5;     /* < 3.0: Menor (Green) */
-  --mag-3: #F7C843;         /* 3.0 - 3.9: Ligero (Yellow) */
-  --mag-4: #F58A35;         /* 4.0 - 4.9: Moderado (Orange) */
-  --mag-5: #EF4655;         /* >= 5.0: Fuerte (Red) */
+  /* Semantic Magnitude Classes — AMOLED Vibrant 5.1 */
+  --mag-below: #31E8D0;     /* < 3.0: Turquesa vivo */
+  --mag-3: #39E59A;         /* 3.0 – 3.9: Verde esmeralda brillante */
+  --mag-4: #FF9A32;         /* 4.0 – 4.9: Naranja brillante */
+  --mag-5: #FF5266;         /* >= 5.0: Rojo coral intenso */
+  --mag-neutral: #839AB5;   /* Neutral / inválido / ausente */
 
   /* Legacy mappings */
   --color-lime: var(--mag-below);
@@ -96,7 +97,7 @@ body {
   max-width: 100vw;
   font-family: var(--font-sans);
   font-size: 14.5px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.5;
   color: var(--text-main);
   background-color: var(--bg-root);
@@ -563,16 +564,17 @@ a {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Variaciones dinámicas según rango de magnitud AMOLED 5.0 */
+/* Variaciones dinámicas según rango de magnitud AMOLED Vibrant 5.1 */
 .hero-circle-dial.mBelow,
 .last-event[data-mag-range="mBelow"] .hero-circle-dial {
-  background: rgba(84, 214, 165, 0.10) !important;
+  background: rgba(49, 232, 208, 0.12) !important;
   border-color: var(--mag-below) !important;
-  box-shadow: 0 0 16px rgba(84, 214, 165, 0.22) !important;
+  box-shadow: 0 0 16px rgba(49, 232, 208, 0.25) !important;
 }
 .hero-circle-dial.mBelow .hero-circle-val,
 .last-event[data-mag-range="mBelow"] .hero-circle-val {
   color: var(--mag-below) !important;
+  font-weight: 800 !important;
 }
 .hero-circle-dial.mBelow .hero-circle-prefix,
 .last-event[data-mag-range="mBelow"] .hero-circle-prefix {
@@ -581,13 +583,14 @@ a {
 
 .hero-circle-dial.m3,
 .last-event[data-mag-range="m3"] .hero-circle-dial {
-  background: rgba(247, 200, 67, 0.10) !important;
+  background: rgba(57, 229, 154, 0.12) !important;
   border-color: var(--mag-3) !important;
-  box-shadow: 0 0 16px rgba(247, 200, 67, 0.22) !important;
+  box-shadow: 0 0 16px rgba(57, 229, 154, 0.25) !important;
 }
 .hero-circle-dial.m3 .hero-circle-val,
 .last-event[data-mag-range="m3"] .hero-circle-val {
   color: var(--mag-3) !important;
+  font-weight: 800 !important;
 }
 .hero-circle-dial.m3 .hero-circle-prefix,
 .last-event[data-mag-range="m3"] .hero-circle-prefix {
@@ -596,13 +599,14 @@ a {
 
 .hero-circle-dial.m4,
 .last-event[data-mag-range="m4"] .hero-circle-dial {
-  background: rgba(245, 138, 53, 0.10) !important;
+  background: rgba(255, 154, 50, 0.12) !important;
   border-color: var(--mag-4) !important;
-  box-shadow: 0 0 16px rgba(245, 138, 53, 0.22) !important;
+  box-shadow: 0 0 16px rgba(255, 154, 50, 0.25) !important;
 }
 .hero-circle-dial.m4 .hero-circle-val,
 .last-event[data-mag-range="m4"] .hero-circle-val {
   color: var(--mag-4) !important;
+  font-weight: 800 !important;
 }
 .hero-circle-dial.m4 .hero-circle-prefix,
 .last-event[data-mag-range="m4"] .hero-circle-prefix {
@@ -611,17 +615,34 @@ a {
 
 .hero-circle-dial.m5,
 .last-event[data-mag-range="m5"] .hero-circle-dial {
-  background: rgba(239, 70, 85, 0.12) !important;
+  background: rgba(255, 82, 102, 0.14) !important;
   border-color: var(--mag-5) !important;
-  box-shadow: 0 0 18px rgba(239, 70, 85, 0.28) !important;
+  box-shadow: 0 0 18px rgba(255, 82, 102, 0.30) !important;
 }
 .hero-circle-dial.m5 .hero-circle-val,
 .last-event[data-mag-range="m5"] .hero-circle-val {
   color: var(--mag-5) !important;
+  font-weight: 800 !important;
 }
 .hero-circle-dial.m5 .hero-circle-prefix,
 .last-event[data-mag-range="m5"] .hero-circle-prefix {
   color: var(--mag-5) !important;
+}
+
+.hero-circle-dial.mNeutral,
+.last-event[data-mag-range="mNeutral"] .hero-circle-dial {
+  background: rgba(131, 154, 181, 0.10) !important;
+  border-color: var(--mag-neutral) !important;
+  box-shadow: none !important;
+}
+.hero-circle-dial.mNeutral .hero-circle-val,
+.last-event[data-mag-range="mNeutral"] .hero-circle-val {
+  color: var(--mag-neutral) !important;
+  font-weight: 800 !important;
+}
+.hero-circle-dial.mNeutral .hero-circle-prefix,
+.last-event[data-mag-range="mNeutral"] .hero-circle-prefix {
+  color: var(--mag-neutral) !important;
 }
 
 .hero-circle-prefix {
@@ -636,7 +657,7 @@ a {
 .hero-circle-val {
   font-family: var(--font-sans);
   font-size: 58px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 0.95;
   color: #FFFFFF;
   letter-spacing: -2px;
@@ -995,25 +1016,25 @@ a {
 
 .metric.m-below-btn {
   background: var(--bg-surface);
-  border-color: rgba(84, 214, 165, 0.28);
+  border-color: rgba(49, 232, 208, 0.35);
 }
 .metric.m-below-btn strong { color: var(--mag-below); }
 
 .metric.m-3-btn {
   background: var(--bg-surface);
-  border-color: rgba(247, 200, 67, 0.28);
+  border-color: rgba(57, 229, 154, 0.35);
 }
 .metric.m-3-btn strong { color: var(--mag-3); }
 
 .metric.m-4-btn {
   background: var(--bg-surface);
-  border-color: rgba(245, 138, 53, 0.28);
+  border-color: rgba(255, 154, 50, 0.35);
 }
 .metric.m-4-btn strong { color: var(--mag-4); }
 
 .metric.m-5-btn {
   background: var(--bg-surface);
-  border-color: rgba(239, 70, 85, 0.30);
+  border-color: rgba(255, 82, 102, 0.35);
 }
 .metric.m-5-btn strong { color: var(--mag-5); }
 
@@ -1936,7 +1957,7 @@ tbody tr:hover {
   display: inline-block;
   font-family: var(--font-mono);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   text-align: center;
   padding: 4px 10px;
   min-width: 46px;
@@ -1946,27 +1967,33 @@ tbody tr:hover {
 }
 
 .mag-chip.mBelow {
-  background: rgba(84, 214, 165, 0.12);
+  background: rgba(49, 232, 208, 0.14);
   color: var(--mag-below);
-  border-color: rgba(84, 214, 165, 0.35);
+  border-color: rgba(49, 232, 208, 0.40);
 }
 
 .mag-chip.m3 {
-  background: rgba(247, 200, 67, 0.12);
+  background: rgba(57, 229, 154, 0.14);
   color: var(--mag-3);
-  border-color: rgba(247, 200, 67, 0.35);
+  border-color: rgba(57, 229, 154, 0.40);
 }
 
 .mag-chip.m4 {
-  background: rgba(245, 138, 53, 0.14);
+  background: rgba(255, 154, 50, 0.14);
   color: var(--mag-4);
-  border-color: rgba(245, 138, 53, 0.4);
+  border-color: rgba(255, 154, 50, 0.40);
 }
 
 .mag-chip.m5 {
-  background: rgba(239, 70, 85, 0.16);
+  background: rgba(255, 82, 102, 0.16);
   color: var(--mag-5);
-  border-color: rgba(239, 70, 85, 0.45);
+  border-color: rgba(255, 82, 102, 0.45);
+}
+
+.mag-chip.mNeutral {
+  background: rgba(131, 154, 181, 0.12);
+  color: var(--mag-neutral);
+  border-color: rgba(131, 154, 181, 0.35);
 }
 
 /* State chips */
@@ -2453,15 +2480,16 @@ td.align-right {
     flex-shrink: 0 !important;
   }
 
-  /* Coloración semántica del dial móvil AMOLED 5.0 */
+  /* Coloración semántica del dial móvil AMOLED Vibrant 5.1 */
   .hero-circle-dial.mBelow,
   .last-event[data-mag-range="mBelow"] .hero-circle-dial {
-    background: rgba(84, 214, 165, 0.12) !important;
+    background: rgba(49, 232, 208, 0.14) !important;
     border-color: var(--mag-below) !important;
   }
   .hero-circle-dial.mBelow .hero-circle-val,
   .last-event[data-mag-range="mBelow"] .hero-circle-val {
     color: var(--mag-below) !important;
+    font-weight: 800 !important;
   }
   .hero-circle-dial.mBelow .hero-circle-prefix,
   .last-event[data-mag-range="mBelow"] .hero-circle-prefix {
@@ -2470,12 +2498,13 @@ td.align-right {
 
   .hero-circle-dial.m3,
   .last-event[data-mag-range="m3"] .hero-circle-dial {
-    background: rgba(247, 200, 67, 0.12) !important;
+    background: rgba(57, 229, 154, 0.14) !important;
     border-color: var(--mag-3) !important;
   }
   .hero-circle-dial.m3 .hero-circle-val,
   .last-event[data-mag-range="m3"] .hero-circle-val {
     color: var(--mag-3) !important;
+    font-weight: 800 !important;
   }
   .hero-circle-dial.m3 .hero-circle-prefix,
   .last-event[data-mag-range="m3"] .hero-circle-prefix {
@@ -2484,12 +2513,13 @@ td.align-right {
 
   .hero-circle-dial.m4,
   .last-event[data-mag-range="m4"] .hero-circle-dial {
-    background: rgba(245, 138, 53, 0.12) !important;
+    background: rgba(255, 154, 50, 0.14) !important;
     border-color: var(--mag-4) !important;
   }
   .hero-circle-dial.m4 .hero-circle-val,
   .last-event[data-mag-range="m4"] .hero-circle-val {
     color: var(--mag-4) !important;
+    font-weight: 800 !important;
   }
   .hero-circle-dial.m4 .hero-circle-prefix,
   .last-event[data-mag-range="m4"] .hero-circle-prefix {
@@ -2498,21 +2528,37 @@ td.align-right {
 
   .hero-circle-dial.m5,
   .last-event[data-mag-range="m5"] .hero-circle-dial {
-    background: rgba(239, 70, 85, 0.15) !important;
+    background: rgba(255, 82, 102, 0.16) !important;
     border-color: var(--mag-5) !important;
   }
   .hero-circle-dial.m5 .hero-circle-val,
   .last-event[data-mag-range="m5"] .hero-circle-val {
     color: var(--mag-5) !important;
+    font-weight: 800 !important;
   }
   .hero-circle-dial.m5 .hero-circle-prefix,
   .last-event[data-mag-range="m5"] .hero-circle-prefix {
     color: var(--mag-5) !important;
   }
 
+  .hero-circle-dial.mNeutral,
+  .last-event[data-mag-range="mNeutral"] .hero-circle-dial {
+    background: rgba(131, 154, 181, 0.12) !important;
+    border-color: var(--mag-neutral) !important;
+  }
+  .hero-circle-dial.mNeutral .hero-circle-val,
+  .last-event[data-mag-range="mNeutral"] .hero-circle-val {
+    color: var(--mag-neutral) !important;
+    font-weight: 800 !important;
+  }
+  .hero-circle-dial.mNeutral .hero-circle-prefix,
+  .last-event[data-mag-range="mNeutral"] .hero-circle-prefix {
+    color: var(--mag-neutral) !important;
+  }
+
   .hero-circle-val {
     font-size: 28px !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     line-height: 1 !important;
     letter-spacing: -0.5px !important;
   }
@@ -2831,7 +2877,7 @@ td.align-right {
     display: contents;
   }
 
-  /* Chip circular de magnitud AMOLED 5.0 */
+  /* Chip circular de magnitud AMOLED Vibrant 5.1 */
   .card-mag-badge {
     grid-column: 1 !important;
     grid-row: 1 !important;
@@ -2840,7 +2886,7 @@ td.align-right {
     justify-content: center !important;
     font-family: var(--font-sans) !important;
     font-size: 16px !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     width: 46px !important;
     min-width: 46px !important;
     height: 46px !important;
@@ -2852,24 +2898,29 @@ td.align-right {
   }
 
   .card-mag-badge.mBelow {
-    background: rgba(84, 214, 165, 0.12) !important;
+    background: rgba(49, 232, 208, 0.14) !important;
     color: var(--mag-below) !important;
     border-color: var(--mag-below) !important;
   }
   .card-mag-badge.m3 {
-    background: rgba(247, 200, 67, 0.12) !important;
+    background: rgba(57, 229, 154, 0.14) !important;
     color: var(--mag-3) !important;
     border-color: var(--mag-3) !important;
   }
   .card-mag-badge.m4 {
-    background: rgba(245, 138, 53, 0.12) !important;
+    background: rgba(255, 154, 50, 0.14) !important;
     color: var(--mag-4) !important;
     border-color: var(--mag-4) !important;
   }
   .card-mag-badge.m5 {
-    background: rgba(239, 70, 85, 0.15) !important;
+    background: rgba(255, 82, 102, 0.16) !important;
     color: var(--mag-5) !important;
     border-color: var(--mag-5) !important;
+  }
+  .card-mag-badge.mNeutral {
+    background: rgba(131, 154, 181, 0.12) !important;
+    color: var(--mag-neutral) !important;
+    border-color: var(--mag-neutral) !important;
   }
 
   /* Columna de información del sismo: Ancho completo sin compresión */
@@ -3740,7 +3791,7 @@ td.align-right {
 .sismo-mag-chip {
   font-family: var(--font-mono);
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   padding: 4px 12px;
   border-radius: 10px;
   display: inline-block;
@@ -3748,27 +3799,33 @@ td.align-right {
 }
 
 .sismo-mag-chip.mBelow {
-  background: rgba(84, 214, 165, 0.15);
+  background: rgba(49, 232, 208, 0.16);
   color: var(--mag-below);
   border: 1px solid var(--mag-below);
 }
 
 .sismo-mag-chip.m3 {
-  background: rgba(247, 200, 67, 0.15);
+  background: rgba(57, 229, 154, 0.16);
   color: var(--mag-3);
   border: 1px solid var(--mag-3);
 }
 
 .sismo-mag-chip.m4 {
-  background: rgba(245, 138, 53, 0.15);
+  background: rgba(255, 154, 50, 0.16);
   color: var(--mag-4);
   border: 1px solid var(--mag-4);
 }
 
 .sismo-mag-chip.m5 {
-  background: rgba(239, 70, 85, 0.15);
+  background: rgba(255, 82, 102, 0.18);
   color: var(--mag-5);
   border: 1px solid var(--mag-5);
+}
+
+.sismo-mag-chip.mNeutral {
+  background: rgba(131, 154, 181, 0.14);
+  color: var(--mag-neutral);
+  border: 1px solid var(--mag-neutral);
 }
 
 .sismo-state-chip {
@@ -4135,6 +4192,14 @@ td.align-right {
   border-bottom-color: #0F1726 !important;
 }
 .maplibre-sismo-popup .popup-mag {
+  font-weight: 800 !important;
+}
+.popup-mag.mBelow { color: var(--mag-below) !important; }
+.popup-mag.m3 { color: var(--mag-3) !important; }
+.popup-mag.m4 { color: var(--mag-4) !important; }
+.popup-mag.m5 { color: var(--mag-5) !important; }
+.popup-mag.mNeutral { color: var(--mag-neutral) !important; }
+.popup-mag-prev {
   font-family: var(--font-mono) !important;
   font-weight: 700 !important;
   font-size: 14px !important;
@@ -5295,7 +5360,7 @@ td.align-right {
 
 .hero-mag-val {
   font-size: 44px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
   color: var(--text-main);
   letter-spacing: -0.02em;
@@ -5385,27 +5450,33 @@ td.align-right {
 }
 
 .sismo-level-badge.mBelow {
-  background-color: rgba(84, 214, 165, 0.15);
+  background-color: rgba(49, 232, 208, 0.16);
   color: var(--mag-below);
-  border: 1px solid rgba(84, 214, 165, 0.35);
+  border: 1px solid rgba(49, 232, 208, 0.40);
 }
 
 .sismo-level-badge.m3 {
-  background-color: rgba(247, 200, 67, 0.15);
+  background-color: rgba(57, 229, 154, 0.16);
   color: var(--mag-3);
-  border: 1px solid rgba(247, 200, 67, 0.35);
+  border: 1px solid rgba(57, 229, 154, 0.40);
 }
 
 .sismo-level-badge.m4 {
-  background-color: rgba(245, 138, 53, 0.15);
+  background-color: rgba(255, 154, 50, 0.16);
   color: var(--mag-4);
-  border: 1px solid rgba(245, 138, 53, 0.35);
+  border: 1px solid rgba(255, 154, 50, 0.40);
 }
 
 .sismo-level-badge.m5 {
-  background-color: rgba(239, 70, 85, 0.15);
+  background-color: rgba(255, 82, 102, 0.18);
   color: var(--mag-5);
-  border: 1px solid rgba(239, 70, 85, 0.35);
+  border: 1px solid rgba(255, 82, 102, 0.45);
+}
+
+.sismo-level-badge.mNeutral {
+  background-color: rgba(131, 154, 181, 0.14);
+  color: var(--mag-neutral);
+  border: 1px solid rgba(131, 154, 181, 0.40);
 }
 
 /* AJUSTES FINOS DE TARJETAS M�VILES */

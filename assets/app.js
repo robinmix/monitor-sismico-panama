@@ -17,7 +17,8 @@
   const SOURCE = 'https://sismosgeociencias.up.ac.pa/';
   const INTERVAL_MS = 5 * 60 * 1000;
   const LIMIT = 25;
-  const COLORS = ['#54D6A5', '#F7C843', '#F58A35', '#EF4655'];
+  const COLORS = ['#31E8D0', '#39E59A', '#FF9A32', '#FF5266'];
+  const NEUTRAL_COLOR = '#839AB5';
   const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map(el => [el.id, el]));
   const state = {
     events: [],
@@ -65,8 +66,21 @@
   const num = n => Number(n).toLocaleString('es-PA', {maximumFractionDigits:0});
   const localDate = dt => isoDateFmt.format(dt);
   const localHour = dt => hourFmt.format(dt);
-  const magnitudeClass = mag => mag >= 5 ? 'm5' : mag >= 4 ? 'm4' : mag >= 3 ? 'm3' : 'mBelow';
-  const magColor = mag => mag >= 5 ? COLORS[3] : mag >= 4 ? COLORS[2] : mag >= 3 ? COLORS[1] : COLORS[0];
+  const isValidMag = mag => typeof mag === 'number' && !Number.isNaN(mag) && mag > 0;
+  const magnitudeClass = mag => {
+    if (!isValidMag(mag)) return 'mNeutral';
+    if (mag >= 5.0) return 'm5';
+    if (mag >= 4.0) return 'm4';
+    if (mag >= 3.0) return 'm3';
+    return 'mBelow';
+  };
+  const magColor = mag => {
+    if (!isValidMag(mag)) return NEUTRAL_COLOR;
+    if (mag >= 5.0) return COLORS[3];
+    if (mag >= 4.0) return COLORS[2];
+    if (mag >= 3.0) return COLORS[1];
+    return COLORS[0];
+  };
   const magText = n => Number(n).toFixed(1);
   const pct = (a, total) => total ? `${Math.round(a / total * 100)}%` : '0%';
   const safe = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1254,6 +1268,7 @@
     ui.sismoMagChip.textContent = `M ${magText(mag)}`;
     ui.sismoMagChip.className = `sismo-mag-chip ${magnitudeClass(mag)}`;
     ui.sismoStateChip.textContent = String(e.estado || 'REVISADO').toUpperCase();
+    ui.sismoLevelText.className = `sismo-level-badge ${magnitudeClass(mag)}`;
     ui.sismoLevelText.textContent = mag >= 5 ? 'Sismo fuerte (M ≥ 5.0)' :
                                     mag >= 4 ? 'Sismo moderado (M 4.0–4.9)' :
                                     mag >= 3 ? 'Sismo menor (M 3.0–3.9)' :
