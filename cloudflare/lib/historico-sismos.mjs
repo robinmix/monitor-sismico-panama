@@ -513,7 +513,7 @@ async function queryHistoricalSeismicData(filters, supabase) {
     for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
       let statsQuery = supabase
         .from('sismos')
-        .select('magnitud, profundidad_km, fecha_hora, region');
+        .select('magnitud, profundidad_km, fecha_hora, region, latitud, longitud');
       statsQuery = applyFiltersToQuery(statsQuery, filters);
       statsQuery = statsQuery.range(offset, offset + CHUNK_SIZE - 1);
 
@@ -548,7 +548,7 @@ async function queryHistoricalSeismicData(filters, supabase) {
     if (eventsErr) {
       throw new Error(`Error obteniendo eventos paginados en Supabase: ${eventsErr.message}`);
     }
-    eventos = eventsData || [];
+    eventos = enrichEvents(eventsData || []);
   }
 
   return {
