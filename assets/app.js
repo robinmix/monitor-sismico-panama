@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261025amoled521';
+  const APP_BUILD_VERSION = '20261025pushsec1';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
@@ -2416,14 +2416,29 @@
      NOTIFICACIONES WEB PUSH DE SISMOS
      ========================================================================== */
   function urlB64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
+    const clean = (base64String || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+    const unpadded = clean.replace(/=+$/, '');
+    const padding = '='.repeat((4 - (unpadded.length % 4)) % 4);
+    const rawData = window.atob(unpadded + padding);
     const outputArray = new Uint8Array(rawData.length);
     for (let i = 0; i < rawData.length; ++i) {
       outputArray[i] = rawData.charCodeAt(i);
     }
     return outputArray;
+  }
+
+  function bufferToB64Url(buffer) {
+    if (!buffer) return '';
+    const bytes = new Uint8Array(buffer);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function getEndpointTokenKey(endpoint) {
+    let hash = 0;
+    for (let i = 0; i < endpoint.length; i++) hash = ((hash << 5) - hash + endpoint.charCodeAt(i)) | 0;
+    return 'sismopa_push_tok_' + Math.abs(hash);
   }
 
   async function initPushNotifications() {
@@ -2443,30 +2458,36 @@
       return;
     }
 
+    async function getVapidPublicKey() {
+      try {
+        const res = await fetch('/api/push-vapid-key');
+        const data = await res.json();
+        if (res.ok && data.ok && data.vapidPublicKey) {
+          return data.vapidPublicKey;
+        }
+        return null;
+      } catch (err) {
+        return null;
+      }
+    }
+
     async function checkSubscription() {
       try {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
+
         if (Notification.permission === 'denied') {
           badge.textContent = 'Bloqueadas';
           badge.className = 'notif-status-badge denied';
           detail.textContent = 'El permiso fue denegado en el navegador. Para recibirlas, permite las notificaciones en la configuración del sitio.';
           btnToggle.textContent = 'Permiso denegado';
+          btnToggle.className = 'btn-push-toggle disabled';
           btnToggle.disabled = true;
           if (btnTest) btnTest.hidden = true;
           return null;
         }
 
-        if (sub) {
-          badge.textContent = 'Activas';
-          badge.className = 'notif-status-badge active';
-          detail.textContent = 'Recibirás avisos inmediatos en este dispositivo cada vez que el IGC-UP publique un nuevo sismo.';
-          btnToggle.textContent = 'Desactivar notificaciones';
-          btnToggle.className = 'btn-push-toggle active';
-          btnToggle.disabled = false;
-          if (btnTest) btnTest.hidden = false;
-          return sub;
-        } else {
+        if (!sub) {
           badge.textContent = 'Desactivadas';
           badge.className = 'notif-status-badge inactive';
           detail.textContent = 'Activa las notificaciones voluntarias para recibir alertas de actividad sísmica en este dispositivo.';
@@ -2476,6 +2497,51 @@
           if (btnTest) btnTest.hidden = true;
           return null;
         }
+
+        // Comprobar si la suscripción usa una clave VAPID anterior
+        const serverKey = await getVapidPublicKey();
+        let isOutdated = false;
+        if (serverKey && sub.options && sub.options.applicationServerKey) {
+          const localKey = bufferToB64Url(sub.options.applicationServerKey);
+          if (localKey && localKey !== serverKey) {
+            isOutdated = true;
+          }
+        }
+
+        const tokKey = getEndpointTokenKey(sub.endpoint);
+        const hasToken = !!localStorage.getItem(tokKey);
+
+        if (isOutdated) {
+          badge.textContent = 'Actualización requerida';
+          badge.className = 'notif-status-badge denied';
+          detail.textContent = 'Tu suscripción utiliza credenciales de seguridad anteriores. Pulsa «Reactivar notificaciones» para actualizarla.';
+          btnToggle.textContent = 'Reactivar notificaciones';
+          btnToggle.className = 'btn-push-toggle active';
+          btnToggle.disabled = false;
+          if (btnTest) btnTest.hidden = true;
+          return sub;
+        }
+
+        if (!hasToken) {
+          badge.textContent = 'Sincronización requerida';
+          badge.className = 'notif-status-badge inactive';
+          detail.textContent = 'La suscripción requiere registrarse con el servidor para autorizar pruebas. Pulsa «Reactivar notificaciones».';
+          btnToggle.textContent = 'Reactivar notificaciones';
+          btnToggle.className = 'btn-push-toggle active';
+          btnToggle.disabled = false;
+          if (btnTest) btnTest.hidden = true;
+          return sub;
+        }
+
+        // Suscripción vigente, autorizada y confirmada
+        badge.textContent = 'Activas';
+        badge.className = 'notif-status-badge active';
+        detail.textContent = 'Recibirás avisos inmediatos en este dispositivo cada vez que el IGC-UP publique un nuevo sismo.';
+        btnToggle.textContent = 'Desactivar notificaciones';
+        btnToggle.className = 'btn-push-toggle active';
+        btnToggle.disabled = false;
+        if (btnTest) btnTest.hidden = false;
+        return sub;
       } catch (err) {
         console.warn('[Push] Error comprobando estado:', err);
         return null;
@@ -2487,9 +2553,20 @@
       try {
         const reg = await navigator.serviceWorker.ready;
         const currentSub = await reg.pushManager.getSubscription();
+        const serverKey = await getVapidPublicKey();
 
-        if (currentSub) {
-          // Desactivar
+        let isOutdated = false;
+        if (currentSub && serverKey && currentSub.options && currentSub.options.applicationServerKey) {
+          const localKey = bufferToB64Url(currentSub.options.applicationServerKey);
+          if (localKey && localKey !== serverKey) {
+            isOutdated = true;
+          }
+        }
+        const tokKey = currentSub ? getEndpointTokenKey(currentSub.endpoint) : '';
+        const hasToken = currentSub ? !!localStorage.getItem(tokKey) : false;
+
+        if (currentSub && !isOutdated && hasToken) {
+          // Desactivación voluntaria
           await currentSub.unsubscribe();
           try {
             await fetch('/api/push-subscribe', {
@@ -2498,36 +2575,62 @@
               body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint })
             });
           } catch (e) {}
+          localStorage.removeItem(tokKey);
           await checkSubscription();
         } else {
-          // Activar
+          // Activación o Renovación/Reactivación
+          if (currentSub) {
+            // Limpiar suscripción anterior
+            try {
+              await currentSub.unsubscribe();
+              await fetch('/api/push-subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint })
+              });
+            } catch (e) {}
+            if (tokKey) localStorage.removeItem(tokKey);
+          }
+
           const perm = await Notification.requestPermission();
           if (perm !== 'granted') {
             await checkSubscription();
             return;
           }
 
-          // Obtener clave pública VAPID del servidor
-          const vapidRes = await fetch('/api/push-vapid-key').then(r => r.json()).catch(() => null);
-          const vapidKey = vapidRes?.vapidPublicKey || 'BOkJ0YIiK-7MQsdojNxZ0X6gVaa-ONOUyrd7rBMbKuZ-GaivoJtKmMXzoziLS80qjUz_fjpXbktjQIv7yB8bIK4';
+          if (!serverKey) {
+            throw new Error('El servicio VAPID no está activo en el servidor. Intenta en unos minutos.');
+          }
 
           const newSub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: urlB64ToUint8Array(vapidKey)
+            applicationServerKey: urlB64ToUint8Array(serverKey)
           });
 
-          // Registrar en servidor
-          await fetch('/api/push-subscribe', {
+          // Registrar en servidor y obtener test_token
+          const subRes = await fetch('/api/push-subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'subscribe', subscription: newSub })
           });
+          const subData = await subRes.json();
+          if (!subRes.ok || !subData.ok) {
+            throw new Error(subData.error || 'Error al registrar suscripción en la base de datos');
+          }
+
+          if (subData.test_token) {
+            localStorage.setItem(getEndpointTokenKey(newSub.endpoint), subData.test_token);
+          }
 
           await checkSubscription();
         }
       } catch (err) {
         console.error('[Push] Error al alternar notificaciones:', err);
-        detail.textContent = 'No se pudo completar la suscripción: ' + (err.message || 'Error de conexión');
+        if (err.name === 'AbortError' || err.message?.includes('push service error')) {
+          detail.textContent = 'El servicio Push del navegador no pudo conectar con los servidores de mensajería (FCM/Google). En computadoras esto ocurre comúnmente por políticas de red, firewall, VPN o perfiles de invitado en Chrome.';
+        } else {
+          detail.textContent = 'No se pudo completar la suscripción: ' + (err.message || 'Error de conexión');
+        }
       } finally {
         btnToggle.disabled = false;
       }
@@ -2542,17 +2645,22 @@
           const sub = await reg.pushManager.getSubscription();
           if (!sub) throw new Error('No hay suscripción activa');
 
+          const testToken = localStorage.getItem(getEndpointTokenKey(sub.endpoint));
+          if (!testToken) throw new Error('Credencial de prueba no encontrada. Pulsa «Reactivar notificaciones».');
+
           const res = await fetch('/api/push-test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ endpoint: sub.endpoint })
+            body: JSON.stringify({ endpoint: sub.endpoint, test_token: testToken })
           });
           const data = await res.json();
-          if (!res.ok || !data.ok) throw new Error(data.error || 'Fallo en envío de prueba');
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || 'Fallo en envío de prueba');
+          }
           btnTest.textContent = '¡Prueba enviada!';
           setTimeout(() => { btnTest.textContent = 'Probar en este dispositivo'; btnTest.disabled = false; }, 3000);
         } catch (err) {
-          alert('Error enviando notificación de prueba: ' + err.message);
+          alert('Notificación de prueba: ' + err.message);
           btnTest.textContent = 'Probar en este dispositivo';
           btnTest.disabled = false;
         }
