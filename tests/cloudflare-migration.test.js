@@ -48,3 +48,25 @@ test('Seguridad de proxy en Pages: solo lectura, sin reenvío de secretos y fall
     assert.ok(!fn.includes('authorization'));
   }
 });
+
+test('Configuración de Wrangler para sismopa-archivador: cron de 1 min, vars públicas y cero secretos expuestos', () => {
+  const toml = get('cloudflare/archivador/wrangler.toml');
+
+  // Identidad y runtime
+  assert.ok(toml.includes('name = "sismopa-archivador"'));
+  assert.ok(toml.includes('main = "worker.mjs"'));
+  assert.ok(toml.includes('compatibility_date = "2026-10-01"'));
+  assert.ok(toml.includes('crons = ["* * * * *"]'));
+
+  // Variables públicas sincronizadas
+  assert.ok(toml.includes('VAPID_PUBLIC_KEY = "BMMtfOw_OoVIt6bjp70GMXMn-oMACjTCn870_Gn4QCQbhiM43kHuP2oto_Uu6d7Az2TOkDvp7V1RJBd-oQfSijM"'));
+  assert.ok(toml.includes('VAPID_SUBJECT = "mailto:admin@sismopa.pages.dev"'));
+
+  // Seguridad: AUTO_PUSH_ENABLED desactivado por defecto
+  assert.ok(toml.includes('AUTO_PUSH_ENABLED = "false"'));
+
+  // Cero secretos reales definidos en [vars]
+  assert.ok(!toml.match(/^SUPABASE_SECRET_KEY\s*=/m), 'SUPABASE_SECRET_KEY no debe estar en [vars]');
+  assert.ok(!toml.match(/^SUPABASE_URL\s*=/m), 'SUPABASE_URL no debe estar en [vars]');
+  assert.ok(!toml.match(/^VAPID_PRIVATE_KEY_JWK\s*=/m), 'VAPID_PRIVATE_KEY_JWK no debe estar en [vars]');
+});
