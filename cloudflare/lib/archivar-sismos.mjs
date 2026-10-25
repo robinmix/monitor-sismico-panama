@@ -389,6 +389,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
 
   return {
     nuevos: nuevosCount,
+    nuevosRecords,
     actualizados: actualizadosCount,
     verificados: verificadosCount,
     total: payloads.length
@@ -405,8 +406,10 @@ async function runArchival(options = {}) {
 
   console.log(`[Archivado Sismos] Inicio de archivado: ${nowISO}`);
 
+  let timerId;
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error(`Tiempo límite de ejecución superado (${TIMEOUT_GLOBAL_MS}ms)`)), TIMEOUT_GLOBAL_MS);
+    timerId = setTimeout(() => reject(new Error(`Tiempo límite de ejecución superado (${TIMEOUT_GLOBAL_MS}ms)`)), TIMEOUT_GLOBAL_MS);
+    if (timerId && typeof timerId.unref === 'function') timerId.unref();
   });
 
   const archivalPromise = (async () => {
@@ -430,6 +433,17 @@ async function runArchival(options = {}) {
     const supabase = options.supabase || getSupabaseClient(options.env);
     const syncResult = await syncEventsToSupabase(normalized, supabase, now);
 
+    // 4. Notificar nuevos eventos mediante Web Push (si está habilitado)
+    let pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_NUEVOS' };
+    if (syncResult.nuevosRecords && syncResult.nuevosRecords.length > 0 && options.enablePush !== false) {
+      try {
+        pushResult = await dispatchPushNotifications(syncResult.nuevosRecords, supabase, options.env, now);
+      } catch (pushErr) {
+        console.warn('[Archivado Sismos] Advertencia en despacho de notificaciones:', pushErr.message);
+        pushResult = { error: pushErr.message };
+      }
+    }
+
     const durationMs = Date.now() - startTime;
     console.log(`[Archivado Sismos] Finalización y duración de la ejecución: completado en ${durationMs}ms`);
 
@@ -442,33 +456,16 @@ async function runArchival(options = {}) {
       descartados,
       nuevos: syncResult.nuevos,
       actualizados: syncResult.actualizados,
-      verificados: syncResult.verificados
+      verificados: syncResult.verificados,
+      push: pushResult
     };
   })();
 
-    // 4. Notificar nuevos eventos mediante Web Push (si hay suscripciones activas)
-    if (syncResult.nuevosRecords && syncResult.nuevosRecords.length > 0 && options.enablePush !== false) {
-      try {
-        await dispatchPushNotifications(syncResult.nuevosRecords, supabase, options.env, now);
-      } catch (pushErr) {
-        console.warn('[Archivado Sismos] Advertencia en despacho de notificaciones:', pushErr.message);
-      }
-    }
-
-    return {
-      ok: true,
-      inicio: nowISO,
-      duracion_ms: durationMs,
-      recibidos: rawEvents.length,
-      validos: normalized.length,
-      descartados,
-      nuevos: syncResult.nuevos,
-      actualizados: syncResult.actualizados,
-      verificados: syncResult.verificados
-    };
-  })();
-
-  return await Promise.race([archivalPromise, timeoutPromise]);
+  try {
+    return await Promise.race([archivalPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timerId);
+  }
 }
 
 /**
@@ -504,58 +501,127 @@ const rawHandler = async function(event, context, options = {}) {
   }
 };
 
-export { rawHandler as handler, rawHandler, runArchival, normalizeEvents, buildNormalizedRecord, generateSourceUid, syncEventsToSupabase, geoDistanceKm, CRON_SCHEDULE };
-
+async function sha256Hex(str) {
+  if (!str || typeof str !== 'string') return null;
+  const buf = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 /**
- * Distribuye notificaciones Web Push para sismos verdaderamente nuevos (máximo 45 min de antigüedad).
- * Protegido contra duplicados mediante notificaciones_enviadas.
+ * Distribuye notificaciones Web Push para sismos verdaderamente nuevos (máximo 30 min de antigüedad).
+ * Protegido contra ráfagas (lote masivo > 3) y duplicados mediante notificaciones_enviadas.
+ * Requiere explícitamente AUTO_PUSH_ENABLED=true para enviar notificaciones reales.
  */
 async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date()) {
-  if (!supabase || !nuevosRecords || !nuevosRecords.length) return { enviados: 0 };
+  const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
+  if (!autoPushEnabled) {
+    return { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
+  }
 
-  const MAX_AGE_MS = 45 * 60 * 1000;
-  const recentEvents = nuevosRecords.filter(e => {
+  if (!supabase || !Array.isArray(nuevosRecords) || nuevosRecords.length === 0) {
+    return { enviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
+  }
+
+  // Protección contra ráfagas / cold start / backfill:
+  // Si aparecen más de 3 sismos "nuevos" en una sola corrida de 1 minuto, omitir para no inundar a los usuarios
+  if (nuevosRecords.length > 3) {
+    console.warn(`[Push] Despacho omitido por lote masivo (${nuevosRecords.length} eventos). Protección contra ráfagas activa.`);
+    return { enviados: 0, omitidosPorLoteMasivo: nuevosRecords.length };
+  }
+
+  const MAX_AGE_MS = 30 * 60 * 1000;
+  const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+  const nowTime = now.getTime();
+
+  const eligibleEvents = nuevosRecords.filter(e => {
     const ts = new Date(e.fecha_hora).getTime();
-    return Number.isFinite(ts) && Math.abs(now.getTime() - ts) < MAX_AGE_MS;
+    if (!Number.isFinite(ts)) return false;
+    const diff = nowTime - ts;
+    return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_AGE_MS;
   });
 
-  if (!recentEvents.length) {
+  if (!eligibleEvents.length) {
     return { enviados: 0, omitidosPorAntiguedad: nuevosRecords.length };
   }
 
-  // Obtener suscripciones activas (límite 500 por lote para no saturar memoria)
+  // Obtener suscripciones activas
   const { data: subs, error: subsErr } = await supabase
     .from('push_subscriptions')
-    .select('endpoint, p256dh, auth')
+    .select('endpoint, p256dh, auth, vapid_key_hash')
     .limit(500);
 
   if (subsErr || !subs || !subs.length) {
     return { enviados: 0, motivo: subsErr ? subsErr.message : 'Sin suscripciones activas' };
   }
 
+  // Si existe VAPID_PUBLIC_KEY en env, filtrar suscripciones con hash VAPID coincidente (o nulo por retrocompatibilidad)
+  let currentVapidHash = null;
+  if (env.VAPID_PUBLIC_KEY) {
+    currentVapidHash = await sha256Hex(env.VAPID_PUBLIC_KEY);
+  }
+
+  const validSubs = subs.filter(s => {
+    if (currentVapidHash && s.vapid_key_hash && s.vapid_key_hash !== currentVapidHash) {
+      return false;
+    }
+    return true;
+  });
+
+  if (!validSubs.length) {
+    return { enviados: 0, motivo: 'Sin suscripciones compatibles con la clave VAPID actual' };
+  }
+
   let totalEnviados = 0;
 
-  for (const ev of recentEvents) {
-    // 1. Verificar si ya fue notificado previamente
+  for (const ev of eligibleEvents) {
+    // 1. Consultar envíos previos para este sismo para evitar notificaciones duplicadas
     const { data: yaEnviados } = await supabase
       .from('notificaciones_enviadas')
       .select('endpoint')
       .eq('source_uid', ev.source_uid);
 
     const endpointsNotificados = new Set((yaEnviados || []).map(r => r.endpoint));
-    const subsPendientes = subs.filter(s => !endpointsNotificados.has(s.endpoint));
+    const subsPendientes = validSubs.filter(s => !endpointsNotificados.has(s.endpoint));
 
     if (!subsPendientes.length) continue;
 
-    // 2. Determinar texto geográfico con GeographicResolver
+    // 2. Resolver denominación geográfica oficial
     const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
     const geoTexto = geo?.ubicacion_texto || ev.ubicacion || ev.region || 'Panamá';
+    const magStr = Number(ev.magnitud).toFixed(1);
+    const estadoStr = ev.estado && String(ev.estado).toUpperCase() === 'REVISADO' ? 'Revisado' : 'Preliminar';
+
+    let horaPanama = '';
+    try {
+      const d = new Date(ev.fecha_hora);
+      if (Number.isFinite(d.getTime())) {
+        horaPanama = d.toLocaleTimeString('es-PA', {
+          timeZone: 'America/Panama',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    } catch {}
+
+    const bodyParts = [geoTexto];
+    if (Number.isFinite(Number(ev.profundidad_km))) {
+      bodyParts.push(`Prof. ${Math.round(Number(ev.profundidad_km))} km`);
+    }
+    if (horaPanama) {
+      bodyParts.push(horaPanama);
+    }
+    if (estadoStr) {
+      bodyParts.push(estadoStr);
+    }
 
     const payload = {
-      title: `sismoPA · Nuevo sismo M${ev.magnitud.toFixed(1)}`,
-      body: geoTexto,
-      url: `/#/sismo/${encodeURIComponent(ev.source_uid)}`,
+      title: `sismoPA · Nuevo sismo M${magStr}`,
+      body: bodyParts.join(' · '),
+      url: `./#/sismo/${encodeURIComponent(ev.source_uid)}`,
       tag: `sismo-${ev.source_uid}`
     };
 
@@ -569,19 +635,20 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
           env
         );
 
-        if (res.ok) {
+        if (res && res.ok) {
           recordsEnviados.push({
             source_uid: ev.source_uid,
             endpoint: sub.endpoint,
             enviado_en: now.toISOString()
           });
           totalEnviados++;
-        } else if (res.expired) {
-          // Suscripción inválida o expirada en el servicio Push: dar de baja automáticamente
+        } else if (res && res.expired) {
+          // Suscripción inválida o expirada en el servicio Push (410/404): dar de baja automáticamente
           await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
         }
       } catch (err) {
-        // Fallo individual no detiene el ciclo de envíos
+        // Fallo individual o de red no detiene el ciclo de envíos ni aborta el archivador
+        console.warn(`[Push] Error enviando a ${sub.endpoint}:`, err.message);
       }
     }
 
@@ -592,5 +659,19 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     }
   }
 
-  return { enviados: totalEnviados };
+  return { enviados: totalEnviados, sismosNotificados: eligibleEvents.length };
 }
+
+export {
+  rawHandler as handler,
+  rawHandler,
+  runArchival,
+  normalizeEvents,
+  buildNormalizedRecord,
+  generateSourceUid,
+  syncEventsToSupabase,
+  dispatchPushNotifications,
+  sha256Hex,
+  geoDistanceKm,
+  CRON_SCHEDULE
+};

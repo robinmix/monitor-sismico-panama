@@ -84,6 +84,7 @@ export async function onRequest(context) {
     // Generar credencial de prueba aleatoria de alta entropía (256 bits)
     const testToken = generateRandomToken();
     const testTokenHash = await sha256Hex(testToken);
+    const vapidKeyHash = env.VAPID_PUBLIC_KEY ? await sha256Hex(env.VAPID_PUBLIC_KEY) : null;
 
     const record = {
       endpoint: targetEndpoint,
@@ -93,13 +94,18 @@ export async function onRequest(context) {
       last_seen: new Date().toISOString()
     };
 
+    if (vapidKeyHash) {
+      record.vapid_key_hash = vapidKeyHash;
+    }
+
     let { error: upsertErr } = await supabase
       .from('push_subscriptions')
       .upsert(record, { onConflict: 'endpoint' });
 
-    // Fallback de compatibilidad si la columna test_token_hash aún no ha sido migrada en Supabase
-    if (upsertErr && (upsertErr.code === '42703' || upsertErr.message?.includes('test_token_hash'))) {
+    // Fallback de compatibilidad si las columnas de seguridad aún no han sido migradas en Supabase
+    if (upsertErr && (upsertErr.code === '42703' || upsertErr.message?.includes('test_token_hash') || upsertErr.message?.includes('vapid_key_hash'))) {
       delete record.test_token_hash;
+      delete record.vapid_key_hash;
       const fallbackResult = await supabase
         .from('push_subscriptions')
         .upsert(record, { onConflict: 'endpoint' });

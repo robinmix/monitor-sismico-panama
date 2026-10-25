@@ -12,6 +12,8 @@ test('Validación Estricta de Sintaxis JavaScript (node --check)', () => {
     'assets/app.js',
     'sw.js',
     'cloudflare/lib/web-push.mjs',
+    'cloudflare/lib/archivar-sismos.mjs',
+    'cloudflare/archivador/worker.mjs',
     'functions/api/push-subscribe.js',
     'functions/api/push-test.js',
     'functions/api/push-vapid-key.js',
