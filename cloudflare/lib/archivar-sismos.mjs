@@ -433,15 +433,28 @@ async function runArchival(options = {}) {
     const supabase = options.supabase || (options.env && options.env.supabaseClient) || getSupabaseClient(options.env);
     const syncResult = await syncEventsToSupabase(normalized, supabase, now);
 
-    // 4. Notificar nuevos eventos mediante Web Push (si está habilitado)
-    let pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_NUEVOS' };
-    if (syncResult.nuevosRecords && syncResult.nuevosRecords.length > 0 && options.enablePush !== false) {
+    // 4. Notificar eventos recientes mediante Web Push (nuevos o pendientes de reintento)
+    let pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_RECIENTES' };
+    const MAX_PUSH_CANDIDATE_AGE_MS = 45 * 60 * 1000;
+    const MAX_PUSH_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+    const nowTime = now.getTime();
+
+    const recentCandidates = (normalized || []).filter(e => {
+      const ts = new Date(e.fecha_hora).getTime();
+      if (!Number.isFinite(ts)) return false;
+      const diff = nowTime - ts;
+      return diff >= -MAX_PUSH_FUTURE_TOLERANCE_MS && diff <= MAX_PUSH_CANDIDATE_AGE_MS;
+    });
+
+    if (recentCandidates.length > 0 && options.enablePush !== false) {
       try {
-        pushResult = await dispatchPushNotifications(syncResult.nuevosRecords, supabase, options.env, now);
+        pushResult = await dispatchPushNotifications(recentCandidates, supabase, options.env, now);
       } catch (pushErr) {
         console.warn('[Archivado Sismos] Advertencia en despacho de notificaciones:', pushErr.message);
         pushResult = { error: pushErr.message };
       }
+    } else if (options.enablePush !== false) {
+      pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_RECIENTES' };
     }
 
     const durationMs = Date.now() - startTime;
@@ -556,21 +569,31 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
   // Obtener suscripciones activas
   const { data: subs, error: subsErr } = await supabase
     .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, vapid_key_hash')
+    .select('endpoint, p256dh, auth, vapid_key_hash, failures')
     .limit(500);
 
   if (subsErr || !subs || !subs.length) {
     return { enviados: 0, motivo: subsErr ? subsErr.message : 'Sin suscripciones activas' };
   }
 
-  // Si existe VAPID_PUBLIC_KEY en env, filtrar suscripciones con hash VAPID coincidente (o nulo por retrocompatibilidad)
-  let currentVapidHash = null;
-  if (env.VAPID_PUBLIC_KEY) {
-    currentVapidHash = await sha256Hex(env.VAPID_PUBLIC_KEY);
+  // Comprobar clave pública VAPID en entorno
+  if (!env || !env.VAPID_PUBLIC_KEY) {
+    return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY no configurada en el entorno' };
   }
 
+  const currentVapidHash = await sha256Hex(env.VAPID_PUBLIC_KEY);
+  if (!currentVapidHash) {
+    return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY inválida' };
+  }
+
+  // Filtrar exclusivamente suscripciones con hash VAPID coincidente (nunca asumir NULL como compatible)
+  // y descartar las que han acumulado 3 o más fallos consecutivos (circuit breaker)
   const validSubs = subs.filter(s => {
-    if (currentVapidHash && s.vapid_key_hash && s.vapid_key_hash !== currentVapidHash) {
+    if (!s || !s.endpoint || !s.p256dh || !s.auth) return false;
+    if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) {
+      return false;
+    }
+    if (typeof s.failures === 'number' && s.failures >= 3) {
       return false;
     }
     return true;
@@ -655,25 +678,56 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
         if (res && res.ok) {
           totalEnviados++;
+          if (sub.failures && sub.failures > 0) {
+            try {
+              await supabase
+                .from('push_subscriptions')
+                .update({ failures: 0 })
+                .eq('endpoint', sub.endpoint);
+            } catch {}
+          }
         } else if (res && (res.expired || res.status === 401 || res.status === 403)) {
           // Suscripción inválida o expirada en el servicio Push: dar de baja automáticamente
           await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-        } else {
-          // Error transitorio del proveedor (ej. 500, 503): liberar reserva para reintento en el siguiente ciclo
           await supabase
             .from('notificaciones_enviadas')
             .delete()
             .eq('source_uid', ev.source_uid)
             .eq('endpoint', sub.endpoint);
+        } else {
+          // Error transitorio del proveedor (ej. 429 Too Many Requests, 500, 503):
+          // Liberar reserva para reintento en el siguiente ciclo cron (nunca marcar como entregado lo que falló)
+          await supabase
+            .from('notificaciones_enviadas')
+            .delete()
+            .eq('source_uid', ev.source_uid)
+            .eq('endpoint', sub.endpoint);
+
+          const nextFailures = (sub.failures || 0) + 1;
+          try {
+            await supabase
+              .from('push_subscriptions')
+              .update({ failures: nextFailures })
+              .eq('endpoint', sub.endpoint);
+          } catch {}
         }
       } catch (err) {
-        // En caso de fallo de conexión de red, liberar reserva para permitir reintento posterior
+        // En caso de fallo de red o timeout, liberar reserva para permitir reintento posterior
         await supabase
           .from('notificaciones_enviadas')
           .delete()
           .eq('source_uid', ev.source_uid)
           .eq('endpoint', sub.endpoint);
-        console.warn(`[Push] Error enviando a ${sub.endpoint}:`, err.message);
+
+        const nextFailures = (sub.failures || 0) + 1;
+        try {
+          await supabase
+            .from('push_subscriptions')
+            .update({ failures: nextFailures })
+            .eq('endpoint', sub.endpoint);
+        } catch {}
+
+        console.warn(`[Push] Error de red enviando a ${sub.endpoint}:`, err.message);
       }
     }
   }

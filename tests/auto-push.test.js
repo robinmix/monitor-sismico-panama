@@ -69,6 +69,17 @@ function createMockSupabase(options = {}) {
               subsStore.set(r.endpoint, { ...r });
             }
             return { data: records, error: null };
+          },
+          update(updates) {
+            return {
+              async eq(col, val) {
+                if (col === 'endpoint' && subsStore.has(val)) {
+                  const existing = subsStore.get(val);
+                  subsStore.set(val, { ...existing, ...updates });
+                }
+                return { data: null, error: null };
+              }
+            };
           }
         };
       }
@@ -110,11 +121,14 @@ function createMockSupabase(options = {}) {
                 }
                 return chain;
               },
-              then(resolve) {
+              then(resolve, reject) {
                 if (fUid && fEndpoint) {
                   notifStore.delete(`${fUid}::${fEndpoint}`);
                 }
                 resolve({ error: null });
+              },
+              catch(reject) {
+                return chain;
               }
             };
             return chain;
@@ -711,4 +725,249 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(mockDb._sismos.size, 1);
     assert.equal(mockDb._notif.size, 1);
   });
+  await t.test('16. Suscriptor legado sin vapid_key_hash (NULL): excluido de envíos automáticos hasta renovación en la app', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const legacySubscriber = {
+      ...sampleSubscriber,
+      vapid_key_hash: null, // Suscripción histórica sin columna/hash
+      failures: 0
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [legacySubscriber]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:55:00.000Z',
+      fecha_hora: '2026-10-25T11:55:00.000Z',
+      magnitud: 4.1,
+      profundidad_km: 15,
+      latitud: 8.1,
+      longitud: -80.1
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(result.motivo, 'Sin suscripciones compatibles con la clave VAPID actual');
+    assert.equal(fetchCalls, 0);
+    assert.equal(mockDb._notif.size, 0);
+  });
+
+  await t.test('17. Reintentos entre 2 ciclos cron consecutivos: fallo 503 en corrida 1 se reintenta y entrega en corrida 2 aun con sismo archivado', async () => {
+    let pushAttempts = 0;
+    globalThis.fetch = async () => {
+      pushAttempts++;
+      if (pushAttempts === 1) {
+        // En la corrida 1 el proveedor push retorna 503 Service Unavailable
+        return new Response('Service Unavailable', { status: 503 });
+      }
+      // En la corrida 2 el proveedor push se recupera
+      return new Response('{}', { status: 201 });
+    };
+
+    const nowRun1 = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const incomingFeed = {
+      eventos: [
+        {
+          fecha: '2026-10-25',
+          hora: '06:55:00', // 11:55 UTC (hace 5 min)
+          latitud: 8.1234,
+          longitud: -80.4567,
+          profundidad: 12,
+          magnitud: 4.5,
+          estado: 'REVISADO',
+          region: 'Panamá - Azuero'
+        }
+      ]
+    };
+
+    // CORRIDA 1: Sismo ingresa por primera vez. Supabase lo archiva como nuevo. Push intenta enviar pero falla con 503.
+    const run1 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun1
+    });
+
+    assert.equal(run1.nuevos, 1);
+    assert.equal(run1.push.enviados, 0);
+    assert.equal(pushAttempts, 1);
+    // La reserva en notificaciones_enviadas fue liberada y failures incrementado a 1
+    assert.equal(mockDb._notif.size, 0);
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 1);
+
+    // CORRIDA 2 (1 minuto después): Sismo sigue en el feed del IGC-UP. Ya está en Supabase (verificados: 1, nuevos: 0).
+    const nowRun2 = new Date('2026-10-25T12:01:00.000Z');
+    const run2 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun2
+    });
+
+    assert.equal(run2.nuevos, 0);
+    assert.equal(run2.verificados, 1);
+    assert.equal(run2.push.enviados, 1);
+    assert.equal(pushAttempts, 2);
+    // Notificación entregada, reserva consolidada y contador de failures restablecido a 0
+    assert.equal(mockDb._notif.size, 1);
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 0);
+  });
+
+  await t.test('18. Deduplicación entre corridas consecutivas: sismo entregado en ciclo 1 no genera duplicados en ciclo 2', async () => {
+    let pushAttempts = 0;
+    globalThis.fetch = async () => {
+      pushAttempts++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const nowRun1 = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const incomingFeed = {
+      eventos: [
+        {
+          fecha: '2026-10-25',
+          hora: '06:58:00', // 11:58 UTC (hace 2 min)
+          latitud: 7.95,
+          longitud: -81.25,
+          profundidad: 18,
+          magnitud: 4.8,
+          estado: 'REVISADO',
+          region: 'Golfo de Montijo'
+        }
+      ]
+    };
+
+    // Ciclo 1: Envío exitoso
+    const run1 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun1
+    });
+
+    assert.equal(run1.nuevos, 1);
+    assert.equal(run1.push.enviados, 1);
+    assert.equal(pushAttempts, 1);
+    assert.equal(mockDb._notif.size, 1);
+
+    // Ciclo 2 (1 minuto después): No debe volver a notificar al mismo dispositivo
+    const nowRun2 = new Date('2026-10-25T12:01:00.000Z');
+    const run2 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun2
+    });
+
+    assert.equal(run2.nuevos, 0);
+    assert.equal(run2.verificados, 1);
+    assert.equal(run2.push.enviados, 0);
+    assert.equal(pushAttempts, 1); // Cero llamadas fetch adicionales
+    assert.equal(mockDb._notif.size, 1);
+  });
+
+  await t.test('19. Tratamiento de HTTP 429 Too Many Requests: no marca como entregado, libera reserva e incrementa failures', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('Too Many Requests', { status: 429 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:52:00.000Z',
+      fecha_hora: '2026-10-25T11:52:00.000Z',
+      magnitud: 4.2,
+      profundidad_km: 10,
+      latitud: 8.5,
+      longitud: -82.3
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(fetchCalls, 1);
+    // Reserva liberada (no entregado) y fallo registrado
+    assert.equal(mockDb._notif.size, 0);
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 1);
+  });
+
+  await t.test('20. Límite de reintentos (circuit breaker): suscriptor con failures >= 3 es omitido de envíos automáticos', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const deadSubscriber = {
+      ...sampleSubscriber,
+      failures: 3 // Umbral máximo de fallos alcanzado
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [deadSubscriber]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:56:00.000Z',
+      fecha_hora: '2026-10-25T11:56:00.000Z',
+      magnitud: 4.0,
+      profundidad_km: 11,
+      latitud: 8.3,
+      longitud: -81.5
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(result.motivo, 'Sin suscripciones compatibles con la clave VAPID actual');
+    assert.equal(fetchCalls, 0);
+  });
+
+  await t.test('21. Suscriptor permanente no válido (HTTP 404 Not Found): eliminado de push_subscriptions y reserva limpia', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('Not Found', { status: 404 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:57:00.000Z',
+      fecha_hora: '2026-10-25T11:57:00.000Z',
+      magnitud: 3.9,
+      profundidad_km: 9,
+      latitud: 8.4,
+      longitud: -82.1
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(fetchCalls, 1);
+    // Eliminado definitivamente de la base de datos
+    assert.equal(mockDb._subs.size, 0);
+    assert.equal(mockDb._notif.size, 0);
+  });
+
 });
