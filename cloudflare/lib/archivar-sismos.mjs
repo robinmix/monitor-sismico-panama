@@ -584,7 +584,7 @@ function calculateRetryAfterDate(retryAfterHeader, failures, now = new Date()) {
  * Protegido contra ráfagas (lote masivo > 3) y duplicados mediante notificaciones_enviadas.
  * Requiere explícitamente AUTO_PUSH_ENABLED=true para enviar notificaciones reales.
  */
-async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date()) {
+async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date(), options = {}) {
   const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
   if (!autoPushEnabled) {
     return { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
@@ -688,14 +688,12 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       continue; // Descartar por timestamp geofísico inválido
     }
 
+    // Si no tiene primera_captura en el objeto ni en la base de datos, anclar estrictamente
+    // al timestamp geofísico del evento (eventTs). NUNCA sustituir por nowTime para impedir
+    // que un sismo anterior a la activación sea disfrazado como nuevo.
     if (!capturedTime || !Number.isFinite(capturedTime)) {
-      // Política segura ante ambigüedad temporal: si el sismo ocurrió hace más de 45 min
-      // y no tiene primera_captura fiable en la base de datos, omitir por falta de evidencia.
-      if (nowTime - eventTs > MAX_DISCOVERY_AGE_MS) {
-        continue;
-      }
-      capturedTime = nowTime;
-      e.primera_captura = now.toISOString();
+      capturedTime = eventTs;
+      e.primera_captura = new Date(eventTs).toISOString();
     }
 
     // Caducidad de entrega: si ya pasaron más de 90 min desde su detección, caducar
@@ -703,8 +701,8 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       continue;
     }
 
-    // Si el evento fue capturado en o antes del hito de activación, omitir (cero históricos)
-    if (activationTime > 0 && capturedTime <= activationTime) {
+    // Si el evento ocurrió o fue capturado en o antes del hito de activación, omitir estrictamente (cero históricos)
+    if (activationTime > 0 && (capturedTime <= activationTime || eventTs <= activationTime)) {
       continue;
     }
 
@@ -735,19 +733,27 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY inválida' };
   }
 
-  // Parámetros validados estrictamente como enteros positivos acotados a límites seguros de Workers Free:
+  // LÍMITES ESTRICTOS DE CLOUDFLARE WORKERS FREE (Techos máximos inquebrantables)
+  const SAFE_MAX_SUBS_PER_CYCLE = 15;
+  const SAFE_MAX_CONCURRENCY = 5;
+  const SAFE_MAX_SUBREQUESTS = 40; // Preserva al menos 10 subrequests de margen bajo el límite de 50
+
   const rawMaxSubs = Math.floor(Number(env?.PUSH_MAX_SUBS_PER_CYCLE));
-  const MAX_SUBS_PER_CYCLE = Number.isFinite(rawMaxSubs) && rawMaxSubs > 0
-    ? Math.min(rawMaxSubs, 500)
-    : 15; // Default seguro de 15 suscriptores por minuto (Cloudflare Free)
+  const MAX_SUBS_PER_CYCLE = (Number.isFinite(rawMaxSubs) && rawMaxSubs > 0)
+    ? Math.min(rawMaxSubs, SAFE_MAX_SUBS_PER_CYCLE)
+    : SAFE_MAX_SUBS_PER_CYCLE;
 
   const rawConcurrency = Math.floor(Number(env?.PUSH_CONCURRENCY));
-  const PUSH_CONCURRENCY = Number.isFinite(rawConcurrency) && rawConcurrency > 0
-    ? Math.min(rawConcurrency, 25)
-    : 5; // Máximo 5 conexiones simultáneas por defecto (Cloudflare Free permite máx 6)
+  const PUSH_CONCURRENCY = (Number.isFinite(rawConcurrency) && rawConcurrency > 0)
+    ? Math.min(rawConcurrency, SAFE_MAX_CONCURRENCY)
+    : SAFE_MAX_CONCURRENCY;
 
-  const MAX_PUSH_SUBREQUESTS = Number(env?.PUSH_MAX_SUBREQUESTS) || (MAX_SUBS_PER_CYCLE > 15 ? MAX_SUBS_PER_CYCLE * 4 : 40);
-  let pushSubrequestsCount = 0;
+  const rawMaxSubreq = Math.floor(Number(env?.PUSH_MAX_SUBREQUESTS));
+  const MAX_PUSH_SUBREQUESTS = (Number.isFinite(rawMaxSubreq) && rawMaxSubreq > 0)
+    ? Math.min(rawMaxSubreq, SAFE_MAX_SUBREQUESTS)
+    : SAFE_MAX_SUBREQUESTS;
+
+  let pushSubrequestsCount = Math.max(0, Math.floor(Number(options?.initialSubrequests) || Number(env?.__INITIAL_SUBREQUESTS__) || 0));
   let totalIntentos = 0;
   let totalEnviados = 0;
   let hadAnySubscribersInDb = false;
@@ -767,24 +773,29 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     const eventsRemaining = activeEventsCount - evIndex;
     const quotaForEvent = Math.max(1, Math.min(remainingIntentos, Math.ceil(remainingIntentos / eventsRemaining)));
 
-    // Consultar envíos previos y reservas en curso
+    // Consultar envíos previos, reservas en curso y cursor persistente
     pushSubrequestsCount++;
     let yaEnviados = [];
     let totalSentCount = 0;
     try {
       const { data, count } = await supabase
         .from('notificaciones_enviadas')
-        .select('endpoint, estado, lease_expires_at', { count: 'exact' })
+        .select('endpoint, estado, lease_expires_at, enviado_en', { count: 'exact' })
         .eq('source_uid', ev.source_uid);
       yaEnviados = data || [];
       totalSentCount = count !== null && count !== undefined ? count : yaEnviados.length;
     } catch {}
+
+    const cursorRow = yaEnviados.find(r => r.endpoint === '__CURSOR__');
+    let cursorCreatedAt = cursorRow ? cursorRow.enviado_en : null;
+    let lastSeenCreatedAt = cursorCreatedAt;
 
     const endpointsNotificados = new Set();
     const abandonedEndpoints = [];
 
     for (const row of yaEnviados) {
       if (!row || !row.endpoint) continue;
+      if (row.endpoint === '__CURSOR__') continue;
       const leaseExpiry = row.lease_expires_at ? new Date(row.lease_expires_at).getTime() : 0;
       const isEnProceso = row.estado === 'EN_PROCESO';
 
@@ -810,13 +821,14 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       }
     }
 
-    // Paginación segura de push_subscriptions para admitir miles de usuarios sin desbordar memoria
+    // Paginación por cursor y orden cronológico para admitir miles de usuarios sin bucles
     const PAGE_SIZE = 100;
-    let currentOffset = Math.max(0, totalSentCount - 10);
     let pageSubs = [];
+    const evCapturedTime = new Date(ev.primera_captura || ev.fecha_hora).getTime();
 
     while (pageSubs.length < quotaForEvent) {
-      if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) break;
+      // Reservar al menos 4 subrequests para poder procesar suscriptores de la página
+      if (pushSubrequestsCount + 4 >= MAX_PUSH_SUBREQUESTS) break;
       pushSubrequestsCount++;
       let batch = [];
       try {
@@ -827,9 +839,10 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         if (typeof pageQuery.order === 'function') {
           pageQuery = pageQuery.order('created_at', { ascending: true });
         }
-        if (typeof pageQuery.range === 'function') {
-          pageQuery = pageQuery.range(currentOffset, currentOffset + PAGE_SIZE - 1);
-        } else if (typeof pageQuery.limit === 'function') {
+        if (cursorCreatedAt && typeof pageQuery.gt === 'function') {
+          pageQuery = pageQuery.gt('created_at', cursorCreatedAt);
+        }
+        if (typeof pageQuery.limit === 'function') {
           pageQuery = pageQuery.limit(PAGE_SIZE);
         }
 
@@ -838,9 +851,15 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
           let fallbackQuery = supabase
             .from('push_subscriptions')
             .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at');
-          if (typeof fallbackQuery.order === 'function') fallbackQuery = fallbackQuery.order('created_at', { ascending: true });
-          if (typeof fallbackQuery.range === 'function') fallbackQuery = fallbackQuery.range(currentOffset, currentOffset + PAGE_SIZE - 1);
-          else if (typeof fallbackQuery.limit === 'function') fallbackQuery = fallbackQuery.limit(PAGE_SIZE);
+          if (typeof fallbackQuery.order === 'function') {
+            fallbackQuery = fallbackQuery.order('created_at', { ascending: true });
+          }
+          if (cursorCreatedAt && typeof fallbackQuery.gt === 'function') {
+            fallbackQuery = fallbackQuery.gt('created_at', cursorCreatedAt);
+          }
+          if (typeof fallbackQuery.limit === 'function') {
+            fallbackQuery = fallbackQuery.limit(PAGE_SIZE);
+          }
           const fb = await fallbackQuery;
           batch = fb.data || [];
         } else {
@@ -849,53 +868,60 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       } catch {}
 
       if (!batch || batch.length === 0) break;
-      pageSubs.push(...batch);
-      currentOffset += batch.length;
-      if (batch.length < PAGE_SIZE) break;
-    }
-
-    if (pageSubs && pageSubs.length > 0) {
       hadAnySubscribersInDb = true;
-      for (const s of pageSubs) {
-        if (s && s.vapid_key_hash === currentVapidHash) {
+
+      for (const s of batch) {
+        if (s && s.created_at) {
+          lastSeenCreatedAt = s.created_at;
+        }
+        if (!s || !s.endpoint || !s.p256dh || !s.auth) continue;
+        if (s.vapid_key_hash === currentVapidHash) {
           const inCooldown = (s.retry_after && nowTime < new Date(s.retry_after).getTime()) ||
                              (typeof s.failures === 'number' && s.failures >= 3);
           if (!inCooldown) {
             hadAnyVapidCompatibleSubscribers = true;
           }
         }
+        if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) continue;
+        if (s.retry_after) {
+          const retryAfterTime = new Date(s.retry_after).getTime();
+          if (Number.isFinite(retryAfterTime) && nowTime < retryAfterTime) continue;
+        } else if (typeof s.failures === 'number' && s.failures >= 3) {
+          continue;
+        }
+        if (endpointsNotificados.has(s.endpoint)) continue;
+        if (s.created_at) {
+          const subCreatedTime = new Date(s.created_at).getTime();
+          if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) continue;
+        }
+
+        pageSubs.push(s);
+        if (pageSubs.length >= quotaForEvent) break;
+      }
+
+      if (pageSubs.length < quotaForEvent && batch.length === PAGE_SIZE) {
+        cursorCreatedAt = lastSeenCreatedAt;
+      } else {
+        break;
       }
     }
 
-    const evCapturedTime = new Date(ev.primera_captura || ev.fecha_hora).getTime();
+    // Persistir el avance del cursor para este evento si se inspeccionaron nuevos suscriptores
+    if (lastSeenCreatedAt && lastSeenCreatedAt !== (cursorRow?.enviado_en) && pushSubrequestsCount < MAX_PUSH_SUBREQUESTS) {
+      pushSubrequestsCount++;
+      try {
+        await supabase.from('notificaciones_enviadas').upsert({
+          source_uid: ev.source_uid,
+          endpoint: '__CURSOR__',
+          enviado_en: lastSeenCreatedAt,
+          estado: 'CONFIRMADA'
+        }, { onConflict: 'source_uid,endpoint' });
+      } catch {}
+    }
 
-    // Filtrar suscriptores compatibles y pendientes
-    const subsPendientes = pageSubs.filter(s => {
-      if (!s || !s.endpoint || !s.p256dh || !s.auth) return false;
-      if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) return false;
+    if (!pageSubs.length) continue;
 
-      // Circuito Abierto / cooldown
-      if (s.retry_after) {
-        const retryAfterTime = new Date(s.retry_after).getTime();
-        if (Number.isFinite(retryAfterTime) && nowTime < retryAfterTime) return false;
-      } else if (typeof s.failures === 'number' && s.failures >= 3) {
-        return false;
-      }
-
-      // No haber sido notificado previamente
-      if (endpointsNotificados.has(s.endpoint)) return false;
-
-      // No haberse registrado después de la captura del sismo (+15s jitter)
-      if (s.created_at) {
-        const subCreatedTime = new Date(s.created_at).getTime();
-        if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) return false;
-      }
-      return true;
-    });
-
-    if (!subsPendientes.length) continue;
-
-    const subsToProcess = subsPendientes.slice(0, quotaForEvent);
+    const subsToProcess = pageSubs.slice(0, quotaForEvent);
 
     // Resolver denominación geográfica oficial
     const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
@@ -939,7 +965,19 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       if (totalIntentos >= MAX_SUBS_PER_CYCLE || pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) {
         break;
       }
-      const chunk = subsToProcess.slice(i, i + PUSH_CONCURRENCY);
+
+      // Pre-reservar presupuesto de subrequests antes de iniciar el lote concurrente:
+      const remainingBudget = MAX_PUSH_SUBREQUESTS - pushSubrequestsCount;
+      const maxSubsForRemainingBudget = Math.floor((remainingBudget - 1) / 2);
+      if (maxSubsForRemainingBudget <= 0) {
+        console.log(`[Push] Presupuesto de subrequests reservado alcanzado. Suscriptores diferidos al siguiente cron.`);
+        break;
+      }
+
+      const actualChunkSize = Math.min(PUSH_CONCURRENCY, maxSubsForRemainingBudget);
+      const chunk = subsToProcess.slice(i, i + actualChunkSize);
+      if (!chunk.length) break;
+
       const successfulEndpoints = [];
       await Promise.allSettled(chunk.map(async (sub) => {
         if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) return;

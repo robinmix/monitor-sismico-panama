@@ -34,9 +34,10 @@ function createTrackedMockSupabase(options = {}) {
     get _notif() {
       const filtered = new Map();
       for (const [k, v] of notifStore.entries()) {
-        if (!v.source_uid || !v.source_uid.startsWith('__SYSTEM_')) {
-          filtered.set(k, v);
+        if (!v.source_uid || v.source_uid.startsWith('__SYSTEM_') || v.endpoint === '__CURSOR__') {
+          continue;
         }
+        filtered.set(k, v);
       }
       return filtered;
     },
@@ -85,6 +86,7 @@ function createTrackedMockSupabase(options = {}) {
           select(fields) {
             let offset = 0;
             let limitNum = 500;
+            let gtCreatedAt = null;
             const chain = {
               order(col, opts = {}) { return chain; },
               range(from, to) {
@@ -96,9 +98,21 @@ function createTrackedMockSupabase(options = {}) {
                 limitNum = n;
                 return chain;
               },
+              gt(col, val) {
+                if (col === 'created_at') gtCreatedAt = val;
+                return chain;
+              },
+              gte(col, val) {
+                if (col === 'created_at') gtCreatedAt = val;
+                return chain;
+              },
               then(resolve, reject) {
                 subrequestCount++;
-                const rows = Array.from(subsStore.values()).slice(offset, offset + limitNum);
+                let rows = Array.from(subsStore.values());
+                if (gtCreatedAt) {
+                  rows = rows.filter(r => r.created_at && r.created_at > gtCreatedAt);
+                }
+                rows = rows.slice(offset, offset + limitNum);
                 resolve({ data: rows, error: null });
               },
               catch(reject) { return chain; }
@@ -705,9 +719,10 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
       });
 
       const capTime = new Date(actMs + tc.offset).toISOString();
+      const evTime = new Date(actMs + tc.offset - 100).toISOString();
       const event = {
         source_uid: `igc_event_offset_${tc.offset}`,
-        fecha_hora: '2026-10-25T11:59:00.000Z',
+        fecha_hora: evTime,
         magnitud: 4.6,
         latitud: 8.1,
         longitud: -80.1,
@@ -720,6 +735,30 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
     }
 
     assert.equal(pushCalls, 2);
+
+    // Demostrar además que un sismo con fecha_hora anterior a la activación NO es un sismo nuevo post-activación
+    // incluso si su primera_captura fue posterior a la activación
+    const mockDbPre = createTrackedMockSupabase({
+      subs: [sampleSubscriber],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: activationTime.toISOString()
+        }
+      ]
+    });
+    const preEvent = {
+      source_uid: 'igc_event_pre_act',
+      fecha_hora: '2026-10-25T11:59:00.000Z', // 1 min antes de activación
+      magnitud: 4.6,
+      latitud: 8.1,
+      longitud: -80.1,
+      profundidad_km: 10,
+      primera_captura: new Date(actMs + 1000).toISOString() // captura 1s después de activación
+    };
+    const resPre = await dispatchPushNotifications([preEvent], mockDbPre, defaultEnv, new Date('2026-10-25T12:01:00.000Z'));
+    assert.equal(resPre.enviados, 0, 'Sismo ocurrido antes de la activación NO se notifica aunque se capture después');
   });
 
   await t.test('12. Margen de 15s de Registro de Suscriptor: E-10s y E+5s reciben alerta; E+20s es excluido', async () => {
@@ -938,20 +977,28 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
     };
 
     const subs501 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
     for (let i = 1; i <= 501; i++) {
       subs501.push({
         ...sampleSubscriber,
         endpoint: `https://fcm.googleapis.com/fcm/send/device_501_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
         failures: 0
       });
     }
 
-    // Simulamos que los primeros 490 ya fueron entregados
+    // Simulamos que los primeros 490 ya fueron entregados en ciclos cron previos con cursor persistido
     const prevNotif = [
       {
         source_uid: '__SYSTEM_PUSH_ACTIVATION__',
         endpoint: '__SYSTEM__',
         enviado_en: '2026-10-25T10:00:00.000Z'
+      },
+      {
+        source_uid: 'igc_event_501_test',
+        endpoint: '__CURSOR__',
+        estado: 'CONFIRMADA',
+        enviado_en: new Date(baseTime + 490 * 1000).toISOString()
       }
     ];
     for (let i = 1; i <= 490; i++) {
@@ -959,7 +1006,7 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
         source_uid: 'igc_event_501_test',
         endpoint: `https://fcm.googleapis.com/fcm/send/device_501_${i}`,
         estado: 'CONFIRMADA',
-        enviado_en: '2026-10-25T12:00:00.000Z'
+        enviado_en: new Date(baseTime + i * 1000).toISOString()
       });
     }
 
@@ -1063,5 +1110,263 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
     const res = await dispatchPushNotifications(corruptEvents, mockDb, defaultEnv, new Date('2026-10-25T12:00:00.000Z'));
     assert.equal(res.enviados, 0);
     assert.equal(pushCalls, 0);
+  });
+  await t.test('20. Paginación determinista con 500 inelegibles seguidos de 500 elegibles sin bucles infinitos', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const allSubs = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+
+    // 500 suscriptores inelegibles (clave VAPID obsoleta o failures >= 3)
+    for (let i = 1; i <= 500; i++) {
+      allSubs.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_ineligible_${i}`,
+        vapid_key_hash: 'obsolete_vapid_hash_123',
+        failures: 3,
+        created_at: new Date(baseTime + i * 1000).toISOString()
+      });
+    }
+
+    // 500 suscriptores elegibles (con hash VAPID vigente y failures: 0)
+    for (let i = 501; i <= 1000; i++) {
+      allSubs.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_eligible_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: allSubs,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_mixed_queue',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.8,
+      latitud: 8.2,
+      longitud: -80.2,
+      profundidad_km: 15,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Drenar ciclos sucesivos. El cursor debe atravesar los 500 inelegibles y despachar a los 500 elegibles
+    let cycles = 0;
+    const nowMs = new Date('2026-10-25T12:01:00.000Z').getTime();
+    while (pushCalls < 500 && cycles < 45) {
+      cycles++;
+      mockDb.resetSubrequestsCount();
+      const cycleTime = new Date(nowMs + cycles * 60000);
+      const res = await dispatchPushNotifications([event], mockDb, defaultEnv, cycleTime);
+      assert.ok(mockDb.getSubrequestsCount() <= 40, `Subrequests en ciclo ${cycles} no debe exceder 40 (obtenido: ${mockDb.getSubrequestsCount()})`);
+    }
+
+    assert.equal(pushCalls, 500, 'Todos los 500 suscriptores elegibles recibieron su notificación');
+    assert.equal(mockDb._notif.size, 500, 'Exactamente 500 notificaciones a dispositivos registradas');
+  });
+
+  await t.test('21. Imposición estricta de límites Free ante variables de entorno excesivas', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs100 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 100; i++) {
+      subs100.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_env_limit_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs100,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_excessive_env',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.5,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const excessiveEnv = {
+      ...defaultEnv,
+      PUSH_MAX_SUBS_PER_CYCLE: '1000',
+      PUSH_CONCURRENCY: '100',
+      PUSH_MAX_SUBREQUESTS: '500'
+    };
+
+    const res = await dispatchPushNotifications([event], mockDb, excessiveEnv, new Date('2026-10-25T12:01:00.000Z'));
+
+    assert.equal(res.enviados, 15, 'Acotado estrictamente a 15 a pesar de PUSH_MAX_SUBS_PER_CYCLE=1000');
+    assert.ok(mockDb.getSubrequestsCount() <= 40, `Subrequests acotados estrictamente a 40 (obtenido: ${mockDb.getSubrequestsCount()})`);
+    assert.equal(pushCalls, 15);
+  });
+
+  await t.test('22. Certidumbre temporal estricta ante errores de lectura de Supabase y sismos preexistentes', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const activationTime = '2026-10-25T12:00:00.000Z';
+    const mockDb = createTrackedMockSupabase({
+      subs: [sampleSubscriber],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: activationTime
+        }
+      ]
+    });
+
+    // Sismo sin primera_captura en el objeto y que ocurrió antes de la activación (11:50 vs 12:00)
+    const preActEventNoCapture = {
+      source_uid: 'igc_event_pre_no_cap',
+      fecha_hora: '2026-10-25T11:50:00.000Z',
+      magnitud: 4.8,
+      latitud: 8.0,
+      longitud: -80.0
+    };
+
+    const resPre = await dispatchPushNotifications([preActEventNoCapture], mockDb, defaultEnv, new Date('2026-10-25T12:05:00.000Z'));
+    assert.equal(resPre.enviados, 0, 'Sismo previo a activación sin primera_captura se ancla a fecha_hora y no se notifica');
+    assert.equal(pushCalls, 0);
+  });
+
+  await t.test('23. Escenario de estrés masivo con HTTP 429, 500 y timeouts simultáneos respetando subrequests <= 40', async () => {
+    let reqIndex = 0;
+    globalThis.fetch = async () => {
+      reqIndex++;
+      if (reqIndex % 3 === 1) {
+        return new Response('Rate limited', { status: 429, headers: { 'Retry-After': '120' } });
+      } else if (reqIndex % 3 === 2) {
+        return new Response('Server Error', { status: 500 });
+      } else {
+        throw new Error('Connection timeout');
+      }
+    };
+
+    const subs15 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 15; i++) {
+      subs15.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_stress_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs15,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_stress_test',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.7,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const res = await dispatchPushNotifications([event], mockDb, defaultEnv, new Date('2026-10-25T12:01:00.000Z'));
+
+    assert.equal(res.enviados, 0, 'Cero entregas exitosas debido a errores de red y servidor');
+    assert.ok(mockDb.getSubrequestsCount() <= 40, `Subrequests no debe exceder 40 bajo estrés (obtenido: ${mockDb.getSubrequestsCount()})`);
+    assert.equal(mockDb._notif.size, 0, 'Todas las reservas en proceso fueron limpiadas correctamente');
+  });
+
+  await t.test('24. Presupuesto integral del ciclo del Worker: archivado IGC + Supabase + despacho push strictly <= 40', async () => {
+    globalThis.fetch = async (url) => {
+      if (typeof url === 'string' && url.includes('fcm')) {
+        return new Response('{}', { status: 201 });
+      }
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs15 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 15; i++) {
+      subs15.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_full_cycle_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs15,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const archivalRes = await runArchival({
+      sourcePayload: {
+        eventos: [
+          {
+            fecha: '2026-10-25',
+            hora: '06:58:00 AM',
+            latitud: 8.12,
+            longitud: -80.45,
+            profundidad: 15,
+            magnitud: 4.8,
+            region: 'Golfo de Panamá',
+            estado: 'PRELIMINAR'
+          }
+        ]
+      },
+      supabase: mockDb,
+      env: defaultEnv,
+      now: new Date('2026-10-25T12:01:00.000Z')
+    });
+
+    assert.equal(archivalRes.ok, true);
+    assert.ok(mockDb.getSubrequestsCount() <= 40, `Subrequests de todo el ciclo Workers Free strictly <= 40 (obtenido: ${mockDb.getSubrequestsCount()})`);
   });
 });

@@ -27,9 +27,10 @@ function createMockSupabase(options = {}) {
     get _notif() {
       const filtered = new Map();
       for (const [k, v] of notifStore.entries()) {
-        if (!v.source_uid || !v.source_uid.startsWith('__SYSTEM_')) {
-          filtered.set(k, v);
+        if (!v.source_uid || v.source_uid.startsWith('__SYSTEM_') || v.endpoint === '__CURSOR__') {
+          continue;
         }
+        filtered.set(k, v);
       }
       return filtered;
     },
@@ -154,19 +155,37 @@ function createMockSupabase(options = {}) {
           update(updates) {
             let fUid = null;
             let fEndpoint = null;
+            let fEndpoints = null;
             const chain = {
               eq(col, val) {
                 if (col === 'source_uid') fUid = val;
                 if (col === 'endpoint') fEndpoint = val;
                 if (fUid && fEndpoint) {
-                  const key = `${fUid}::${fEndpoint}`;
+                  const key = String(fUid) + '::' + String(fEndpoint);
                   if (notifStore.has(key)) {
                     notifStore.set(key, { ...notifStore.get(key), ...updates });
                   }
                 }
                 return chain;
               },
+              in(col, vals) {
+                if (col === 'endpoint') fEndpoints = vals;
+                return chain;
+              },
               then(resolve) {
+                if (fUid && fEndpoint) {
+                  const key = String(fUid) + '::' + String(fEndpoint);
+                  if (notifStore.has(key)) {
+                    notifStore.set(key, { ...notifStore.get(key), ...updates });
+                  }
+                } else if (fUid && Array.isArray(fEndpoints)) {
+                  for (const ep of fEndpoints) {
+                    const key = String(fUid) + '::' + String(ep);
+                    if (notifStore.has(key)) {
+                      notifStore.set(key, { ...notifStore.get(key), ...updates });
+                    }
+                  }
+                }
                 resolve({ data: null, error: null });
               }
             };
@@ -1383,7 +1402,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     }
   });
 
-  await t.test('29. Escalabilidad: 100 suscriptores procesados en lotes concurrentes rápidos sin demoras', async () => {
+  await t.test('29. Escalabilidad: 100 suscriptores procesados en lotes concurrentes rápidos acotados a límites Free', async () => {
     let pushDeliveries = 0;
     globalThis.fetch = async () => {
       pushDeliveries++;
@@ -1391,10 +1410,12 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     };
 
     const subs100 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
     for (let i = 1; i <= 100; i++) {
       subs100.push({
         ...sampleSubscriber,
         endpoint: `https://fcm.googleapis.com/fcm/send/device_bulk_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
         failures: 0
       });
     }
@@ -1421,15 +1442,19 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       primera_captura: '2026-10-25T12:00:00.000Z'
     };
 
-    const t0 = Date.now();
-    const res = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 100 }, now);
-    const duration = Date.now() - t0;
+    // Ciclo 1: aunque el entorno pida 100, debe acotar estrictamente a 15 por ciclo respetando límites Cloudflare Free
+    const res1 = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 100 }, now);
+    assert.equal(res1.enviados, 15, 'Debe acotar a 15 en el primer ciclo respetando límites Cloudflare Free');
 
-    assert.equal(res.enviados, 100);
-    assert.equal(pushDeliveries, 100);
-    assert.equal(mockDb._notif.size, 100);
-    // Debe completarse rápidamente gracias a PUSH_CONCURRENCY
-    assert.ok(duration < 2000, `100 suscripciones deben despacharse en menos de 2s (tomó ${duration}ms)`);
+    // Drenar los 100 suscriptores a lo largo de ciclos cron sucesivos (15x6 + 10 = 7 ciclos en total)
+    for (let c = 1; c <= 7; c++) {
+      const cycleTime = new Date(now.getTime() + c * 60000);
+      const r = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 100 }, cycleTime);
+      console.log('Cycle', c, 'enviados:', r.enviados, 'total pushDeliveries:', pushDeliveries);
+    }
+
+    assert.equal(pushDeliveries, 100, 'Los 100 suscriptores fueron entregados en ciclos sucesivos');
+    assert.equal(mockDb._notif.size, 100, 'Exactamente 100 notificaciones registradas');
   });
 
   await t.test('30. Escalabilidad masiva: 1,000 suscriptores concurrentes procesados de forma segura', async () => {
@@ -1440,10 +1465,12 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     };
 
     const subs1000 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
     for (let i = 1; i <= 1000; i++) {
       subs1000.push({
         ...sampleSubscriber,
         endpoint: `https://fcm.googleapis.com/fcm/send/device_mega_${i}`,
+        created_at: new Date(baseTime + i * 500).toISOString(),
         failures: 0
       });
     }
@@ -1470,11 +1497,12 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       primera_captura: '2026-10-25T12:00:00.000Z'
     };
 
+    // Ciclo 1 con env excesivo (500): debe acotar a 15 y no saturar
     const res = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 500 }, now);
 
-    assert.equal(res.enviados, 500, 'Debe despachar hasta el límite de 500 suscriptores por lote cron sin saturar');
-    assert.equal(pushDeliveries, 500);
-    assert.equal(mockDb._notif.size, 500);
+    assert.equal(res.enviados, 15, 'Debe acotar a 15 suscriptores en el ciclo cron sin saturar');
+    assert.equal(pushDeliveries, 15);
+    assert.equal(mockDb._notif.size, 15);
   });
 
   await t.test('31. Fallback Supabase: columnas de circuit breaker no migradas (error 42703) degradan transparentemente', async () => {
