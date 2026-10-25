@@ -1,0 +1,55 @@
+{
+  "packageId": "pa.sismodata.app",
+  "host": "sismopa.pages.dev",
+  "name": "sismoPA",
+  "launcherName": "sismoPA",
+  "display": "standalone",
+  "themeColor": "#05070B",
+  "themeColorDark": "#000000",
+  "navigationColor": "#000000",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#05070B",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://sismopa.pages.dev/assets/icons/icon-512.png",
+  "maskableIconUrl": "https://sismopa.pages.dev/assets/icons/icon-maskable-512.png",
+  "monochromeIconUrl": "https://sismopa.pages.dev/assets/icons/badge-96.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "C:/Users/robin/.android/sismopa-test-signing.keystore",
+    "alias": "sismotest"
+  },
+  "appVersionName": "1.0.2",
+  "appVersionCode": 3,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://sismopa.pages.dev/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://sismopa.pages.dev/",
+  "minSdkVersion": 24,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "value": "E6:73:81:9A:EB:11:75:10:76:99:E0:75:55:E7:31:58:39:2D:CA:C2:84:9B:79:61:DC:1C:89:DE:77:A3:E1:9D"
+    },
+    {
+      "value": "CC:39:25:F5:4F:1E:8B:B5:77:B9:F0:AD:3C:95:CE:28:10:44:06:D7:A8:7C:3D:1A:30:00:35:5C:7E:4A:24:DC"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "1.0.2"
+}

@@ -5,3 +5,15 @@ deno.lock
 .env.*
 *.log
 captura-*.png
+
+# Android & Keystores de seguridad
+**/*.keystore
+**/*.jks
+**/*.p12
+**/*.pepk
+**/build/
+**/.gradle/
+*.apk
+*.aab
+*.idsig
+**/.keystore-pass

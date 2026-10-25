@@ -2487,10 +2487,17 @@
           return null;
         }
 
+        const isTwaOrStandalone = window.matchMedia('(display-mode: standalone)').matches || (document.referrer && document.referrer.includes('android-app://pa.sismodata.app'));
+        const isAndroidBrowser = !isTwaOrStandalone && /Android/i.test(navigator.userAgent);
+
         if (!sub) {
           badge.textContent = 'Desactivadas';
           badge.className = 'notif-status-badge inactive';
-          detail.textContent = 'Activa las notificaciones voluntarias para recibir alertas de actividad sísmica en este dispositivo.';
+          if (isAndroidBrowser) {
+            detail.textContent = 'Activa las alertas en este navegador. (Nota: Si tienes instalada la app sismoPA de Google Play, ya recibirás las alertas en la app y no requieres activarlas aquí).';
+          } else {
+            detail.textContent = 'Activa las notificaciones voluntarias para recibir alertas de actividad sísmica en este dispositivo.';
+          }
           btnToggle.textContent = 'Activar notificaciones';
           btnToggle.className = 'btn-push-toggle';
           btnToggle.disabled = false;
@@ -2536,7 +2543,9 @@
         // Suscripción vigente, autorizada y confirmada
         badge.textContent = 'Activas';
         badge.className = 'notif-status-badge active';
-        detail.textContent = 'Recibirás avisos inmediatos en este dispositivo cada vez que el IGC-UP publique un nuevo sismo.';
+        detail.textContent = isTwaOrStandalone
+          ? 'Recibirás alertas inmediatas atribuidas a sismoPA cada vez que el IGC-UP publique un nuevo sismo.'
+          : 'Recibirás avisos inmediatos en este dispositivo cada vez que el IGC-UP publique un nuevo sismo.';
         btnToggle.textContent = 'Desactivar notificaciones';
         btnToggle.className = 'btn-push-toggle active';
         btnToggle.disabled = false;

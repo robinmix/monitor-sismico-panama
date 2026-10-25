@@ -13,8 +13,8 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261025syntaxfix1`,
-  static: `${CACHE_PREFIX}static-v20261025syntaxfix1`,
+  core: `${CACHE_PREFIX}core-v20261025twaidentity1`,
+  static: `${CACHE_PREFIX}static-v20261025twaidentity1`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
 
@@ -31,6 +31,7 @@ const STATIC_ASSETS = [
   './manifest.webmanifest',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
+  './assets/icons/badge-96.png',
   './assets/icons/apple-touch-icon.png',
   './assets/icons/favicon-32.png',
   './assets/icons/favicon-16.png',
@@ -245,11 +246,11 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || 'Actividad sísmica registrada en Panamá.',
     icon: './assets/icons/icon-192.png',
-    badge: './assets/icons/icon-192.png',
+    badge: './assets/icons/badge-96.png',
     data: {
-      url: data.url || './'
+      url: data.url || (data.source_uid ? `./?sismo=${encodeURIComponent(data.source_uid)}` : './')
     },
-    tag: data.tag || 'sismopa-alert',
+    tag: data.tag || (data.source_uid ? `sismopa-${data.source_uid}` : 'sismopa-alert'),
     renotify: true
   };
 

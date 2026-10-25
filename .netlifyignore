@@ -2,6 +2,7 @@
 scripts/
 tests/
 *.test.js
+android-twa/
 
 # Capturas locales en raíz
 captura-*.png

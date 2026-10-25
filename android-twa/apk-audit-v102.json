@@ -1,0 +1,14 @@
+{
+  "appName": "sismoPA",
+  "packageId": "pa.sismodata.app",
+  "versionName": "1.0.2",
+  "versionCode": "3",
+  "compileSdkVersion": "36",
+  "targetSdkVersion": "36",
+  "keyAlgorithm": "RSA 4096-bit",
+  "fileSizeBytes": 3208982,
+  "fileSizeFormatted": "3134 KB (3.06 MB)",
+  "apkPath": "C:\\Users\\robin\\OneDrive\\Documentos\\GitHub\\monitor-sismico-panama\\android-twa\\app\\build\\outputs\\apk\\release\\sismopa-v1.0.2-test-signed.apk",
+  "keystorePath": "C:\\Users\\robin\\.android\\sismopa-test-signing.keystore",
+  "targetUrl": "https://sismopa.pages.dev/"
+}
