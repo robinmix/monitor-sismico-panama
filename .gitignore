@@ -17,3 +17,5 @@ captura-*.png
 *.aab
 *.idsig
 **/.keystore-pass
+
+local.properties

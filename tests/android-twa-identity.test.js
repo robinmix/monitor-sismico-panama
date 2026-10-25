@@ -16,6 +16,8 @@ test('Auditoría Integral de Identidad de Notificaciones Android TWA y Web Push'
     assert.equal(manifest.host, 'sismopa.pages.dev', 'Host debe ser sismopa.pages.dev');
     assert.equal(manifest.name, 'sismoPA', 'Nombre de la app debe ser sismoPA');
     assert.equal(manifest.launcherName, 'sismoPA', 'Launcher name debe ser sismoPA');
+    assert.equal(manifest.appVersionName, '1.0.3', 'appVersionName debe ser 1.0.3');
+    assert.equal(manifest.appVersionCode, 4, 'appVersionCode debe ser 4 (superior a versión 3 de Google Play)');
     assert.equal(manifest.enableNotifications, true, 'enableNotifications DEBE ser true para permitir delegación');
     assert.equal(
       manifest.monochromeIconUrl,
@@ -254,5 +256,66 @@ test('Auditoría Integral de Identidad de Notificaciones Android TWA y Web Push'
       false,
       'assetlinks.json NO debe incluir la clave de subida (Upload Key), ya que los usuarios finales nunca ejecutan APKs firmados con ella'
     );
+  });
+
+  await t.test('9. AndroidManifest.xml procesado por Gradle (Merged Manifest): versión 1.0.3, versionCode 4, POST_NOTIFICATIONS, DelegationService y SMALL_ICON', () => {
+    const mergedManifestPath = path.join(
+      ROOT_DIR,
+      'android-twa',
+      'app',
+      'build',
+      'intermediates',
+      'bundle_manifest',
+      'release',
+      'processApplicationManifestReleaseForBundle',
+      'AndroidManifest.xml'
+    );
+    assert.ok(fs.existsSync(mergedManifestPath), 'El AndroidManifest.xml fusionado por Gradle debe existir');
+
+    const xml = fs.readFileSync(mergedManifestPath, 'utf8');
+
+    // Versión final y package
+    assert.match(xml, /package="pa\.sismodata\.app"/, 'Package ID en manifiesto final');
+    assert.match(xml, /android:versionCode="4"/, 'versionCode 4 en manifiesto final');
+    assert.match(xml, /android:versionName="1\.0\.3"/, 'versionName 1.0.3 en manifiesto final');
+
+    // Permiso POST_NOTIFICATIONS
+    assert.match(xml, /<uses-permission\s+android:name="android\.permission\.POST_NOTIFICATIONS"\s*\/>/, 'Permiso POST_NOTIFICATIONS en manifiesto final');
+
+    // DelegationService configurado con @bool/enableNotification
+    assert.match(xml, /<service[\s\S]*?android:name="pa\.sismodata\.app\.DelegationService"[\s\S]*?android:enabled="@bool\/enableNotification"[\s\S]*?android:exported="@bool\/enableNotification"/, 'DelegationService activo en manifiesto final');
+
+    // SMALL_ICON
+    assert.match(xml, /<meta-data[\s\S]*?android:name="android\.support\.customtabs\.trusted\.SMALL_ICON"[\s\S]*?android:resource="@drawable\/ic_notification_icon"/, 'SMALL_ICON en manifiesto final');
+
+    // Intent filter TRUSTED_WEB_ACTIVITY_SERVICE
+    assert.match(xml, /<action\s+android:name="android\.support\.customtabs\.trusted\.TRUSTED_WEB_ACTIVITY_SERVICE"\s*\/>/, 'TRUSTED_WEB_ACTIVITY_SERVICE en manifiesto final');
+
+    // Valor del recurso resValue enableNotification
+    const gradleResValuesPath = path.join(ROOT_DIR, 'android-twa', 'app', 'build', 'generated', 'res', 'resValues', 'release', 'values', 'gradleResValues.xml');
+    assert.ok(fs.existsSync(gradleResValuesPath), 'gradleResValues.xml debe existir');
+    const resXml = fs.readFileSync(gradleResValuesPath, 'utf8');
+    assert.match(resXml, /<bool name="enableNotification">true<\/bool>/, 'enableNotification debe resolver a true en tiempo de ejecución');
+  });
+
+  await t.test('10. Binario AAB empaquetado (app-release.aab): contiene drawables monocromáticos e integridad', () => {
+    const aabPath = path.join(ROOT_DIR, 'android-twa', 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab');
+    assert.ok(fs.existsSync(aabPath), 'app-release.aab debe existir');
+
+    const stat = fs.statSync(aabPath);
+    assert.ok(stat.size > 2000000, `Tamaño del AAB debe ser superior a 2MB (actual: ${stat.size} bytes)`);
+
+    // Inspeccionar que contenga los drawables monocromáticos
+    const { execSync } = require('child_process');
+    const jarTool = path.join(process.env.USERPROFILE, '.bubblewrap', 'jdk', 'bin', 'jar.exe');
+    if (fs.existsSync(jarTool)) {
+      const list = execSync(`"${jarTool}" tf "${aabPath}"`).toString();
+      assert.ok(list.includes('base/res/drawable-mdpi-v4/ic_notification_icon.png'), 'mdpi ic_notification_icon en AAB');
+      assert.ok(list.includes('base/res/drawable-hdpi-v4/ic_notification_icon.png'), 'hdpi ic_notification_icon en AAB');
+      assert.ok(list.includes('base/res/drawable-xhdpi-v4/ic_notification_icon.png'), 'xhdpi ic_notification_icon en AAB');
+      assert.ok(list.includes('base/res/drawable-xxhdpi-v4/ic_notification_icon.png'), 'xxhdpi ic_notification_icon en AAB');
+      assert.ok(list.includes('base/res/drawable-xxxhdpi-v4/ic_notification_icon.png'), 'xxxhdpi ic_notification_icon en AAB');
+      assert.ok(list.includes('base/manifest/AndroidManifest.xml'), 'AndroidManifest en base module del AAB');
+    }
   });
 });
