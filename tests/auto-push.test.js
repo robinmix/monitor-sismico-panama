@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-// Helper para crear un cliente Supabase simulado en memoria
+// Helper para crear un cliente Supabase simulado en memoria con soporte de restricciones de unicidad
 function createMockSupabase(options = {}) {
   const sismosStore = new Map((options.sismos || []).map(s => [s.source_uid, { ...s }]));
   const subsStore = new Map((options.subs || []).map(s => [s.endpoint, { ...s }]));
@@ -89,6 +89,36 @@ function createMockSupabase(options = {}) {
               }
             };
           },
+          async insert(record) {
+            const r = Array.isArray(record) ? record[0] : record;
+            const key = `${r.source_uid}::${r.endpoint}`;
+            if (notifStore.has(key)) {
+              return { data: null, error: { code: '23505', message: 'duplicate key violates unique constraint' } };
+            }
+            notifStore.set(key, { ...r });
+            return { data: [r], error: null };
+          },
+          delete() {
+            let fUid = null;
+            let fEndpoint = null;
+            const chain = {
+              eq(col, val) {
+                if (col === 'source_uid') fUid = val;
+                if (col === 'endpoint') fEndpoint = val;
+                if (fUid && fEndpoint) {
+                  notifStore.delete(`${fUid}::${fEndpoint}`);
+                }
+                return chain;
+              },
+              then(resolve) {
+                if (fUid && fEndpoint) {
+                  notifStore.delete(`${fUid}::${fEndpoint}`);
+                }
+                resolve({ error: null });
+              }
+            };
+            return chain;
+          },
           async upsert(records, opts = {}) {
             for (const r of (Array.isArray(records) ? records : [records])) {
               notifStore.set(`${r.source_uid}::${r.endpoint}`, { ...r });
@@ -110,6 +140,9 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     dispatchPushNotifications,
     sha256Hex
   } = await import('../cloudflare/lib/archivar-sismos.mjs');
+
+  const workerMod = await import('../cloudflare/archivador/worker.mjs');
+  const worker = workerMod.default;
 
   // Generar claves criptográficas efímeras para pruebas seguras
   const vapidKeyPair = await crypto.subtle.generateKey(
@@ -152,7 +185,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     globalThis.fetch = originalFetch;
   });
 
-  await t.test('1. Nuevo sismo genuino (< 30 min): genera exactamente 1 notificación push estructurada', async () => {
+  await t.test('1. Nuevo sismo genuino (< 45 min): genera exactamente 1 notificación push estructurada', async () => {
     let pushPayloadSent = null;
     let pushEndpointSent = null;
 
@@ -189,7 +222,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.ok(pushPayloadSent.headers.Authorization.startsWith('vapid t='));
     assert.equal(pushPayloadSent.headers['Content-Encoding'], 'aes128gcm');
 
-    // Comprobar registro en notificaciones_enviadas
+    // Comprobar reserva y confirmación en notificaciones_enviadas
     assert.equal(mockDb._notif.size, 1);
     const notifRow = mockDb._notif.get(`${newEvent.source_uid}::${sampleSubscriber.endpoint}`);
     assert.ok(notifRow);
@@ -221,13 +254,11 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       notificaciones: [{ source_uid: existingEvent.source_uid, endpoint: sampleSubscriber.endpoint }]
     });
 
-    // Ingesta con el mismo evento ya existente
     const syncRes = await syncEventsToSupabase([existingEvent], mockDb, now);
     assert.equal(syncRes.nuevos, 0);
     assert.equal(syncRes.nuevosRecords.length, 0);
     assert.equal(syncRes.verificados, 1);
 
-    // Si se pasa a despacho, se omiten por no haber nuevos registros
     const pushRes = await dispatchPushNotifications(syncRes.nuevosRecords, mockDb, defaultEnv, now);
     assert.equal(pushRes.enviados, 0);
     assert.equal(fetchCalls, 0);
@@ -269,13 +300,12 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(syncRes.nuevosRecords.length, 0);
     assert.equal(syncRes.actualizados, 1);
 
-    // El evento revisado NO entra en la lista de nuevosRecords
     const pushRes = await dispatchPushNotifications(syncRes.nuevosRecords, mockDb, defaultEnv, now);
     assert.equal(pushRes.enviados, 0);
     assert.equal(fetchCalls, 0);
   });
 
-  await t.test('4. Lote histórico o arranque en frío (>3 sismos o >30 min): 0 notificaciones (anti-ráfaga)', async () => {
+  await t.test('4. Lote histórico o arranque en frío (>6 sismos recientes o >45 min): 0 notificaciones (anti-ráfaga)', async () => {
     let fetchCalls = 0;
     globalThis.fetch = async () => {
       fetchCalls++;
@@ -287,8 +317,8 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       subs: [sampleSubscriber]
     });
 
-    // Caso A: Lote masivo de 4 eventos nuevos (>3)
-    const massEvents = [1, 2, 3, 4].map(i => ({
+    // Caso A: Lote masivo de 7 eventos recientes (> 6)
+    const massEvents = [1, 2, 3, 4, 5, 6, 7].map(i => ({
       source_uid: `igc_2026-10-25T11:5${i}:00.000Z`,
       fecha_hora: `2026-10-25T11:5${i}:00.000Z`,
       magnitud: 3.5,
@@ -299,13 +329,13 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
 
     const massRes = await dispatchPushNotifications(massEvents, mockDb, defaultEnv, now);
     assert.equal(massRes.enviados, 0);
-    assert.equal(massRes.omitidosPorLoteMasivo, 4);
+    assert.equal(massRes.omitidosPorLoteMasivo, 7);
     assert.equal(fetchCalls, 0);
 
-    // Caso B: Evento único pero con antigüedad > 30 minutos (ej. 2 horas antes)
+    // Caso B: Evento único pero con antigüedad > 45 minutos (ej. 3 horas antes)
     const oldEvent = {
       source_uid: 'igc_2026-10-25T09:00:00.000Z',
-      fecha_hora: '2026-10-25T09:00:00.000Z', // 3 horas antes
+      fecha_hora: '2026-10-25T09:00:00.000Z',
       magnitud: 4.0,
       profundidad_km: 15,
       latitud: 8.0,
@@ -358,7 +388,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(mockDb._notif.size, 2);
   });
 
-  await t.test('6. Suscriptor expirado (HTTP 410 Gone): eliminado de push_subscriptions sin fallar', async () => {
+  await t.test('6. Suscriptor expirado (HTTP 410 Gone) o clave inválida (HTTP 401): eliminado de push_subscriptions', async () => {
     globalThis.fetch = async () => {
       return new Response('{"error":"unregistered"}', { status: 410 });
     };
@@ -385,7 +415,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(mockDb._subs.size, 0);
   });
 
-  await t.test('7. Error transitorio de red o HTTP 503: tolerado limpiamente sin abortar el archivado', async () => {
+  await t.test('7. Error transitorio de red: tolerado sin abortar y liberando reserva para reintento', async () => {
     const sub2 = {
       ...sampleSubscriber,
       endpoint: 'https://fcm.googleapis.com/fcm/send/device_beta_2'
@@ -414,9 +444,11 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
 
     const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
 
-    // sub2 tuvo éxito a pesar de la falla de red en sub1
+    // sub2 tuvo éxito a pesar de la falla en sub1
     assert.equal(result.enviados, 1);
     assert.ok(mockDb._notif.has(`${newEvent.source_uid}::${sub2.endpoint}`));
+    // sub1 liberó su reserva para que la siguiente corrida pueda reintentarlo
+    assert.ok(!mockDb._notif.has(`${newEvent.source_uid}::${sampleSubscriber.endpoint}`));
   });
 
   await t.test('8. Fuente IGC-UP vacía o con error: 0 alertas falsas', async () => {
@@ -455,7 +487,6 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       longitud: -80.0
     };
 
-    // Pre-insertar en notificaciones_enviadas
     const mockDb = createMockSupabase({
       subs: [sampleSubscriber],
       notificaciones: [{ source_uid: newEvent.source_uid, endpoint: sampleSubscriber.endpoint }]
@@ -487,7 +518,6 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       longitud: -80.0
     };
 
-    // Entorno por defecto sin AUTO_PUSH_ENABLED o con false
     const disabledEnv = { ...defaultEnv, AUTO_PUSH_ENABLED: 'false' };
     const result = await dispatchPushNotifications([newEvent], mockDb, disabledEnv, now);
 
@@ -495,7 +525,6 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(result.omitidos, 'AUTO_PUSH_DISABLED');
     assert.equal(fetchCalls, 0);
 
-    // Entorno vacío
     const emptyEnvResult = await dispatchPushNotifications([newEvent], mockDb, {}, now);
     assert.equal(emptyEnvResult.enviados, 0);
     assert.equal(emptyEnvResult.omitidos, 'AUTO_PUSH_DISABLED');
@@ -543,7 +572,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
 
     const now = new Date('2026-10-25T12:00:00.000Z');
     const mockDb = createMockSupabase({
-      subs: [] // Sin suscripciones activas
+      subs: []
     });
 
     const newEvent = {
@@ -559,5 +588,127 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(result.enviados, 0);
     assert.equal(result.motivo, 'Sin suscripciones activas');
     assert.equal(fetchCalls, 0);
+  });
+
+  await t.test('13. Concurrencia estricta: dos ejecuciones simultáneas envían EXACTAMENTE 1 notificación (cero duplicados)', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      // Simular latencia de red de 20ms
+      await new Promise(r => setTimeout(r, 20));
+      return new Response('{}', { status: 201 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [sampleSubscriber]
+    });
+
+    const concurrentEvent = {
+      source_uid: 'igc_2026-10-25T11:55:00.000Z',
+      fecha_hora: '2026-10-25T11:55:00.000Z',
+      magnitud: 5.1,
+      profundidad_km: 15,
+      latitud: 7.2,
+      longitud: -81.9,
+      ubicacion: 'Golfo de Chiriquí'
+    };
+
+    // Lanzar dos instancias en paralelo simultáneo
+    const [res1, res2] = await Promise.all([
+      dispatchPushNotifications([concurrentEvent], mockDb, defaultEnv, now),
+      dispatchPushNotifications([concurrentEvent], mockDb, defaultEnv, now)
+    ]);
+
+    // La suma de enviados entre ambas instancias debe ser exactamente 1
+    assert.equal(res1.enviados + res2.enviados, 1);
+    assert.equal(fetchCalls, 1, 'fetch fue llamado exactamente 1 vez por la exclusión mutua');
+    assert.equal(mockDb._notif.size, 1);
+  });
+
+  await t.test('14. Enjambre sísmico real (4 eventos en 20 min): notifica los 3 de mayor magnitud sin descartar el enjambre', async () => {
+    let notifiedTitles = [];
+    globalThis.fetch = async (url, opts) => {
+      return new Response('{}', { status: 201 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [sampleSubscriber]
+    });
+
+    const swarmEvents = [
+      { source_uid: 'igc_swarm_1', fecha_hora: '2026-10-25T11:45:00.000Z', magnitud: 3.8, profundidad_km: 10, latitud: 8.1, longitud: -82.3 },
+      { source_uid: 'igc_swarm_2', fecha_hora: '2026-10-25T11:50:00.000Z', magnitud: 4.9, profundidad_km: 12, latitud: 8.2, longitud: -82.4 }, // Principal
+      { source_uid: 'igc_swarm_3', fecha_hora: '2026-10-25T11:52:00.000Z', magnitud: 4.1, profundidad_km: 10, latitud: 8.1, longitud: -82.3 },
+      { source_uid: 'igc_swarm_4', fecha_hora: '2026-10-25T11:55:00.000Z', magnitud: 3.5, profundidad_km: 15, latitud: 8.1, longitud: -82.3 }
+    ];
+
+    const result = await dispatchPushNotifications(swarmEvents, mockDb, defaultEnv, now);
+
+    // Debe despachar hasta 3 eventos priorizados por magnitud (M4.9, M4.1, M3.8), no 0
+    assert.equal(result.enviados, 3);
+    assert.equal(result.sismosNotificados, 3);
+    assert.ok(mockDb._notif.has(`igc_swarm_2::${sampleSubscriber.endpoint}`)); // M4.9
+    assert.ok(mockDb._notif.has(`igc_swarm_3::${sampleSubscriber.endpoint}`)); // M4.1
+    assert.ok(mockDb._notif.has(`igc_swarm_1::${sampleSubscriber.endpoint}`)); // M3.8
+  });
+
+  await t.test('15. Prueba integral de Cloudflare Worker scheduled(): ejecuta ciclo completo aislado', async () => {
+    let pushDispatched = false;
+    globalThis.fetch = async (url) => {
+      pushDispatched = true;
+      return new Response('{}', { status: 201 });
+    };
+
+    const mockDb = createMockSupabase({
+      subs: [sampleSubscriber]
+    });
+
+    const recentTs = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const simulatedIgcPayload = {
+      eventos: [
+        {
+          fecha: '2026-10-25',
+          hora: '6:50:00AM',
+          timestamp: recentTs,
+          latitud: 8.12345,
+          longitud: -82.34567,
+          profundidad: 11,
+          magnitud: 4.6,
+          region: 'Chiriquí a 10km al norte de David',
+          estado: 'PRELIMINAR'
+        }
+      ]
+    };
+
+    const mockEnv = {
+      SUPABASE_URL: 'https://mock.supabase.co',
+      SUPABASE_SECRET_KEY: 'mock-secret',
+      supabaseClient: mockDb,
+      sourcePayload: simulatedIgcPayload,
+      AUTO_PUSH_ENABLED: 'true',
+      VAPID_PUBLIC_KEY: vapidPubKeyB64,
+      VAPID_PRIVATE_KEY_JWK: JSON.stringify(vapidJwk)
+    };
+
+    let waitedPromise = null;
+    const mockCtx = {
+      waitUntil(p) {
+        waitedPromise = p;
+      }
+    };
+
+    // Invocar el manejador scheduled() del worker
+    await worker.scheduled({}, mockEnv, mockCtx);
+    assert.ok(waitedPromise, 'scheduled() debe registrar una promesa con ctx.waitUntil');
+
+    const result = await waitedPromise;
+    assert.equal(result.ok, true);
+    assert.equal(result.nuevos, 1);
+    assert.equal(result.push.enviados, 1);
+    assert.equal(pushDispatched, true);
+    assert.equal(mockDb._sismos.size, 1);
+    assert.equal(mockDb._notif.size, 1);
   });
 });

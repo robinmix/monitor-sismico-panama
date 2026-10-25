@@ -8,7 +8,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { requestSource, dateFromLocal } from './sismos.mjs';
+import { requestSource, dateFromLocal, classifyRegion } from './sismos.mjs';
 import { resolveLocation } from './geo-resolver.mjs';
 import { sendWebPush } from './web-push.mjs';
 
@@ -414,7 +414,7 @@ async function runArchival(options = {}) {
 
   const archivalPromise = (async () => {
     // 1. Obtener eventos de la fuente oficial IGC-UP
-    const sourcePayload = options.sourcePayload || await requestSource();
+    const sourcePayload = options.sourcePayload || (options.env && options.env.sourcePayload) || await requestSource();
     if (!sourcePayload || !Array.isArray(sourcePayload.eventos) || sourcePayload.eventos.length === 0) {
       throw new Error('La fuente oficial IGC-UP no devolvió registros sísmicos.');
     }
@@ -430,7 +430,7 @@ async function runArchival(options = {}) {
     console.log(`[Archivado Sismos] Registros normalizados válidos: ${normalized.length} | Descartados: ${descartados}`);
 
     // 3. Inicializar Supabase y sincronizar
-    const supabase = options.supabase || getSupabaseClient(options.env);
+    const supabase = options.supabase || (options.env && options.env.supabaseClient) || getSupabaseClient(options.env);
     const syncResult = await syncEventsToSupabase(normalized, supabase, now);
 
     // 4. Notificar nuevos eventos mediante Web Push (si está habilitado)
@@ -525,27 +525,33 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
   }
 
-  // Protección contra ráfagas / cold start / backfill:
-  // Si aparecen más de 3 sismos "nuevos" en una sola corrida de 1 minuto, omitir para no inundar a los usuarios
-  if (nuevosRecords.length > 3) {
-    console.warn(`[Push] Despacho omitido por lote masivo (${nuevosRecords.length} eventos). Protección contra ráfagas activa.`);
-    return { enviados: 0, omitidosPorLoteMasivo: nuevosRecords.length };
-  }
-
-  const MAX_AGE_MS = 30 * 60 * 1000;
+  const MAX_AGE_MS = 45 * 60 * 1000; // 45 minutos (tolera demoras de revisión del IGC)
   const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
   const nowTime = now.getTime();
 
-  const eligibleEvents = nuevosRecords.filter(e => {
+  // 1. Filtrar eventos por antigüedad real primero
+  const recentEvents = nuevosRecords.filter(e => {
     const ts = new Date(e.fecha_hora).getTime();
     if (!Number.isFinite(ts)) return false;
     const diff = nowTime - ts;
     return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_AGE_MS;
   });
 
-  if (!eligibleEvents.length) {
+  if (!recentEvents.length) {
     return { enviados: 0, omitidosPorAntiguedad: nuevosRecords.length };
   }
+
+  // 2. Protección contra ráfagas anómalas / cold start / backfill masivo:
+  // Si en la ventana reciente aparecen más de 6 eventos, se considera importación masiva y se omite.
+  if (recentEvents.length > 6) {
+    console.warn(`[Push] Despacho omitido por lote masivo (${recentEvents.length} eventos recientes). Protección contra ráfagas activa.`);
+    return { enviados: 0, omitidosPorLoteMasivo: recentEvents.length };
+  }
+
+  // 3. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
+  // Ordenar por magnitud descendente y notificar los 3 más significativos para no saturar al usuario
+  const sortedEvents = [...recentEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
+  const eligibleEvents = sortedEvents.slice(0, 3);
 
   // Obtener suscripciones activas
   const { data: subs, error: subsErr } = await supabase
@@ -577,7 +583,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
   let totalEnviados = 0;
 
   for (const ev of eligibleEvents) {
-    // 1. Consultar envíos previos para este sismo para evitar notificaciones duplicadas
+    // Consultar envíos previos para este sismo para evitar notificaciones duplicadas
     const { data: yaEnviados } = await supabase
       .from('notificaciones_enviadas')
       .select('endpoint')
@@ -588,7 +594,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
     if (!subsPendientes.length) continue;
 
-    // 2. Resolver denominación geográfica oficial
+    // Resolver denominación geográfica oficial
     const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
     const geoTexto = geo?.ubicacion_texto || ev.ubicacion || ev.region || 'Panamá';
     const magStr = Number(ev.magnitud).toFixed(1);
@@ -625,9 +631,21 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       tag: `sismo-${ev.source_uid}`
     };
 
-    const recordsEnviados = [];
-
     for (const sub of subsPendientes) {
+      // Reserva atómica en notificaciones_enviadas para evitar condiciones de carrera por concurrencia
+      const { error: reserveErr } = await supabase
+        .from('notificaciones_enviadas')
+        .insert({
+          source_uid: ev.source_uid,
+          endpoint: sub.endpoint,
+          enviado_en: now.toISOString()
+        });
+
+      // Si falló por restricción única (otra instancia concurrente ya reservó o envió), omitir
+      if (reserveErr) {
+        continue;
+      }
+
       try {
         const res = await sendWebPush(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -636,26 +654,27 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         );
 
         if (res && res.ok) {
-          recordsEnviados.push({
-            source_uid: ev.source_uid,
-            endpoint: sub.endpoint,
-            enviado_en: now.toISOString()
-          });
           totalEnviados++;
-        } else if (res && res.expired) {
-          // Suscripción inválida o expirada en el servicio Push (410/404): dar de baja automáticamente
+        } else if (res && (res.expired || res.status === 401 || res.status === 403)) {
+          // Suscripción inválida o expirada en el servicio Push: dar de baja automáticamente
           await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+        } else {
+          // Error transitorio del proveedor (ej. 500, 503): liberar reserva para reintento en el siguiente ciclo
+          await supabase
+            .from('notificaciones_enviadas')
+            .delete()
+            .eq('source_uid', ev.source_uid)
+            .eq('endpoint', sub.endpoint);
         }
       } catch (err) {
-        // Fallo individual o de red no detiene el ciclo de envíos ni aborta el archivador
+        // En caso de fallo de conexión de red, liberar reserva para permitir reintento posterior
+        await supabase
+          .from('notificaciones_enviadas')
+          .delete()
+          .eq('source_uid', ev.source_uid)
+          .eq('endpoint', sub.endpoint);
         console.warn(`[Push] Error enviando a ${sub.endpoint}:`, err.message);
       }
-    }
-
-    if (recordsEnviados.length > 0) {
-      await supabase
-        .from('notificaciones_enviadas')
-        .upsert(recordsEnviados, { onConflict: 'source_uid,endpoint' });
     }
   }
 
