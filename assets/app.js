@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261024amoled3';
+  const APP_BUILD_VERSION = '20261025amoled52';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
@@ -496,7 +496,8 @@
     set('latestMagnitude',magText(e.magnitud));
     set('latestState',e.estado);
     set('latestLevel',e.magnitud >= 5 ? 'MAGNITUD ≥5' : e.magnitud >=4 ? 'MAGNITUD 4.x' : e.magnitud >=3 ? 'MAGNITUD 3.x' : 'MAGNITUD <3');
-    set('latestRegion',e.region);
+    const latestLoc = e.geo_ubicacion_texto || e.region || 'Actividad sísmica reciente';
+    set('latestRegion', latestLoc);
     set('latestDate',fullDate.format(new Date(e.timestamp)));
     set('latestDepth',`${e.profundidad} km de profundidad`);
     if (ui.lastEventPanel) {
@@ -2365,4 +2366,193 @@
   setInterval(elapsedTime, 1000);
   setInterval(() => loadData(true), INTERVAL_MS);
   loadData();
+
+  /* ==========================================================================
+     SELECTOR DE TEMA CLARO / OSCURO
+     ========================================================================== */
+  function initThemeToggle() {
+    const btn = document.getElementById('themeToggleBtn');
+    if (!btn) return;
+
+    function applyTheme(theme) {
+      if (theme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        btn.setAttribute('aria-label', 'Cambiar a modo oscuro');
+        btn.title = 'Cambiar a modo oscuro';
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        btn.setAttribute('aria-label', 'Cambiar a modo claro');
+        btn.title = 'Cambiar a modo claro';
+      }
+    }
+
+    const currentTheme = localStorage.getItem('sismopa_theme') || 'dark';
+    applyTheme(currentTheme);
+
+    btn.addEventListener('click', () => {
+      const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      const newTheme = isLight ? 'dark' : 'light';
+      applyTheme(newTheme);
+      try {
+        localStorage.setItem('sismopa_theme', newTheme);
+      } catch (e) {}
+    });
+  }
+
+  /* ==========================================================================
+     NOTIFICACIONES WEB PUSH DE SISMOS
+     ========================================================================== */
+  function urlB64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async function initPushNotifications() {
+    const badge = document.getElementById('pushStatusBadge');
+    const detail = document.getElementById('pushStatusDetail');
+    const btnToggle = document.getElementById('btnTogglePush');
+    const btnTest = document.getElementById('btnTestPush');
+    if (!badge || !btnToggle) return;
+
+    const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    if (!isSupported) {
+      badge.textContent = 'No soportado';
+      badge.className = 'notif-status-badge inactive';
+      detail.textContent = 'Este navegador o plataforma no admite la API estándar de notificaciones Web Push.';
+      btnToggle.disabled = true;
+      btnToggle.textContent = 'No disponible';
+      return;
+    }
+
+    async function checkSubscription() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (Notification.permission === 'denied') {
+          badge.textContent = 'Bloqueadas';
+          badge.className = 'notif-status-badge denied';
+          detail.textContent = 'El permiso fue denegado en el navegador. Para recibirlas, permite las notificaciones en la configuración del sitio.';
+          btnToggle.textContent = 'Permiso denegado';
+          btnToggle.disabled = true;
+          if (btnTest) btnTest.hidden = true;
+          return null;
+        }
+
+        if (sub) {
+          badge.textContent = 'Activas';
+          badge.className = 'notif-status-badge active';
+          detail.textContent = 'Recibirás avisos inmediatos en este dispositivo cada vez que el IGC-UP publique un nuevo sismo.';
+          btnToggle.textContent = 'Desactivar notificaciones';
+          btnToggle.className = 'btn-push-toggle active';
+          btnToggle.disabled = false;
+          if (btnTest) btnTest.hidden = false;
+          return sub;
+        } else {
+          badge.textContent = 'Desactivadas';
+          badge.className = 'notif-status-badge inactive';
+          detail.textContent = 'Activa las notificaciones voluntarias para recibir alertas de actividad sísmica en este dispositivo.';
+          btnToggle.textContent = 'Activar notificaciones';
+          btnToggle.className = 'btn-push-toggle';
+          btnToggle.disabled = false;
+          if (btnTest) btnTest.hidden = true;
+          return null;
+        }
+      } catch (err) {
+        console.warn('[Push] Error comprobando estado:', err);
+        return null;
+      }
+    }
+
+    btnToggle.addEventListener('click', async () => {
+      btnToggle.disabled = true;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const currentSub = await reg.pushManager.getSubscription();
+
+        if (currentSub) {
+          // Desactivar
+          await currentSub.unsubscribe();
+          try {
+            await fetch('/api/push-subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint })
+            });
+          } catch (e) {}
+          await checkSubscription();
+        } else {
+          // Activar
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') {
+            await checkSubscription();
+            return;
+          }
+
+          // Obtener clave pública VAPID del servidor
+          const vapidRes = await fetch('/api/push-vapid-key').then(r => r.json()).catch(() => null);
+          const vapidKey = vapidRes?.vapidPublicKey || 'BOkJ0YIiK-7MQsdojNxZ0X6gVaa-ONOUyrd7rBMbKuZ-GaivoJtKmMXzoziLS80qjUz_fjpXbktjQIv7yB8bIK4';
+
+          const newSub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlB64ToUint8Array(vapidKey)
+          });
+
+          // Registrar en servidor
+          await fetch('/api/push-subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'subscribe', subscription: newSub })
+          });
+
+          await checkSubscription();
+        }
+      } catch (err) {
+        console.error('[Push] Error al alternar notificaciones:', err);
+        detail.textContent = 'No se pudo completar la suscripción: ' + (err.message || 'Error de conexión');
+      } finally {
+        btnToggle.disabled = false;
+      }
+    });
+
+    if (btnTest) {
+      btnTest.addEventListener('click', async () => {
+        btnTest.disabled = true;
+        btnTest.textContent = 'Enviando prueba…';
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (!sub) throw new Error('No hay suscripción activa');
+
+          const res = await fetch('/api/push-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: sub.endpoint })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || 'Fallo en envío de prueba');
+          btnTest.textContent = '¡Prueba enviada!';
+          setTimeout(() => { btnTest.textContent = 'Probar en este dispositivo'; btnTest.disabled = false; }, 3000);
+        } catch (err) {
+          alert('Error enviando notificación de prueba: ' + err.message);
+          btnTest.textContent = 'Probar en este dispositivo';
+          btnTest.disabled = false;
+        }
+      });
+    }
+
+    await checkSubscription();
+  }
+
+  // Inicializar funciones nuevas al cargar
+  window.addEventListener('DOMContentLoaded', () => {
+    initThemeToggle();
+    initPushNotifications();
+  });
+
 })();

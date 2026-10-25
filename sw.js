@@ -13,8 +13,8 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261024amoled3`,
-  static: `${CACHE_PREFIX}static-v20261024amoled3`,
+  core: `${CACHE_PREFIX}core-v20261025amoled52`,
+  static: `${CACHE_PREFIX}static-v20261025amoled52`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
 
@@ -227,4 +227,52 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+});
+
+
+/* ==========================================================================
+   EVENTOS WEB PUSH & NOTIFICATION CLICK (sismoPA AMOLED 5.2)
+   ========================================================================== */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: 'sismoPA · Nuevo sismo', body: event.data ? event.data.text() : 'Actividad sísmica registrada en Panamá.' };
+  }
+
+  const title = data.title || 'sismoPA · Nuevo sismo';
+  const options = {
+    body: data.body || 'Actividad sísmica registrada en Panamá.',
+    icon: './assets/icons/icon-192.png',
+    badge: './assets/icons/icon-192.png',
+    data: {
+      url: data.url || './'
+    },
+    tag: data.tag || 'sismopa-alert',
+    renotify: true
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || './';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          if ('navigate' in client && targetUrl !== './') {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
 });

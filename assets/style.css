@@ -45,6 +45,7 @@
   --mag-4: #FF9A32;         /* 4.0 – 4.9: Naranja brillante */
   --mag-5: #FF5266;         /* >= 5.0: Rojo coral intenso */
   --mag-neutral: #839AB5;   /* Neutral / inválido / ausente */
+  --geo-highlight: #FFE16A; /* Resaltado geográfico AMOLED */
 
   /* Legacy mappings */
   --color-lime: var(--mag-below);
@@ -74,6 +75,66 @@
   --shadow-card: 0 4px 16px -2px rgba(0, 0, 0, 0.3);
   --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
+/* ==========================================================================
+   TEMA CLARO PROFESIONAL (ALTO CONTRASTE WCAG AAA)
+   ========================================================================== */
+[data-theme="light"] {
+  color-scheme: light;
+  --bg-root: #F2F6FC;
+  --bg-secondary: #E8EFF8;
+  --bg-surface: #FFFFFF;
+  --bg-surface-2: #F0F4FA;
+  --bg-surface-hover: #E4ECF6;
+  --bg-surface-active: #D9E4F2;
+  --bg-card: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-input: #FFFFFF;
+
+  --border-subtle: #E2EAF4;
+  --border-default: #D8E2EE;
+  --border-card: #D8E2EE;
+  --border-strong: #C4D3E5;
+  --border-highlight: rgba(22, 120, 211, 0.40);
+  --border-focus: #1678D3;
+
+  --text-main: #172338;
+  --text-secondary: #4A5D78;
+  --text-muted: #64748B;
+  --text-dim: #94A3B8;
+
+  --color-blue: #1678D3;
+  --color-blue-hover: #0F5CA3;
+  --color-cyan: #0284C7;
+  --color-interactive: #E2EEFC;
+
+  /* Resaltado geográfico adaptado a fondo claro (máximo contraste WCAG AAA) */
+  --geo-highlight: #B45309;
+
+  /* Magnitudes con excelente contraste sobre blanco */
+  --mag-below: #0D9488;
+  --mag-3: #15803D;
+  --mag-4: #C2410C;
+  --mag-5: #DC2626;
+  --mag-neutral: #64748B;
+
+  --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.08);
+  --shadow-subtle: 0 1px 4px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="light"] html {
+  background-color: var(--bg-root);
+  color-scheme: light;
+}
+
+[data-theme="light"] .hero-circle-dial {
+  background: radial-gradient(circle at center, #FFFFFF 0%, #F0F4FA 100%) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-theme="light"] .hero-circle-val {
+  color: #172338 !important;
+}
+
 
 /* --------------------------------------------------------------------------
    02. BASE RESET & SMOOTH MODERN FINISH
@@ -3865,7 +3926,7 @@ td.align-right {
 
 /* RESALTADO DE GEOLOCALIZACIÓN PRECISA (AMOLED 5.1) */
 .geo-location-highlight {
-  color: #FFE16A !important;
+  color: var(--geo-highlight, #FFE16A) !important;
   font-family: var(--font-sans) !important;
   font-weight: 700 !important;
 }
@@ -5521,4 +5582,159 @@ td.align-right {
   font-size: 14.5px;
   font-weight: 600;
   color: var(--text-main);
+}
+
+
+/* ==========================================================================
+   BOTÓN SELECTOR DE TEMA CLARO / OSCURO
+   ========================================================================== */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.theme-toggle-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--color-blue);
+  border-color: var(--border-highlight);
+}
+.theme-toggle-btn .theme-icon {
+  width: 18px;
+  height: 18px;
+}
+/* En modo oscuro se muestra el sol (cambiar a claro) */
+.theme-toggle-btn .sun-icon { display: block; }
+.theme-toggle-btn .moon-icon { display: none; }
+/* En modo claro se muestra la luna (cambiar a oscuro) */
+[data-theme="light"] .theme-toggle-btn .sun-icon { display: none; }
+[data-theme="light"] .theme-toggle-btn .moon-icon { display: block; }
+
+/* ==========================================================================
+   SECCIÓN DE NOTIFICACIONES WEB PUSH
+   ========================================================================== */
+.section-notifications {
+  margin-top: 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--shadow-card);
+}
+.notifications-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.notifications-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.notifications-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 4px;
+}
+.notifications-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+.notification-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 13.5px;
+}
+.notif-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.notif-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+}
+.notif-status-badge.inactive {
+  background: rgba(131, 154, 181, 0.15);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+.notif-status-badge.active {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22C55E;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+.notif-status-badge.denied {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.notif-detail-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 8px 0 14px;
+}
+.notifications-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.btn-push-toggle, .btn-push-test {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-push-toggle {
+  background: var(--color-blue);
+  color: #FFFFFF;
+  border: 1px solid transparent;
+}
+.btn-push-toggle:hover {
+  background: var(--color-blue-hover);
+}
+.btn-push-toggle.active {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+.btn-push-test {
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--border-default);
+}
+.btn-push-test:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-highlight);
+}
+.notifications-disclaimer {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+#dashboardView[data-active-tab="mas"] > .section-notifications {
+  display: block !important;
+  margin-top: 0 !important;
 }

@@ -1,6 +1,13 @@
 <!doctype html>
 <html lang="es">
 <head>
+  <script>
+    try {
+      if (localStorage.getItem('sismopa_theme') === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    } catch (e) {}
+  </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#05070B">
@@ -22,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261024amoled3">
+  <link rel="stylesheet" href="assets/style.css?v=20261025amoled52">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261024amoled3"></script>
+  <script defer src="assets/app.js?v=20261025amoled52"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -49,6 +56,10 @@
       </nav>
 
       <div class="topbar-right">
+        <button type="button" id="themeToggleBtn" class="theme-toggle-btn" aria-label="Cambiar tema claro u oscuro" title="Cambiar tema">
+          <svg class="theme-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <svg class="theme-icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
         <button type="button" id="pwaInstallBtn" class="pwa-install-btn" hidden aria-label="Instalar sismoPA como aplicación web">
           <svg class="pwa-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
@@ -252,7 +263,6 @@
             <div class="hero-circle-container">
               <div class="hero-circle-dial" id="heroMagCircle">
                 <strong id="latestMagnitude" class="hero-circle-val">—</strong>
-                <span class="hero-circle-prefix">MAGNITUD</span>
                 <span id="latestLevel" class="hero-circle-level" hidden>CONSULTANDO</span>
               </div>
             </div>
@@ -951,6 +961,31 @@
               Consultar Política de Privacidad
             </a>
           </div>
+        </div>
+      </section>
+
+      <!-- NOTIFICACIONES WEB PUSH DE NUEVOS SISMOS -->
+      <section class="panel section-notifications" id="notificaciones" aria-label="Notificaciones de nuevos sismos">
+        <div class="notifications-header">
+          <div class="notifications-title-row">
+            <span class="notifications-icon" aria-hidden="true">🔔</span>
+            <div class="notifications-header-text">
+              <h2 class="notifications-title">Notificaciones de nuevos sismos</h2>
+              <p class="notifications-subtitle">Avisos automáticos cuando el IGC-UP publique un nuevo evento sísmico en Panamá.</p>
+            </div>
+          </div>
+        </div>
+        <div class="notifications-body">
+          <div class="notification-status-row">
+            <span class="notif-label">Estado del servicio:</span>
+            <span id="pushStatusBadge" class="notif-status-badge inactive">Desactivadas</span>
+          </div>
+          <p id="pushStatusDetail" class="notif-detail-text">Activa las notificaciones voluntarias para recibir alertas de actividad sísmica en este dispositivo.</p>
+          <div class="notifications-actions">
+            <button type="button" id="btnTogglePush" class="btn-push-toggle">Activar notificaciones</button>
+            <button type="button" id="btnTestPush" class="btn-push-test" hidden>Probar en este dispositivo</button>
+          </div>
+          <small class="notifications-disclaimer">Servicio informativo voluntario mediante Web Push. No representa alerta sísmica temprana ni predicción de eventos.</small>
         </div>
       </section>
       </div><!-- /#dashboardView -->

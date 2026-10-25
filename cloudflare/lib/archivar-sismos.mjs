@@ -9,6 +9,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { requestSource, dateFromLocal } from './sismos.mjs';
+import { resolveLocation } from './geo-resolver.mjs';
+import { sendWebPush } from './web-push.mjs';
 
 const CRON_SCHEDULE = '*/30 * * * *';
 const FUENTE_NOMBRE = 'IGC-UP';
@@ -307,6 +309,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
 
   const payloads = [];
   let nuevosCount = 0;
+  const nuevosRecords = [];
   let actualizadosCount = 0;
   let verificadosCount = 0;
 
@@ -336,6 +339,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
         ultima_verificacion: nowISO
       });
       nuevosCount++;
+      nuevosRecords.push(r);
     } else {
       // Evento existente: evaluar si hubo revisión de magnitud, profundidad, estado o coordenadas
       const cambioMagnitud = Math.abs(Number(existing.magnitud) - Number(r.magnitud)) > 0.01;
@@ -442,6 +446,28 @@ async function runArchival(options = {}) {
     };
   })();
 
+    // 4. Notificar nuevos eventos mediante Web Push (si hay suscripciones activas)
+    if (syncResult.nuevosRecords && syncResult.nuevosRecords.length > 0 && options.enablePush !== false) {
+      try {
+        await dispatchPushNotifications(syncResult.nuevosRecords, supabase, options.env, now);
+      } catch (pushErr) {
+        console.warn('[Archivado Sismos] Advertencia en despacho de notificaciones:', pushErr.message);
+      }
+    }
+
+    return {
+      ok: true,
+      inicio: nowISO,
+      duracion_ms: durationMs,
+      recibidos: rawEvents.length,
+      validos: normalized.length,
+      descartados,
+      nuevos: syncResult.nuevos,
+      actualizados: syncResult.actualizados,
+      verificados: syncResult.verificados
+    };
+  })();
+
   return await Promise.race([archivalPromise, timeoutPromise]);
 }
 
@@ -479,3 +505,92 @@ const rawHandler = async function(event, context, options = {}) {
 };
 
 export { rawHandler as handler, rawHandler, runArchival, normalizeEvents, buildNormalizedRecord, generateSourceUid, syncEventsToSupabase, geoDistanceKm, CRON_SCHEDULE };
+
+
+/**
+ * Distribuye notificaciones Web Push para sismos verdaderamente nuevos (máximo 45 min de antigüedad).
+ * Protegido contra duplicados mediante notificaciones_enviadas.
+ */
+async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date()) {
+  if (!supabase || !nuevosRecords || !nuevosRecords.length) return { enviados: 0 };
+
+  const MAX_AGE_MS = 45 * 60 * 1000;
+  const recentEvents = nuevosRecords.filter(e => {
+    const ts = new Date(e.fecha_hora).getTime();
+    return Number.isFinite(ts) && Math.abs(now.getTime() - ts) < MAX_AGE_MS;
+  });
+
+  if (!recentEvents.length) {
+    return { enviados: 0, omitidosPorAntiguedad: nuevosRecords.length };
+  }
+
+  // Obtener suscripciones activas (límite 500 por lote para no saturar memoria)
+  const { data: subs, error: subsErr } = await supabase
+    .from('push_subscriptions')
+    .select('endpoint, p256dh, auth')
+    .limit(500);
+
+  if (subsErr || !subs || !subs.length) {
+    return { enviados: 0, motivo: subsErr ? subsErr.message : 'Sin suscripciones activas' };
+  }
+
+  let totalEnviados = 0;
+
+  for (const ev of recentEvents) {
+    // 1. Verificar si ya fue notificado previamente
+    const { data: yaEnviados } = await supabase
+      .from('notificaciones_enviadas')
+      .select('endpoint')
+      .eq('source_uid', ev.source_uid);
+
+    const endpointsNotificados = new Set((yaEnviados || []).map(r => r.endpoint));
+    const subsPendientes = subs.filter(s => !endpointsNotificados.has(s.endpoint));
+
+    if (!subsPendientes.length) continue;
+
+    // 2. Determinar texto geográfico con GeographicResolver
+    const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
+    const geoTexto = geo?.ubicacion_texto || ev.ubicacion || ev.region || 'Panamá';
+
+    const payload = {
+      title: `sismoPA · Nuevo sismo M${ev.magnitud.toFixed(1)}`,
+      body: geoTexto,
+      url: `/#/sismo/${encodeURIComponent(ev.source_uid)}`,
+      tag: `sismo-${ev.source_uid}`
+    };
+
+    const recordsEnviados = [];
+
+    for (const sub of subsPendientes) {
+      try {
+        const res = await sendWebPush(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload,
+          env
+        );
+
+        if (res.ok) {
+          recordsEnviados.push({
+            source_uid: ev.source_uid,
+            endpoint: sub.endpoint,
+            enviado_en: now.toISOString()
+          });
+          totalEnviados++;
+        } else if (res.expired) {
+          // Suscripción inválida o expirada en el servicio Push: dar de baja automáticamente
+          await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+        }
+      } catch (err) {
+        // Fallo individual no detiene el ciclo de envíos
+      }
+    }
+
+    if (recordsEnviados.length > 0) {
+      await supabase
+        .from('notificaciones_enviadas')
+        .upsert(recordsEnviados, { onConflict: 'source_uid,endpoint' });
+    }
+  }
+
+  return { enviados: totalEnviados };
+}
