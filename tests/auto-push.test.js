@@ -7,7 +7,18 @@ const assert = require('node:assert/strict');
 function createMockSupabase(options = {}) {
   const sismosStore = new Map((options.sismos || []).map(s => [s.source_uid, { ...s }]));
   const subsStore = new Map((options.subs || []).map(s => [s.endpoint, { ...s }]));
-  const notifStore = new Map((options.notificaciones || []).map(n => [`${n.source_uid}::${n.endpoint}`, { ...n }]));
+  const initialNotif = options.isFirstActivation
+    ? (options.notificaciones || [])
+    : (options.notificaciones !== undefined
+        ? options.notificaciones
+        : [
+            {
+              source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+              endpoint: '__SYSTEM__',
+              enviado_en: '2026-10-25T10:00:00.000Z'
+            }
+          ]);
+  const notifStore = new Map(initialNotif.map(n => [`${n.source_uid}::${n.endpoint}`, { ...n }]));
 
   return {
     _sismos: sismosStore,
@@ -1038,7 +1049,8 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
 
     const mockDb = createMockSupabase({
       sismos: archivedEvents,
-      subs: [sampleSubscriber]
+      subs: [sampleSubscriber],
+      isFirstActivation: true
     });
 
     // Se activa AUTO_PUSH_ENABLED por primera vez
@@ -1375,7 +1387,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     };
 
     const t0 = Date.now();
-    const res = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    const res = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 100 }, now);
     const duration = Date.now() - t0;
 
     assert.equal(res.enviados, 100);
@@ -1423,7 +1435,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
       primera_captura: '2026-10-25T12:00:00.000Z'
     };
 
-    const res = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    const res = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 500 }, now);
 
     assert.equal(res.enviados, 500, 'Debe despachar hasta el límite de 500 suscriptores por lote cron sin saturar');
     assert.equal(pushDeliveries, 500);
@@ -1450,7 +1462,7 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
             select() {
               const chain = {
                 eq() { return chain; },
-                then(resolve) { resolve({ data: [], error: null }); }
+                then(resolve) { resolve({ data: [{ source_uid: '__SYSTEM_PUSH_ACTIVATION__', endpoint: '__SYSTEM__', enviado_en: '2026-10-25T10:00:00.000Z' }], error: null }); }
               };
               return chain;
             },

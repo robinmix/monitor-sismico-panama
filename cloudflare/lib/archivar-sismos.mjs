@@ -629,7 +629,9 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     }
   }
 
-  const activationTime = activationTimestamp ? new Date(activationTimestamp).getTime() : 0;
+  // Seguridad crítica: si la base de datos falla al persistir o leer el hito de activación,
+  // se asume nowTime para impedir estrictamente que cualquier sismo previo sea notificado.
+  const activationTime = activationTimestamp ? new Date(activationTimestamp).getTime() : nowTime;
 
   // 3. Filtrar eventos conocidos/archivados antes de la activación de Web Push (cero notificaciones históricas)
   const activeEvents = [];
@@ -655,7 +657,8 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     }
 
     // Si el evento fue capturado antes del hito de activación (con 2s de tolerancia para jitter), omitir
-    if (activationTime > 0 && capturedTime < activationTime - 2000) {
+    // Si el evento fue capturado en o antes del hito de activación, omitir (cero notificaciones históricas)
+    if (activationTime > 0 && capturedTime <= activationTime) {
       continue;
     }
 
@@ -735,7 +738,19 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
   let totalEnviados = 0;
 
+  // Parámetros ajustados estrictamente a los límites de Cloudflare Workers Free:
+  // - Máximo 6 conexiones simultáneas: limitamos PUSH_CONCURRENCY a 5.
+  // - Máximo 50 subrequests por invocación: limitamos a 15 suscriptores por minuto (~30-36 subrequests totales).
+  // - El resto de suscriptores pendientes se drenan de forma ordenada en los siguientes ciclos cron.
+  const PUSH_CONCURRENCY = Math.min(Number(env?.PUSH_CONCURRENCY) || 5, 5);
+  const MAX_SUBS_PER_CYCLE = Number(env?.PUSH_MAX_SUBS_PER_CYCLE) || 15;
+
   for (const ev of eligibleEvents) {
+    const quotaRemaining = Math.max(0, MAX_SUBS_PER_CYCLE - totalEnviados);
+    if (quotaRemaining <= 0) {
+      console.log(`[Push] Cuota global por ciclo alcanzada (${MAX_SUBS_PER_CYCLE}). Suscriptores restantes diferidos al siguiente cron.`);
+      break;
+    }
     // Consultar envíos previos para este sismo para evitar notificaciones duplicadas
     const { data: yaEnviados } = await supabase
       .from('notificaciones_enviadas')
@@ -798,10 +813,11 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       tag: `sismo-${ev.source_uid}`
     };
 
-    // Despacho en lotes concurrentes para alto rendimiento sin bloquear el Worker
-    const PUSH_CONCURRENCY = 25;
-    for (let i = 0; i < subsPendientes.length; i += PUSH_CONCURRENCY) {
-      const chunk = subsPendientes.slice(i, i + PUSH_CONCURRENCY);
+    const subsToProcess = subsPendientes.slice(0, quotaRemaining);
+
+    // Despacho en lotes concurrentes respetando el límite de 6 conexiones de Cloudflare Free
+    for (let i = 0; i < subsToProcess.length; i += PUSH_CONCURRENCY) {
+      const chunk = subsToProcess.slice(i, i + PUSH_CONCURRENCY);
       await Promise.allSettled(chunk.map(async (sub) => {
         // Reserva atómica en notificaciones_enviadas para evitar condiciones de carrera por concurrencia
         const { error: reserveErr } = await supabase

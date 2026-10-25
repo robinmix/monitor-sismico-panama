@@ -434,6 +434,11 @@ export async function sendWebPush(subscription, payloadObj, env = {}) {
 
   let res;
   try {
+    const timeoutMs = Number(env?.PUSH_NETWORK_TIMEOUT_MS) || 8000;
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined;
+
     res = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -443,7 +448,8 @@ export async function sendWebPush(subscription, payloadObj, env = {}) {
         'TTL': '86400',
         'Urgency': 'high'
       },
-      body: payloadArrayBuffer
+      body: payloadArrayBuffer,
+      signal
     });
   } catch (err) {
     throw new WebPushError(
