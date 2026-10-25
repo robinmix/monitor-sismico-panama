@@ -798,61 +798,124 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       tag: `sismo-${ev.source_uid}`
     };
 
-    for (const sub of subsPendientes) {
-      // Reserva atómica en notificaciones_enviadas para evitar condiciones de carrera por concurrencia
-      const { error: reserveErr } = await supabase
-        .from('notificaciones_enviadas')
-        .insert({
-          source_uid: ev.source_uid,
-          endpoint: sub.endpoint,
-          enviado_en: now.toISOString()
-        });
+    // Despacho en lotes concurrentes para alto rendimiento sin bloquear el Worker
+    const PUSH_CONCURRENCY = 25;
+    for (let i = 0; i < subsPendientes.length; i += PUSH_CONCURRENCY) {
+      const chunk = subsPendientes.slice(i, i + PUSH_CONCURRENCY);
+      await Promise.allSettled(chunk.map(async (sub) => {
+        // Reserva atómica en notificaciones_enviadas para evitar condiciones de carrera por concurrencia
+        const { error: reserveErr } = await supabase
+          .from('notificaciones_enviadas')
+          .insert({
+            source_uid: ev.source_uid,
+            endpoint: sub.endpoint,
+            enviado_en: now.toISOString()
+          });
 
-      // Si falló por restricción única (otra instancia concurrente ya reservó o envió), omitir
-      if (reserveErr) {
-        continue;
-      }
+        // Si falló por restricción única (otra instancia concurrente ya reservó o envió), omitir
+        if (reserveErr) {
+          return;
+        }
 
-      try {
-        const res = await sendWebPush(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          payload,
-          env
-        );
+        try {
+          const res = await sendWebPush(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            payload,
+            env
+          );
 
-        if (res && res.ok) {
-          totalEnviados++;
-          // Recuperación automática: circuito cerrado, limpiar fallos y cooldowns
-          if ((sub.failures && sub.failures > 0) || sub.retry_after) {
+          if (res && res.ok) {
+            totalEnviados++;
+            // Recuperación automática: circuito cerrado, limpiar fallos y cooldowns
+            if ((sub.failures && sub.failures > 0) || sub.retry_after) {
+              try {
+                let { error: updErr } = await supabase
+                  .from('push_subscriptions')
+                  .update({
+                    failures: 0,
+                    retry_after: null,
+                    last_failure_at: null
+                  })
+                  .eq('endpoint', sub.endpoint);
+
+                if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                  await supabase
+                    .from('push_subscriptions')
+                    .update({ failures: 0 })
+                    .eq('endpoint', sub.endpoint);
+                }
+              } catch {}
+            }
+          } else if (res && (res.status === 410 || res.status === 404 || res.expired)) {
+            // Suscripción verdaderamente expirada o dada de baja en el servicio Push (410/404):
+            // Eliminar únicamente cuando el proveedor confirme que el endpoint ya no existe
+            await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+            await supabase
+              .from('notificaciones_enviadas')
+              .delete()
+              .eq('source_uid', ev.source_uid)
+              .eq('endpoint', sub.endpoint);
+          } else if (res && (res.status === 401 || res.status === 403 || res.authError)) {
+            // Error de autenticación/autorización VAPID (HTTP 401/403):
+            // NUNCA eliminar suscripciones masivamente por desajustes de clave VAPID o permisos en servidor.
+            // Suspender temporalmente con cooldown (300s) para permitir resolución administrativa sin perder usuarios.
+            await supabase
+              .from('notificaciones_enviadas')
+              .delete()
+              .eq('source_uid', ev.source_uid)
+              .eq('endpoint', sub.endpoint);
+
+            const nextFailures = (sub.failures || 0) + 1;
+            const retryAfterIso = calculateRetryAfterDate(res?.retryAfter || '300', nextFailures, now);
+            console.warn(`[Push] Advertencia de autenticación VAPID (HTTP ${res.status}). Suspensión temporal aplicada, suscripción preservada.`);
             try {
               let { error: updErr } = await supabase
                 .from('push_subscriptions')
                 .update({
-                  failures: 0,
-                  retry_after: null,
-                  last_failure_at: null
+                  failures: nextFailures,
+                  retry_after: retryAfterIso,
+                  last_failure_at: now.toISOString()
                 })
                 .eq('endpoint', sub.endpoint);
 
               if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
                 await supabase
                   .from('push_subscriptions')
-                  .update({ failures: 0 })
+                  .update({ failures: nextFailures })
+                  .eq('endpoint', sub.endpoint);
+              }
+            } catch {}
+          } else {
+            // Error transitorio del proveedor (ej. 429 Too Many Requests, 500, 502, 503, 504 u otros 4xx):
+            // Liberar reserva para reintento en el siguiente ciclo cron (nunca marcar como entregado lo que falló)
+            await supabase
+              .from('notificaciones_enviadas')
+              .delete()
+              .eq('source_uid', ev.source_uid)
+              .eq('endpoint', sub.endpoint);
+
+            const nextFailures = (sub.failures || 0) + 1;
+            const retryAfterIso = calculateRetryAfterDate(res?.retryAfter, nextFailures, now);
+            try {
+              let { error: updErr } = await supabase
+                .from('push_subscriptions')
+                .update({
+                  failures: nextFailures,
+                  retry_after: retryAfterIso,
+                  last_failure_at: now.toISOString()
+                })
+                .eq('endpoint', sub.endpoint);
+
+              if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                await supabase
+                  .from('push_subscriptions')
+                  .update({ failures: nextFailures })
                   .eq('endpoint', sub.endpoint);
               }
             } catch {}
           }
-        } else if (res && (res.expired || res.status === 401 || res.status === 403)) {
-          // Suscripción inválida o expirada en el servicio Push: dar de baja automáticamente
-          await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-          await supabase
-            .from('notificaciones_enviadas')
-            .delete()
-            .eq('source_uid', ev.source_uid)
-            .eq('endpoint', sub.endpoint);
-        } else {
-          // Error transitorio del proveedor (ej. 429 Too Many Requests, 500, 503):
-          // Liberar reserva para reintento en el siguiente ciclo cron (nunca marcar como entregado lo que falló)
+        } catch (err) {
+          // En caso de fallo de red, timeout o desconexión, liberar reserva para permitir reintento posterior
           await supabase
             .from('notificaciones_enviadas')
             .delete()
@@ -860,7 +923,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
             .eq('endpoint', sub.endpoint);
 
           const nextFailures = (sub.failures || 0) + 1;
-          const retryAfterIso = calculateRetryAfterDate(res?.retryAfter, nextFailures, now);
+          const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
           try {
             let { error: updErr } = await supabase
               .from('push_subscriptions')
@@ -878,37 +941,10 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
                 .eq('endpoint', sub.endpoint);
             }
           } catch {}
+
+          console.warn(`[Push] Error de red o timeout enviando a ${sub.endpoint}:`, err.message);
         }
-      } catch (err) {
-        // En caso de fallo de red o timeout, liberar reserva para permitir reintento posterior
-        await supabase
-          .from('notificaciones_enviadas')
-          .delete()
-          .eq('source_uid', ev.source_uid)
-          .eq('endpoint', sub.endpoint);
-
-        const nextFailures = (sub.failures || 0) + 1;
-        const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
-        try {
-          let { error: updErr } = await supabase
-            .from('push_subscriptions')
-            .update({
-              failures: nextFailures,
-              retry_after: retryAfterIso,
-              last_failure_at: now.toISOString()
-            })
-            .eq('endpoint', sub.endpoint);
-
-          if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-            await supabase
-              .from('push_subscriptions')
-              .update({ failures: nextFailures })
-              .eq('endpoint', sub.endpoint);
-          }
-        } catch {}
-
-        console.warn(`[Push] Error de red enviando a ${sub.endpoint}:`, err.message);
-      }
+      }));
     }
   }
 
