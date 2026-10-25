@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261025pushsec1';
+  const APP_BUILD_VERSION = '20261025pushdiag1';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
@@ -2655,7 +2655,7 @@
           });
           const data = await res.json();
           if (!res.ok || !data.ok) {
-            throw new Error(data.error || 'Fallo en envío de prueba');
+            const diag = data.diagnostico ?  (: ) : ''; throw new Error((data.error || 'Fallo en envío de prueba') + diag);
           }
           btnTest.textContent = '¡Prueba enviada!';
           setTimeout(() => { btnTest.textContent = 'Probar en este dispositivo'; btnTest.disabled = false; }, 3000);

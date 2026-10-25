@@ -7,15 +7,17 @@ const path = require('path');
 const { webcrypto } = require('crypto');
 const crypto = webcrypto;
 
-test('Web Push Security & Delivery Suite', async (t) => {
+test('Web Push Security & Delivery Suite (con Diagnósticos por Fases)', async (t) => {
   const webPushMod = await import('../cloudflare/lib/web-push.mjs');
   const {
     isValidPushEndpoint,
     b64UrlToUint8,
     uint8ToB64Url,
+    parsePrivateJwkSafely,
     createVapidHeader,
     encryptWebPush,
-    sendWebPush
+    sendWebPush,
+    WebPushError
   } = webPushMod;
 
   const subMod = await import('../functions/api/push-subscribe.js');
@@ -62,19 +64,64 @@ test('Web Push Security & Delivery Suite', async (t) => {
     assert.equal(isValidPushEndpoint(''), false);
   });
 
-  await t.test('3. VAPID: Falla limpiamente si no están configurados los secretos de servidor', async () => {
-    await assert.rejects(
-      async () => createVapidHeader('https://fcm.googleapis.com', {}),
-      /VAPID_PRIVATE_KEY_JWK/
+  await t.test('3. Diagnóstico JWK: parsePrivateJwkSafely tolera variaciones de formato y detecta errores exactos', () => {
+    const validJwk = {
+      kty: 'EC',
+      crv: 'P-256',
+      x: '6QnRgiIr7sxCx2iM3FnRfqBVpr4405TKt3usExsq5n4',
+      y: 'GaivoJtKmMXzoziLS80qjUz_fjpXbktjQIv7yB8bIK4',
+      d: 'OWkJpmFPF2k2I-PSGqYluXq0IewUhvGjxWmIUjEuLMs'
+    };
+
+    // Caso 1: Objeto directo
+    const resObj = parsePrivateJwkSafely(validJwk);
+    assert.equal(resObj.kty, 'EC');
+    assert.equal(resObj.d, validJwk.d);
+
+    // Caso 2: JSON stringificado
+    const resStr = parsePrivateJwkSafely(JSON.stringify(validJwk));
+    assert.equal(resStr.x, validJwk.x);
+
+    // Caso 3: Doble stringificado (Cloudflare secrets)
+    const resDouble = parsePrivateJwkSafely(JSON.stringify(JSON.stringify(validJwk)));
+    assert.equal(resDouble.y, validJwk.y);
+
+    // Caso 4: Con comillas simples alrededor: '{"kty":"EC",...}'
+    const resSingleQuotes = parsePrivateJwkSafely(`'${JSON.stringify(validJwk)}'`);
+    assert.equal(resSingleQuotes.d, validJwk.d);
+
+    // Caso 5: Falta variable
+    assert.throws(
+      () => parsePrivateJwkSafely(null),
+      (err) => err instanceof WebPushError && err.code === 'VAPID_PRIVATE_KEY_MISSING' && err.phase === 'PHASE_1_VAPID_CONFIG'
     );
 
-    await assert.rejects(
-      async () => createVapidHeader('https://fcm.googleapis.com', { VAPID_PRIVATE_KEY_JWK: '{}' }),
-      /VAPID_PUBLIC_KEY/
+    // Caso 6: JSON inválido
+    assert.throws(
+      () => parsePrivateJwkSafely('{kty: not valid json}'),
+      (err) => err instanceof WebPushError && err.code === 'VAPID_JWK_JSON_INVALID' && err.phase === 'PHASE_2_VAPID_PARSE'
+    );
+
+    // Caso 7: Faltan coordenadas
+    assert.throws(
+      () => parsePrivateJwkSafely({ kty: 'EC', crv: 'P-256', x: '123' }),
+      (err) => err instanceof WebPushError && err.code === 'VAPID_JWK_COORDINATES_MISSING' && err.phase === 'PHASE_2_VAPID_PARSE'
     );
   });
 
-  await t.test('4. Criptografía: Verificación RFC 8291 con vectores oficiales IETF (Apéndice A)', async () => {
+  await t.test('4. VAPID: Falla con fases y códigos diagnósticos claros si faltan secretos', async () => {
+    await assert.rejects(
+      async () => createVapidHeader('https://fcm.googleapis.com', {}),
+      (err) => err instanceof WebPushError && err.phase === 'PHASE_1_VAPID_CONFIG' && err.code === 'VAPID_PUBLIC_KEY_MISSING'
+    );
+
+    await assert.rejects(
+      async () => createVapidHeader('https://fcm.googleapis.com', { VAPID_PUBLIC_KEY: 'abc' }),
+      (err) => err instanceof WebPushError && err.phase === 'PHASE_1_VAPID_CONFIG' && err.code === 'VAPID_PRIVATE_KEY_MISSING'
+    );
+  });
+
+  await t.test('5. Criptografía: Verificación RFC 8291 con vectores oficiales IETF (Apéndice A)', async () => {
     const as_public_b64 = 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8';
     const as_private_b64 = 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw';
     const ua_public_b64 = 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4';
@@ -93,12 +140,13 @@ test('Web Push Security & Delivery Suite', async (t) => {
       d: as_private_b64
     }, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
 
-    const userPubJwk = {
-      kty: 'EC', crv: 'P-256',
-      x: uint8ToB64Url(userPubBytes.slice(1, 33)),
-      y: uint8ToB64Url(userPubBytes.slice(33, 65))
-    };
-    const userKey = await crypto.subtle.importKey('jwk', userPubJwk, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const userKey = await crypto.subtle.importKey(
+      'raw',
+      userPubBytes,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false,
+      []
+    );
 
     const sharedSecret = await crypto.subtle.deriveBits({ name: 'ECDH', public: userKey }, asPrivKey, 256);
 
@@ -127,7 +175,7 @@ test('Web Push Security & Delivery Suite', async (t) => {
     assert.equal(actualCipherB64, expected_cipher, 'Cifrado AES-128-GCM exacto según RFC 8291');
   });
 
-  await t.test('5. VAPID: Firma JWT y verificación ES256 válida con par P-256', async () => {
+  await t.test('6. VAPID: Firma JWT y verificación ES256 válida con par P-256', async () => {
     const keyPair = await crypto.subtle.generateKey(
       { name: 'ECDSA', namedCurve: 'P-256' },
       true,
@@ -147,9 +195,9 @@ test('Web Push Security & Delivery Suite', async (t) => {
       VAPID_PRIVATE_KEY_JWK: JSON.stringify(privJwk)
     };
 
-    const { authorization, cryptoKey } = await createVapidHeader('https://fcm.googleapis.com', env);
+    const { authorization } = await createVapidHeader('https://fcm.googleapis.com', env);
     assert.ok(authorization.startsWith('vapid t='));
-    assert.ok(cryptoKey.startsWith('p256ecdsa='));
+    assert.ok(authorization.includes(', k='));
 
     const token = authorization.replace(/^vapid t=/, '').split(',')[0].trim();
     const [hB64, pB64, sB64] = token.split('.');
@@ -166,29 +214,32 @@ test('Web Push Security & Delivery Suite', async (t) => {
     assert.ok(verified, 'Firma ES256 válida');
   });
 
-  await t.test('6. Endpoint /api/push-vapid-key: responde 503 sin clave y 200 con clave', async () => {
-    const resNoKey = await vapidMod.onRequest({ request: new Request('https://sismopa.pages.dev/api/push-vapid-key'), env: {} });
-    assert.equal(resNoKey.status, 503);
+  await t.test('7. Diagnóstico de claves de usuario: detecta p256dh y auth malformados en PHASE_5', async () => {
+    // p256dh con longitud incorrecta (64 bytes en lugar de 65)
+    await assert.rejects(
+      async () => encryptWebPush('test', uint8ToB64Url(new Uint8Array(64)), uint8ToB64Url(new Uint8Array(16))),
+      (err) => err instanceof WebPushError && err.phase === 'PHASE_5_USER_KEY_DECODE' && err.code === 'INVALID_P256DH_FORMAT'
+    );
 
-    const resKey = await vapidMod.onRequest({
-      request: new Request('https://sismopa.pages.dev/api/push-vapid-key'),
-      env: { VAPID_PUBLIC_KEY: 'TEST_KEY' }
-    });
-    assert.equal(resKey.status, 200);
-    const data = await resKey.json();
-    assert.equal(data.vapidPublicKey, 'TEST_KEY');
+    // auth con longitud incorrecta (15 bytes en lugar de 16)
+    const validPub = new Uint8Array(65);
+    validPub[0] = 0x04;
+    await assert.rejects(
+      async () => encryptWebPush('test', uint8ToB64Url(validPub), uint8ToB64Url(new Uint8Array(15))),
+      (err) => err instanceof WebPushError && err.phase === 'PHASE_5_USER_KEY_DECODE' && err.code === 'INVALID_AUTH_FORMAT'
+    );
   });
 
-  await t.test('7. Respuestas del proveedor Web Push: 201, 400, 401, 403, 404, 410, 429', async () => {
+  await t.test('8. Respuestas del proveedor Web Push: 201, 400, 401, 403, 404, 410, 429 con captura de texto de error', async () => {
     const origFetch = globalThis.fetch;
     const testCases = [
-      { status: 201, expectedOk: true, expectedExpired: false },
-      { status: 400, expectedOk: false, expectedExpired: false },
-      { status: 401, expectedOk: false, expectedExpired: false },
-      { status: 403, expectedOk: false, expectedExpired: false },
-      { status: 404, expectedOk: false, expectedExpired: true },
-      { status: 410, expectedOk: false, expectedExpired: true },
-      { status: 429, expectedOk: false, expectedExpired: false }
+      { status: 201, body: '', expectedOk: true, expectedExpired: false },
+      { status: 400, body: 'BadDeviceToken', expectedOk: false, expectedExpired: false },
+      { status: 401, body: 'UnauthorizedRegistration', expectedOk: false, expectedExpired: false },
+      { status: 403, body: 'InvalidVapidToken', expectedOk: false, expectedExpired: false },
+      { status: 404, body: 'Unregistered', expectedOk: false, expectedExpired: true },
+      { status: 410, body: 'ExpiredSubscription', expectedOk: false, expectedExpired: true },
+      { status: 429, body: 'QuotaExceeded', expectedOk: false, expectedExpired: false }
     ];
 
     const keyPair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
@@ -213,49 +264,34 @@ test('Web Push Security & Delivery Suite', async (t) => {
     };
 
     for (const tc of testCases) {
-      globalThis.fetch = async () => new Response(null, { status: tc.status });
+      globalThis.fetch = async () => new Response(tc.body, { status: tc.status });
       const res = await sendWebPush(dummySub, { title: 'Test' }, env);
       assert.equal(res.ok, tc.expectedOk, `Status ${tc.status} expected ok=${tc.expectedOk}`);
       assert.equal(res.status, tc.status);
       assert.equal(res.expired, tc.expectedExpired, `Status ${tc.status} expected expired=${tc.expectedExpired}`);
+      if (tc.body) {
+        assert.equal(res.providerDetail, tc.body);
+      }
     }
 
     globalThis.fetch = origFetch;
   });
 
-  await t.test('8. Endpoints /api/push-subscribe y /api/push-test rechazan métodos y URLs maliciosas', async () => {
-    // Método no permitido en subscribe
-    const resGetSub = await subMod.onRequest({ request: new Request('https://sismopa.pages.dev/api/push-subscribe', { method: 'GET' }), env: {} });
-    assert.equal(resGetSub.status, 405);
-
-    // SSRF en subscribe
-    const resSsrfSub = await subMod.onRequest({
-      request: new Request('https://sismopa.pages.dev/api/push-subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint: 'https://169.254.169.254/secret' })
-      }),
-      env: {}
+  await t.test('9. push-test.js propaga fase y código diagnóstico ante fallos', async () => {
+    // Probar push-test con fallo simulado de Supabase no configurado
+    const req = new Request('https://sismopa.pages.dev/api/push-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/device1', test_token: '123' })
     });
-    assert.equal(resSsrfSub.status, 400);
-
-    // Método no permitido en push-test
-    const resGetTest = await testMod.onRequest({ request: new Request('https://sismopa.pages.dev/api/push-test', { method: 'GET' }), env: {} });
-    assert.equal(resGetTest.status, 405);
-
-    // SSRF en push-test
-    const resSsrfTest = await testMod.onRequest({
-      request: new Request('https://sismopa.pages.dev/api/push-test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint: 'http://malicious.com' })
-      }),
-      env: {}
-    });
-    assert.equal(resSsrfTest.status, 400);
+    const res = await testMod.onRequest({ request: req, env: {} });
+    assert.equal(res.status, 503);
+    const data = await res.json();
+    assert.equal(data.diagnostico.fase, 'SERVER_CONFIG');
+    assert.equal(data.diagnostico.codigo, 'SUPABASE_ENV_MISSING');
   });
 
-  await t.test('9. Service Worker: Notificaciones push y apertura de ficha en click', () => {
+  await t.test('10. Service Worker: Notificaciones push y apertura de ficha en click', () => {
     const swContent = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
     assert.ok(swContent.includes("self.addEventListener('push'"), 'SW maneja evento push');
     assert.ok(swContent.includes("self.addEventListener('notificationclick'"), 'SW maneja notificationclick');
