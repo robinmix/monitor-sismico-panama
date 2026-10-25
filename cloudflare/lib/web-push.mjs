@@ -4,7 +4,7 @@
  * Diagnóstico seguro por fases. Cero claves privadas en logs o respuestas.
  */
 
-const VAPID_SUBJECT = 'mailto:admin@sismopa.pages.dev';
+const VAPID_SUBJECT = 'mailto:rbtservices507@gmail.com';
 
 export class WebPushError extends Error {
   constructor(phase, code, message, originalError = null) {
