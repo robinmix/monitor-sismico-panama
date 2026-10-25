@@ -91,6 +91,7 @@ export async function onRequest(context) {
       p256dh,
       auth,
       test_token_hash: testTokenHash,
+      failures: 0,
       last_seen: new Date().toISOString()
     };
 
@@ -103,9 +104,10 @@ export async function onRequest(context) {
       .upsert(record, { onConflict: 'endpoint' });
 
     // Fallback de compatibilidad si las columnas de seguridad aún no han sido migradas en Supabase
-    if (upsertErr && (upsertErr.code === '42703' || upsertErr.message?.includes('test_token_hash') || upsertErr.message?.includes('vapid_key_hash'))) {
+    if (upsertErr && (upsertErr.code === '42703' || upsertErr.message?.includes('test_token_hash') || upsertErr.message?.includes('vapid_key_hash') || upsertErr.message?.includes('failures'))) {
       delete record.test_token_hash;
       delete record.vapid_key_hash;
+      delete record.failures;
       const fallbackResult = await supabase
         .from('push_subscriptions')
         .upsert(record, { onConflict: 'endpoint' });

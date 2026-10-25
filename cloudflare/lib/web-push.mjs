@@ -434,6 +434,11 @@ export async function sendWebPush(subscription, payloadObj, env = {}) {
 
   let res;
   try {
+    const timeoutMs = Number(env?.PUSH_NETWORK_TIMEOUT_MS) || 8000;
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined;
+
     res = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -443,7 +448,8 @@ export async function sendWebPush(subscription, payloadObj, env = {}) {
         'TTL': '86400',
         'Urgency': 'high'
       },
-      body: payloadArrayBuffer
+      body: payloadArrayBuffer,
+      signal
     });
   } catch (err) {
     throw new WebPushError(
@@ -460,6 +466,8 @@ export async function sendWebPush(subscription, payloadObj, env = {}) {
     ok: res.status >= 200 && res.status < 300,
     status: res.status,
     expired: res.status === 404 || res.status === 410,
+    authError: res.status === 401 || res.status === 403,
+    retryAfter: res.headers ? res.headers.get('Retry-After') : null,
     providerDetail: providerResponseText ? providerResponseText.slice(0, 200).trim() : ''
   };
 }

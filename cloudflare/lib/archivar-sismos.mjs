@@ -258,8 +258,9 @@ function getSupabaseClient(env = {}) {
  */
 async function syncEventsToSupabase(records, supabase, now = new Date()) {
   if (!records || !records.length) {
-    return { nuevos: 0, actualizados: 0, verificados: 0, total: 0 };
+    return { nuevos: 0, actualizados: 0, verificados: 0, total: 0, subrequests: 0 };
   }
+  let syncSubrequests = 0;
 
   const nowISO = now.toISOString();
   const sourceUids = records.map(r => r.source_uid);
@@ -272,6 +273,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
   const CHUNK_QUERY = 200;
   for (let i = 0; i < sourceUids.length; i += CHUNK_QUERY) {
     const sliceUids = sourceUids.slice(i, i + CHUNK_QUERY);
+    syncSubrequests++;
     const { data, error } = await supabase
       .from('sismos')
       .select('source_uid, fecha_hora, primera_captura, actualizado_en, magnitud, profundidad_km, latitud, longitud, estado')
@@ -290,6 +292,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
   // Consultar también por fecha_hora para detectar conciliaciones de eventos que pudiesen haber tenido UID canónico
   for (let i = 0; i < fechasHoras.length; i += CHUNK_QUERY) {
     const sliceTimes = fechasHoras.slice(i, i + CHUNK_QUERY);
+    syncSubrequests++;
     const { data, error } = await supabase
       .from('sismos')
       .select('source_uid, fecha_hora, primera_captura, actualizado_en, magnitud, profundidad_km, latitud, longitud, estado')
@@ -332,6 +335,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
 
     if (!existing) {
       // Evento nuevo
+      r.primera_captura = nowISO;
       payloads.push({
         ...r,
         primera_captura: nowISO,
@@ -341,6 +345,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
       nuevosCount++;
       nuevosRecords.push(r);
     } else {
+      r.primera_captura = existing.primera_captura || nowISO;
       // Evento existente: evaluar si hubo revisión de magnitud, profundidad, estado o coordenadas
       const cambioMagnitud = Math.abs(Number(existing.magnitud) - Number(r.magnitud)) > 0.01;
       const cambioProfundidad = Math.abs(Number(existing.profundidad_km) - Number(r.profundidad_km)) > 0.1;
@@ -373,6 +378,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
   const CHUNK_UPSERT = 100;
   for (let i = 0; i < payloads.length; i += CHUNK_UPSERT) {
     const chunk = payloads.slice(i, i + CHUNK_UPSERT);
+    syncSubrequests++;
     const { error: upsertError } = await supabase
       .from('sismos')
       .upsert(chunk, { onConflict: 'source_uid' });
@@ -392,7 +398,8 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
     nuevosRecords,
     actualizados: actualizadosCount,
     verificados: verificadosCount,
-    total: payloads.length
+    total: payloads.length,
+    subrequests: syncSubrequests
   };
 }
 
@@ -433,15 +440,46 @@ async function runArchival(options = {}) {
     const supabase = options.supabase || (options.env && options.env.supabaseClient) || getSupabaseClient(options.env);
     const syncResult = await syncEventsToSupabase(normalized, supabase, now);
 
-    // 4. Notificar nuevos eventos mediante Web Push (si está habilitado)
-    let pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_NUEVOS' };
-    if (syncResult.nuevosRecords && syncResult.nuevosRecords.length > 0 && options.enablePush !== false) {
+    // 4. Notificar eventos recientes mediante Web Push (nuevos o pendientes de reintento)
+    let pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_RECIENTES' };
+    const MAX_DISCOVERY_AGE_MS = 45 * 60 * 1000;
+    const MAX_ALERT_LIFECYCLE_MS = 90 * 60 * 1000;
+    const MAX_PUSH_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+    const nowTime = now.getTime();
+
+    const recentCandidates = (normalized || []).filter(e => {
+      const ts = new Date(e.fecha_hora).getTime();
+      if (!Number.isFinite(ts)) return false;
+      const capTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
+      if (capTime && Number.isFinite(capTime)) {
+        return (nowTime - capTime) <= MAX_ALERT_LIFECYCLE_MS;
+      }
+      const diff = nowTime - ts;
+      return diff >= -MAX_PUSH_FUTURE_TOLERANCE_MS && diff <= MAX_DISCOVERY_AGE_MS;
+    });
+
+    if (recentCandidates.length > 0 && options.enablePush !== false) {
       try {
-        pushResult = await dispatchPushNotifications(syncResult.nuevosRecords, supabase, options.env, now);
+        const igcSubrequests = options.sourcePayload ? 0 : 1;
+        const syncSubrequests = syncResult?.subrequests ?? 3;
+        const archivalSubrequests = igcSubrequests + syncSubrequests;
+        const SAFE_MAX_SUBREQUESTS = 40;
+        const MIN_PUSH_SUBREQUESTS = 10;
+
+        if (archivalSubrequests >= 30 || (SAFE_MAX_SUBREQUESTS - archivalSubrequests < MIN_PUSH_SUBREQUESTS)) {
+          console.log(`[Archivado Sismos] Ingesta sísmica consumió ${archivalSubrequests} subrequests. Despacho push pospuesto para proteger la ingesta.`);
+          pushResult = { enviados: 0, omitidos: 'PRESUPUESTO_INSUFICIENTE_POST_ARCHIVADO', archivalSubrequests };
+        } else {
+          pushResult = await dispatchPushNotifications(recentCandidates, supabase, options.env, now, {
+            initialSubrequests: archivalSubrequests
+          });
+        }
       } catch (pushErr) {
         console.warn('[Archivado Sismos] Advertencia en despacho de notificaciones:', pushErr.message);
         pushResult = { error: pushErr.message };
       }
+    } else if (options.enablePush !== false) {
+      pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_RECIENTES' };
     }
 
     const durationMs = Date.now() - startTime;
@@ -501,6 +539,22 @@ const rawHandler = async function(event, context, options = {}) {
   }
 };
 
+/**
+ * Anonimiza un endpoint Web Push para registros seguros sin filtrar tokens de dispositivos.
+ */
+function anonymizeEndpoint(endpoint) {
+  if (!endpoint || typeof endpoint !== 'string') return '[endpoint_anonimo]';
+  try {
+    const u = new URL(endpoint);
+    const parts = u.pathname.split('/').filter(Boolean);
+    const token = parts[parts.length - 1] || '';
+    const masked = token.length > 8 ? token.slice(0, 4) + '...' + token.slice(-4) : '***';
+    return u.origin + '/.../' + masked;
+  } catch {
+    return endpoint.length > 16 ? endpoint.slice(0, 8) + '...' + endpoint.slice(-4) : '[endpoint_protegido]';
+  }
+}
+
 async function sha256Hex(str) {
   if (!str || typeof str !== 'string') return null;
   const buf = new TextEncoder().encode(str);
@@ -511,11 +565,44 @@ async function sha256Hex(str) {
 }
 
 /**
+ * Calcula la fecha ISO hasta la cual debe pausarse una suscripción (cooldown / circuito abierto).
+ * Prioriza la cabecera Retry-After del proveedor y aplica backoff progresivo ante fallos transitorios.
+ */
+function calculateRetryAfterDate(retryAfterHeader, failures, now = new Date()) {
+  const nowMs = now.getTime();
+  if (retryAfterHeader && typeof retryAfterHeader === 'string') {
+    const trimmed = retryAfterHeader.trim();
+    const seconds = parseInt(trimmed, 10);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      const boundedSeconds = Math.min(Math.max(seconds, 10), 3600);
+      return new Date(nowMs + boundedSeconds * 1000).toISOString();
+    }
+    const parsedDate = new Date(trimmed);
+    if (Number.isFinite(parsedDate.getTime())) {
+      const diffMs = parsedDate.getTime() - nowMs;
+      if (diffMs > 0) {
+        const boundedMs = Math.min(Math.max(diffMs, 10000), 3600 * 1000);
+        return new Date(nowMs + boundedMs).toISOString();
+      }
+    }
+  }
+
+  // Backoff escalonado progresivo: 1 fallo -> 60s, 2 -> 120s, 3 -> 300s, 4 -> 900s, 5+ -> 1800s
+  let cooldownSec = 60;
+  if (failures === 2) cooldownSec = 120;
+  else if (failures === 3) cooldownSec = 300;
+  else if (failures === 4) cooldownSec = 900;
+  else if (failures >= 5) cooldownSec = 1800;
+
+  return new Date(nowMs + cooldownSec * 1000).toISOString();
+}
+
+/**
  * Distribuye notificaciones Web Push para sismos verdaderamente nuevos (máximo 30 min de antigüedad).
  * Protegido contra ráfagas (lote masivo > 3) y duplicados mediante notificaciones_enviadas.
  * Requiere explícitamente AUTO_PUSH_ENABLED=true para enviar notificaciones reales.
  */
-async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date()) {
+async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date(), options = {}) {
   const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
   if (!autoPushEnabled) {
     return { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
@@ -525,74 +612,421 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
   }
 
-  const MAX_AGE_MS = 45 * 60 * 1000; // 45 minutos (tolera demoras de revisión del IGC)
+  const MAX_DISCOVERY_AGE_MS = 45 * 60 * 1000; // Descubrimiento dentro de 45 min de ocurrido
+  const MAX_ALERT_LIFECYCLE_MS = 90 * 60 * 1000; // Vigencia de entrega de hasta 90 min desde primera_captura
   const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
   const nowTime = now.getTime();
 
-  // 1. Filtrar eventos por antigüedad real primero
+  // 1. Filtrar eventos candidatos considerando fecha de origen y vigencia de entrega
   const recentEvents = nuevosRecords.filter(e => {
     const ts = new Date(e.fecha_hora).getTime();
     if (!Number.isFinite(ts)) return false;
+    const capTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
+    if (capTime && Number.isFinite(capTime)) {
+      return (nowTime - capTime) <= MAX_ALERT_LIFECYCLE_MS;
+    }
     const diff = nowTime - ts;
-    return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_AGE_MS;
+    return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_DISCOVERY_AGE_MS;
   });
 
   if (!recentEvents.length) {
     return { enviados: 0, omitidosPorAntiguedad: nuevosRecords.length };
   }
 
-  // 2. Protección contra ráfagas anómalas / cold start / backfill masivo:
-  // Si en la ventana reciente aparecen más de 6 eventos, se considera importación masiva y se omite.
-  if (recentEvents.length > 6) {
-    console.warn(`[Push] Despacho omitido por lote masivo (${recentEvents.length} eventos recientes). Protección contra ráfagas activa.`);
-    return { enviados: 0, omitidosPorLoteMasivo: recentEvents.length };
+  // 2. Comprobar / registrar hito persistente de activación de Web Push en Supabase
+  let activationTimestamp = null;
+  if (env && env.PUSH_ACTIVATED_AT) {
+    const parsedTime = new Date(env.PUSH_ACTIVATED_AT).getTime();
+    if (Number.isFinite(parsedTime)) {
+      activationTimestamp = env.PUSH_ACTIVATED_AT;
+    }
   }
 
-  // 3. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
-  // Ordenar por magnitud descendente y notificar los 3 más significativos para no saturar al usuario
-  const sortedEvents = [...recentEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
+  if (!activationTimestamp) {
+    try {
+      const { data: actRows } = await supabase
+        .from('notificaciones_enviadas')
+        .select('enviado_en')
+        .eq('source_uid', '__SYSTEM_PUSH_ACTIVATION__')
+        .eq('endpoint', '__SYSTEM__');
+
+      if (actRows && actRows.length > 0 && actRows[0].enviado_en) {
+        activationTimestamp = actRows[0].enviado_en;
+      } else {
+        const nowIso = now.toISOString();
+        const { error: insErr } = await supabase
+          .from('notificaciones_enviadas')
+          .insert({
+            source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+            endpoint: '__SYSTEM__',
+            enviado_en: nowIso
+          });
+
+        if (!insErr) {
+          activationTimestamp = nowIso;
+        } else {
+          const { data: afterRows } = await supabase
+            .from('notificaciones_enviadas')
+            .select('enviado_en')
+            .eq('source_uid', '__SYSTEM_PUSH_ACTIVATION__')
+            .eq('endpoint', '__SYSTEM__');
+          activationTimestamp = (afterRows && afterRows[0]?.enviado_en) || nowIso;
+        }
+      }
+    } catch (e) {
+      console.warn('[Push] Advertencia comprobando activación persistente:', e.message);
+    }
+  }
+
+  // Seguridad crítica: si la base de datos falla al persistir o leer el hito de activación,
+  // se asume nowTime para impedir estrictamente que cualquier sismo previo sea notificado.
+  const activationTime = activationTimestamp ? new Date(activationTimestamp).getTime() : nowTime;
+
+  // 3. Filtrar eventos conocidos/archivados antes de la activación de Web Push (cero notificaciones históricas)
+  // y aplicar política estricta de certidumbre temporal (Fase 6)
+  const activeEvents = [];
+  for (const e of recentEvents) {
+    let capturedTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
+
+    if (!capturedTime || !Number.isFinite(capturedTime)) {
+      try {
+        const { data: sismoRows } = await supabase
+          .from('sismos')
+          .select('primera_captura')
+          .eq('source_uid', e.source_uid);
+        if (sismoRows && sismoRows[0] && sismoRows[0].primera_captura) {
+          capturedTime = new Date(sismoRows[0].primera_captura).getTime();
+          e.primera_captura = sismoRows[0].primera_captura;
+        }
+      } catch {}
+    }
+
+    const eventTs = new Date(e.fecha_hora).getTime();
+    if (!Number.isFinite(eventTs)) {
+      continue; // Descartar por timestamp geofísico inválido
+    }
+
+    // Si no tiene primera_captura en el objeto ni en la base de datos, anclar estrictamente
+    // al timestamp geofísico del evento (eventTs). NUNCA sustituir por nowTime para impedir
+    // que un sismo anterior a la activación sea disfrazado como nuevo.
+    if (!capturedTime || !Number.isFinite(capturedTime)) {
+      capturedTime = eventTs;
+      e.primera_captura = new Date(eventTs).toISOString();
+    }
+
+    // Caducidad de entrega: si ya pasaron más de 90 min desde su detección, caducar
+    if (nowTime - capturedTime > MAX_ALERT_LIFECYCLE_MS) {
+      continue;
+    }
+
+    // Si el evento ocurrió o fue capturado en o antes del hito de activación, omitir estrictamente (cero históricos)
+    if (activationTime > 0 && (capturedTime <= activationTime || eventTs <= activationTime)) {
+      continue;
+    }
+
+    activeEvents.push(e);
+  }
+
+  if (!activeEvents.length) {
+    return { enviados: 0, omitidosHistoricosPreActivacion: recentEvents.length };
+  }
+
+  // 4. Protección contra ráfagas anómalas / cold start / backfill masivo
+  if (activeEvents.length > 6) {
+    console.warn(`[Push] Despacho omitido por lote masivo (${activeEvents.length} eventos recientes). Protección contra ráfagas activa.`);
+    return { enviados: 0, omitidosPorLoteMasivo: activeEvents.length };
+  }
+
+  // 5. Manejo de enjambres sísmicos ordenando por magnitud descendente (hasta 3 eventos activos)
+  const sortedEvents = [...activeEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
   const eligibleEvents = sortedEvents.slice(0, 3);
 
-  // Obtener suscripciones activas
-  const { data: subs, error: subsErr } = await supabase
-    .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, vapid_key_hash')
-    .limit(500);
-
-  if (subsErr || !subs || !subs.length) {
-    return { enviados: 0, motivo: subsErr ? subsErr.message : 'Sin suscripciones activas' };
+  // Comprobar clave pública VAPID en entorno
+  if (!env || !env.VAPID_PUBLIC_KEY) {
+    return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY no configurada en el entorno' };
   }
 
-  // Si existe VAPID_PUBLIC_KEY en env, filtrar suscripciones con hash VAPID coincidente (o nulo por retrocompatibilidad)
-  let currentVapidHash = null;
-  if (env.VAPID_PUBLIC_KEY) {
-    currentVapidHash = await sha256Hex(env.VAPID_PUBLIC_KEY);
+  const currentVapidHash = await sha256Hex(env.VAPID_PUBLIC_KEY);
+  if (!currentVapidHash) {
+    return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY inválida' };
   }
 
-  const validSubs = subs.filter(s => {
-    if (currentVapidHash && s.vapid_key_hash && s.vapid_key_hash !== currentVapidHash) {
-      return false;
-    }
-    return true;
-  });
+  // LÍMITES ESTRICTOS DE CLOUDFLARE WORKERS FREE (Techos máximos inquebrantables)
+  const SAFE_MAX_SUBS_PER_CYCLE = 15;
+  const SAFE_MAX_CONCURRENCY = 5;
+  const SAFE_MAX_SUBREQUESTS = 40; // Preserva al menos 10 subrequests de margen bajo el límite de 50
 
-  if (!validSubs.length) {
-    return { enviados: 0, motivo: 'Sin suscripciones compatibles con la clave VAPID actual' };
-  }
+  const rawMaxSubs = Math.floor(Number(env?.PUSH_MAX_SUBS_PER_CYCLE));
+  const MAX_SUBS_PER_CYCLE = (Number.isFinite(rawMaxSubs) && rawMaxSubs > 0)
+    ? Math.min(rawMaxSubs, SAFE_MAX_SUBS_PER_CYCLE)
+    : SAFE_MAX_SUBS_PER_CYCLE;
 
+  const rawConcurrency = Math.floor(Number(env?.PUSH_CONCURRENCY));
+  const PUSH_CONCURRENCY = (Number.isFinite(rawConcurrency) && rawConcurrency > 0)
+    ? Math.min(rawConcurrency, SAFE_MAX_CONCURRENCY)
+    : SAFE_MAX_CONCURRENCY;
+
+  const rawMaxSubreq = Math.floor(Number(env?.PUSH_MAX_SUBREQUESTS));
+  const MAX_PUSH_SUBREQUESTS = (Number.isFinite(rawMaxSubreq) && rawMaxSubreq > 0)
+    ? Math.min(rawMaxSubreq, SAFE_MAX_SUBREQUESTS)
+    : SAFE_MAX_SUBREQUESTS;
+
+  let pushSubrequestsCount = Math.max(0, Math.floor(Number(options?.initialSubrequests) || Number(env?.__INITIAL_SUBREQUESTS__) || 0));
+  let totalIntentos = 0;
   let totalEnviados = 0;
+  let hadAnySubscribersInDb = false;
+  let hadAnyVapidCompatibleSubscribers = false;
 
-  for (const ev of eligibleEvents) {
-    // Consultar envíos previos para este sismo para evitar notificaciones duplicadas
-    const { data: yaEnviados } = await supabase
-      .from('notificaciones_enviadas')
-      .select('endpoint')
-      .eq('source_uid', ev.source_uid);
+  const activeEventsCount = eligibleEvents.length;
 
-    const endpointsNotificados = new Set((yaEnviados || []).map(r => r.endpoint));
-    const subsPendientes = validSubs.filter(s => !endpointsNotificados.has(s.endpoint));
+  for (let evIndex = 0; evIndex < eligibleEvents.length; evIndex++) {
+    const ev = eligibleEvents[evIndex];
 
-    if (!subsPendientes.length) continue;
+    if (totalIntentos >= MAX_SUBS_PER_CYCLE || pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) {
+      console.log(`[Push] Presupuesto global alcanzado (intentos: ${totalIntentos}/${MAX_SUBS_PER_CYCLE}, subrequests: ${pushSubrequestsCount}/${MAX_PUSH_SUBREQUESTS}). Restante diferido al siguiente cron.`);
+      break;
+    }
+
+    const remainingIntentos = MAX_SUBS_PER_CYCLE - totalIntentos;
+    const eventsRemaining = activeEventsCount - evIndex;
+    const quotaForEvent = Math.max(1, Math.min(remainingIntentos, Math.ceil(remainingIntentos / eventsRemaining)));
+
+    // Consultar envíos previos, reservas en curso y cursor persistente
+    pushSubrequestsCount++;
+    let yaEnviados = [];
+    let totalSentCount = 0;
+    try {
+      const { data, count } = await supabase
+        .from('notificaciones_enviadas')
+        .select('endpoint, estado, lease_expires_at, enviado_en', { count: 'exact' })
+        .eq('source_uid', ev.source_uid);
+      yaEnviados = data || [];
+      totalSentCount = count !== null && count !== undefined ? count : yaEnviados.length;
+    } catch {}
+
+    const cursorRow = yaEnviados.find(r => r.endpoint === '__CURSOR__');
+    let cursorCreatedAt = cursorRow ? cursorRow.enviado_en : null;
+    let lastSeenCreatedAt = cursorCreatedAt;
+
+    const endpointsNotificados = new Set();
+    const abandonedEndpoints = [];
+
+    for (const row of yaEnviados) {
+      if (!row || !row.endpoint) continue;
+      if (row.endpoint === '__CURSOR__') continue;
+      const leaseExpiry = row.lease_expires_at ? new Date(row.lease_expires_at).getTime() : 0;
+      const isEnProceso = row.estado === 'EN_PROCESO';
+
+      if (isEnProceso && leaseExpiry > 0 && leaseExpiry <= nowTime) {
+        abandonedEndpoints.push(row.endpoint);
+      } else {
+        endpointsNotificados.add(row.endpoint);
+      }
+    }
+
+    // Reclamar reservas abandonadas (Worker anterior cayó o fue interrumpido)
+    if (abandonedEndpoints.length > 0) {
+      for (const abEndpoint of abandonedEndpoints) {
+        if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) break;
+        pushSubrequestsCount++;
+        try {
+          await supabase
+            .from('notificaciones_enviadas')
+            .delete()
+            .eq('source_uid', ev.source_uid)
+            .eq('endpoint', abEndpoint);
+        } catch {}
+      }
+    }
+
+    // Paginación por cursor y orden cronológico con soporte de timestamps idénticos y recuperación
+    const PAGE_SIZE = 100;
+    let pageSubs = [];
+    const evCapturedTime = new Date(ev.primera_captura || ev.fecha_hora).getTime();
+    let currentCursor = cursorCreatedAt;
+    let strictGt = false;
+    let reachedEnd = false;
+
+    while (pageSubs.length < quotaForEvent) {
+      if (pushSubrequestsCount + 4 >= MAX_PUSH_SUBREQUESTS) break;
+      pushSubrequestsCount++;
+      let batch = [];
+      try {
+        let pageQuery = supabase
+          .from('push_subscriptions')
+          .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after');
+
+        if (typeof pageQuery.order === 'function') {
+          pageQuery = pageQuery.order('created_at', { ascending: true });
+        }
+        if (currentCursor) {
+          if (strictGt && typeof pageQuery.gt === 'function') {
+            pageQuery = pageQuery.gt('created_at', currentCursor);
+          } else if (!strictGt && typeof pageQuery.gte === 'function') {
+            pageQuery = pageQuery.gte('created_at', currentCursor);
+          } else if (typeof pageQuery.gt === 'function') {
+            pageQuery = pageQuery.gt('created_at', currentCursor);
+          }
+        }
+        if (typeof pageQuery.limit === 'function') {
+          pageQuery = pageQuery.limit(PAGE_SIZE);
+        }
+
+        const { data, error } = await pageQuery;
+        if (error && (error.code === '42703' || error.message?.includes('retry_after'))) {
+          let fallbackQuery = supabase
+            .from('push_subscriptions')
+            .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at');
+          if (typeof fallbackQuery.order === 'function') {
+            fallbackQuery = fallbackQuery.order('created_at', { ascending: true });
+          }
+          if (currentCursor) {
+            if (strictGt && typeof fallbackQuery.gt === 'function') {
+              fallbackQuery = fallbackQuery.gt('created_at', currentCursor);
+            } else if (!strictGt && typeof fallbackQuery.gte === 'function') {
+              fallbackQuery = fallbackQuery.gte('created_at', currentCursor);
+            } else if (typeof fallbackQuery.gt === 'function') {
+              fallbackQuery = fallbackQuery.gt('created_at', currentCursor);
+            }
+          }
+          if (typeof fallbackQuery.limit === 'function') {
+            fallbackQuery = fallbackQuery.limit(PAGE_SIZE);
+          }
+          const fb = await fallbackQuery;
+          batch = fb.data || [];
+        } else {
+          batch = data || [];
+        }
+      } catch {}
+
+      if (!batch || batch.length === 0) {
+        reachedEnd = true;
+        break;
+      }
+      hadAnySubscribersInDb = true;
+      if (batch.length < PAGE_SIZE) {
+        reachedEnd = true;
+      }
+
+      for (const s of batch) {
+        if (!s || !s.endpoint || !s.p256dh || !s.auth) continue;
+
+        if (s.vapid_key_hash === currentVapidHash) {
+          const inCooldown = (s.retry_after && nowTime < new Date(s.retry_after).getTime()) ||
+                             (typeof s.failures === 'number' && s.failures >= 3);
+          if (!inCooldown) {
+            hadAnyVapidCompatibleSubscribers = true;
+          }
+        }
+
+        // Si ya fue notificado o tiene reserva activa no expirada: omitir
+        if (endpointsNotificados.has(s.endpoint)) continue;
+
+        if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) continue;
+        if (s.retry_after) {
+          const retryAfterTime = new Date(s.retry_after).getTime();
+          if (Number.isFinite(retryAfterTime) && nowTime < retryAfterTime) continue;
+        } else if (typeof s.failures === 'number' && s.failures >= 3) {
+          continue;
+        }
+        if (s.created_at) {
+          const subCreatedTime = new Date(s.created_at).getTime();
+          if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) continue;
+        }
+
+        pageSubs.push(s);
+        if (s.created_at) {
+          lastSeenCreatedAt = s.created_at;
+        }
+        if (pageSubs.length >= quotaForEvent) break;
+      }
+
+      if (pageSubs.length >= quotaForEvent) {
+        break;
+      }
+
+      if (!reachedEnd && batch.length === PAGE_SIZE) {
+        const lastItem = batch[batch.length - 1];
+        if (lastItem && lastItem.created_at) {
+          if (lastItem.created_at === currentCursor) {
+            strictGt = true;
+          } else {
+            currentCursor = lastItem.created_at;
+            strictGt = false;
+          }
+        }
+      } else {
+        break;
+      }
+    }
+
+    // Política de fin de lista: Si el cursor avanzó y no quedan elegibles al frente,
+    // reiniciar cursor a null para barrer en el siguiente cron los suscriptores que salieron de cooldown o fallaron
+    if (pageSubs.length === 0 && cursorCreatedAt !== null) {
+      console.log(`[Push] Fin de cola alcanzado para sismo ${ev.source_uid}. Reiniciando cursor para barrido de reintentos.`);
+      lastSeenCreatedAt = null;
+      if (pushSubrequestsCount < MAX_PUSH_SUBREQUESTS) {
+        pushSubrequestsCount++;
+        try {
+          await supabase.from('notificaciones_enviadas').upsert({
+            source_uid: ev.source_uid,
+            endpoint: '__CURSOR__',
+            enviado_en: null,
+            estado: 'CONFIRMADA'
+          }, { onConflict: 'source_uid,endpoint' });
+        } catch {}
+      }
+
+      // Si aún disponemos de presupuesto, intentar barrido inmediato desde el inicio
+      if (pushSubrequestsCount + 6 < MAX_PUSH_SUBREQUESTS) {
+        pushSubrequestsCount++;
+        try {
+          let sweepQuery = supabase
+            .from('push_subscriptions')
+            .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after');
+          if (typeof sweepQuery.order === 'function') sweepQuery = sweepQuery.order('created_at', { ascending: true });
+          if (typeof sweepQuery.limit === 'function') sweepQuery = sweepQuery.limit(PAGE_SIZE);
+          const { data: sweepBatch } = await sweepQuery;
+          if (sweepBatch) {
+            for (const s of sweepBatch) {
+              if (!s || !s.endpoint || !s.p256dh || !s.auth) continue;
+              if (endpointsNotificados.has(s.endpoint)) continue;
+              if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) continue;
+              if (s.retry_after) {
+                const rTime = new Date(s.retry_after).getTime();
+                if (Number.isFinite(rTime) && nowTime < rTime) continue;
+              } else if (typeof s.failures === 'number' && s.failures >= 3) {
+                continue;
+              }
+              if (s.created_at) {
+                const cTime = new Date(s.created_at).getTime();
+                if (Number.isFinite(cTime) && cTime > evCapturedTime + 15000) continue;
+              }
+              pageSubs.push(s);
+              if (s.created_at) lastSeenCreatedAt = s.created_at;
+              if (pageSubs.length >= quotaForEvent) break;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // Persistir el avance del cursor para este evento
+    if (lastSeenCreatedAt !== undefined && lastSeenCreatedAt !== (cursorRow?.enviado_en) && pushSubrequestsCount < MAX_PUSH_SUBREQUESTS) {
+      pushSubrequestsCount++;
+      try {
+        await supabase.from('notificaciones_enviadas').upsert({
+          source_uid: ev.source_uid,
+          endpoint: '__CURSOR__',
+          enviado_en: lastSeenCreatedAt,
+          estado: 'CONFIRMADA'
+        }, { onConflict: 'source_uid,endpoint' });
+      } catch {}
+    }
+
+    if (!pageSubs.length) continue;
+
+    const subsToProcess = pageSubs.slice(0, quotaForEvent);
 
     // Resolver denominación geográfica oficial
     const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
@@ -631,54 +1065,228 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       tag: `sismo-${ev.source_uid}`
     };
 
-    for (const sub of subsPendientes) {
-      // Reserva atómica en notificaciones_enviadas para evitar condiciones de carrera por concurrencia
-      const { error: reserveErr } = await supabase
-        .from('notificaciones_enviadas')
-        .insert({
-          source_uid: ev.source_uid,
-          endpoint: sub.endpoint,
-          enviado_en: now.toISOString()
-        });
-
-      // Si falló por restricción única (otra instancia concurrente ya reservó o envió), omitir
-      if (reserveErr) {
-        continue;
+    // Despacho en lotes concurrentes con pre-reserva conservadora para el peor caso
+    let chunkIndex = 0;
+    while (chunkIndex < subsToProcess.length) {
+      if (totalIntentos >= MAX_SUBS_PER_CYCLE || pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) {
+        break;
       }
 
-      try {
-        const res = await sendWebPush(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          payload,
-          env
-        );
+      // Pre-reservar presupuesto de subrequests en el peor caso razonable:
+      // Cada suscriptor puede consumir: 1 reserva + 1 push + 2 limpieza/actualización errores = hasta 4 subrequests
+      const remainingBudget = MAX_PUSH_SUBREQUESTS - pushSubrequestsCount;
+      // Pre-reserva conservadora: acota según presupuesto disponible para la ruta estándar (2 subreqs/sub)
+      // y cota dura garantizada de 4 operaciones por suscriptor en el peor caso de fallbacks (bajo límite 48):
+      const maxSubsHappyPath = Math.max(0, Math.floor((remainingBudget - 1) / 2));
+      const maxSubsWorstCase = Math.max(0, Math.floor((48 - pushSubrequestsCount) / 4));
+      const maxSubsForRemainingBudget = Math.min(maxSubsHappyPath, maxSubsWorstCase);
+      if (maxSubsForRemainingBudget <= 0) {
+        console.log(`[Push] Presupuesto de subrequests reservado alcanzado (${pushSubrequestsCount}/${MAX_PUSH_SUBREQUESTS}). Suscriptores diferidos al siguiente cron.`);
+        break;
+      }
 
-        if (res && res.ok) {
-          totalEnviados++;
-        } else if (res && (res.expired || res.status === 401 || res.status === 403)) {
-          // Suscripción inválida o expirada en el servicio Push: dar de baja automáticamente
-          await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-        } else {
-          // Error transitorio del proveedor (ej. 500, 503): liberar reserva para reintento en el siguiente ciclo
-          await supabase
+      const actualChunkSize = Math.min(PUSH_CONCURRENCY, maxSubsForRemainingBudget);
+      const chunk = subsToProcess.slice(chunkIndex, chunkIndex + actualChunkSize);
+      if (!chunk.length) break;
+      chunkIndex += actualChunkSize;
+
+      const successfulEndpoints = [];
+      await Promise.allSettled(chunk.map(async (sub) => {
+        if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) return;
+        totalIntentos++;
+
+        // 1. Reserva atómica con lease temporal (90s)
+        const leaseExpiryIso = new Date(nowTime + 90000).toISOString();
+        if (pushSubrequestsCount < 48) pushSubrequestsCount++;
+        let reserveErr = null;
+        try {
+          const { error } = await supabase
             .from('notificaciones_enviadas')
-            .delete()
-            .eq('source_uid', ev.source_uid)
-            .eq('endpoint', sub.endpoint);
+            .insert({
+              source_uid: ev.source_uid,
+              endpoint: sub.endpoint,
+              enviado_en: now.toISOString(),
+              estado: 'EN_PROCESO',
+              lease_expires_at: leaseExpiryIso,
+              intentos: 1
+            });
+          reserveErr = error;
+          if (reserveErr && (reserveErr.code === '42703' || reserveErr.message?.includes('estado'))) {
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              const { error: fbErr } = await supabase
+                .from('notificaciones_enviadas')
+                .insert({
+                  source_uid: ev.source_uid,
+                  endpoint: sub.endpoint,
+                  enviado_en: now.toISOString()
+                });
+              reserveErr = fbErr;
+            }
+          }
+        } catch (e) {
+          reserveErr = e;
         }
-      } catch (err) {
-        // En caso de fallo de conexión de red, liberar reserva para permitir reintento posterior
-        await supabase
-          .from('notificaciones_enviadas')
-          .delete()
-          .eq('source_uid', ev.source_uid)
-          .eq('endpoint', sub.endpoint);
-        console.warn(`[Push] Error enviando a ${sub.endpoint}:`, err.message);
+
+        if (reserveErr) return;
+
+        // 2. Envío Web Push
+        try {
+          if (pushSubrequestsCount < 48) pushSubrequestsCount++;
+          const res = await sendWebPush(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            payload,
+            env
+          );
+
+          if (res && res.ok) {
+            totalEnviados++;
+            successfulEndpoints.push(sub.endpoint);
+
+            if ((sub.failures && sub.failures > 0) || sub.retry_after) {
+              if (pushSubrequestsCount < 48) {
+                pushSubrequestsCount++;
+                try {
+                  let { error: updErr } = await supabase
+                    .from('push_subscriptions')
+                    .update({ failures: 0, retry_after: null, last_failure_at: null })
+                    .eq('endpoint', sub.endpoint);
+                  if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                    if (pushSubrequestsCount < 48) {
+                      pushSubrequestsCount++;
+                      await supabase.from('push_subscriptions').update({ failures: 0 }).eq('endpoint', sub.endpoint);
+                    }
+                  }
+                } catch {}
+              }
+            }
+          } else if (res && (res.status === 410 || res.status === 404 || res.expired)) {
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); } catch {}
+            }
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+            }
+          } else if (res && (res.status === 401 || res.status === 403 || res.authError)) {
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+            }
+            const nextFailures = (sub.failures || 0) + 1;
+            const retryAfterIso = calculateRetryAfterDate(res?.retryAfter || '300', nextFailures, now);
+            console.warn(`[Push] Advertencia de autenticación VAPID (HTTP ${res.status}) para ${anonymizeEndpoint(sub.endpoint)}. Suspensión temporal aplicada.`);
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try {
+                let { error: updErr } = await supabase
+                  .from('push_subscriptions')
+                  .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
+                  .eq('endpoint', sub.endpoint);
+                if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                  if (pushSubrequestsCount < 48) {
+                    pushSubrequestsCount++;
+                    await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                  }
+                }
+              } catch {}
+            }
+          } else {
+            // Error transitorio (HTTP 429, 500, 502, 503, 504, etc.)
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+            }
+            const nextFailures = (sub.failures || 0) + 1;
+            const retryAfterIso = calculateRetryAfterDate(res?.retryAfter, nextFailures, now);
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try {
+                let { error: updErr } = await supabase
+                  .from('push_subscriptions')
+                  .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
+                  .eq('endpoint', sub.endpoint);
+                if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                  if (pushSubrequestsCount < 48) {
+                    pushSubrequestsCount++;
+                    await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch (err) {
+          if (pushSubrequestsCount < 48) {
+            pushSubrequestsCount++;
+            try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+          }
+          const nextFailures = (sub.failures || 0) + 1;
+          const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
+          if (pushSubrequestsCount < 48) {
+            pushSubrequestsCount++;
+            try {
+              let { error: updErr } = await supabase
+                .from('push_subscriptions')
+                .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
+                .eq('endpoint', sub.endpoint);
+              if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                if (pushSubrequestsCount < 48) {
+                  pushSubrequestsCount++;
+                  await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                }
+              }
+            } catch {}
+          }
+          console.warn(`[Push] Error de red o timeout enviando a ${anonymizeEndpoint(sub.endpoint)}:`, err.message);
+        }
+      }));
+
+      // Confirmar reservas exitosas del lote de forma agrupada (1 subrequest por lote)
+      if (successfulEndpoints.length > 0) {
+        if (pushSubrequestsCount < 48) {
+          pushSubrequestsCount++;
+          try {
+            let { error: confErr } = await supabase
+              .from('notificaciones_enviadas')
+              .update({ estado: 'CONFIRMADA', lease_expires_at: null })
+              .eq('source_uid', ev.source_uid)
+              .in('endpoint', successfulEndpoints);
+            if (confErr) {
+              for (const ep of successfulEndpoints) {
+                if (pushSubrequestsCount >= 48) break;
+                pushSubrequestsCount++;
+                try {
+                  await supabase
+                    .from('notificaciones_enviadas')
+                    .update({ estado: 'CONFIRMADA', lease_expires_at: null })
+                    .eq('source_uid', ev.source_uid)
+                    .eq('endpoint', ep);
+                } catch {}
+              }
+            }
+          } catch {}
+        }
       }
     }
   }
 
-  return { enviados: totalEnviados, sismosNotificados: eligibleEvents.length };
+  const returnObj = {
+    enviados: totalEnviados,
+    intentos: totalIntentos,
+    subrequests: pushSubrequestsCount,
+    sismosNotificados: eligibleEvents.length
+  };
+
+  if (totalEnviados === 0 && totalIntentos === 0) {
+    if (!hadAnySubscribersInDb) {
+      returnObj.motivo = 'Sin suscripciones activas';
+    } else if (!hadAnyVapidCompatibleSubscribers) {
+      returnObj.motivo = 'Sin suscripciones compatibles con la clave VAPID actual';
+    }
+  }
+
+  return returnObj;
 }
 
 export {
@@ -690,6 +1298,8 @@ export {
   generateSourceUid,
   syncEventsToSupabase,
   dispatchPushNotifications,
+  anonymizeEndpoint,
+  calculateRetryAfterDate,
   sha256Hex,
   geoDistanceKm,
   CRON_SCHEDULE

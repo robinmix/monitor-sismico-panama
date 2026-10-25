@@ -7,12 +7,33 @@ const assert = require('node:assert/strict');
 function createMockSupabase(options = {}) {
   const sismosStore = new Map((options.sismos || []).map(s => [s.source_uid, { ...s }]));
   const subsStore = new Map((options.subs || []).map(s => [s.endpoint, { ...s }]));
-  const notifStore = new Map((options.notificaciones || []).map(n => [`${n.source_uid}::${n.endpoint}`, { ...n }]));
+  const initialNotif = options.isFirstActivation
+    ? (options.notificaciones || [])
+    : (options.notificaciones !== undefined
+        ? options.notificaciones
+        : [
+            {
+              source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+              endpoint: '__SYSTEM__',
+              enviado_en: '2026-10-25T10:00:00.000Z'
+            }
+          ]);
+  const notifStore = new Map(initialNotif.map(n => [`${n.source_uid}::${n.endpoint}`, { ...n }]));
 
   return {
     _sismos: sismosStore,
     _subs: subsStore,
-    _notif: notifStore,
+    _notifStore: notifStore,
+    get _notif() {
+      const filtered = new Map();
+      for (const [k, v] of notifStore.entries()) {
+        if (!v.source_uid || v.source_uid.startsWith('__SYSTEM_') || v.endpoint === '__CURSOR__') {
+          continue;
+        }
+        filtered.set(k, v);
+      }
+      return filtered;
+    },
     from(table) {
       if (table === 'sismos') {
         return {
@@ -32,6 +53,13 @@ function createMockSupabase(options = {}) {
                   }
                 }
                 return { data: found, error: null };
+              },
+              async eq(col, val) {
+                if (col === 'source_uid') {
+                  const s = sismosStore.get(val);
+                  return { data: s ? [{ ...s }] : [], error: null };
+                }
+                return { data: [], error: null };
               }
             };
           },
@@ -47,12 +75,26 @@ function createMockSupabase(options = {}) {
       if (table === 'push_subscriptions') {
         return {
           select(fields) {
-            return {
-              async limit(n) {
-                const rows = Array.from(subsStore.values()).slice(0, n);
-                return { data: rows, error: null };
-              }
+            let offset = 0;
+            let limitNum = 500;
+            const chain = {
+              order(col, opts = {}) { return chain; },
+              range(from, to) {
+                offset = from;
+                limitNum = to - from + 1;
+                return chain;
+              },
+              limit(n) {
+                limitNum = n;
+                return chain;
+              },
+              then(resolve, reject) {
+                const rows = Array.from(subsStore.values()).slice(offset, offset + limitNum);
+                resolve({ data: rows, error: null });
+              },
+              catch(reject) { return chain; }
             };
+            return chain;
           },
           delete() {
             return {
@@ -69,25 +111,85 @@ function createMockSupabase(options = {}) {
               subsStore.set(r.endpoint, { ...r });
             }
             return { data: records, error: null };
+          },
+          update(updates) {
+            return {
+              async eq(col, val) {
+                if (col === 'endpoint' && subsStore.has(val)) {
+                  const existing = subsStore.get(val);
+                  subsStore.set(val, { ...existing, ...updates });
+                }
+                return { data: null, error: null };
+              }
+            };
           }
         };
       }
 
       if (table === 'notificaciones_enviadas') {
         return {
-          select(fields) {
-            return {
-              async eq(col, val) {
-                if (col === 'source_uid') {
-                  const found = [];
-                  for (const n of notifStore.values()) {
-                    if (n.source_uid === val) found.push({ ...n });
-                  }
-                  return { data: found, error: null };
+          select(fields, selectOpts = {}) {
+            let fUid = null;
+            let fEndpoint = null;
+            const chain = {
+              eq(col, val) {
+                if (col === 'source_uid') fUid = val;
+                if (col === 'endpoint') fEndpoint = val;
+                return chain;
+              },
+              then(resolve, reject) {
+                const found = [];
+                for (const n of notifStore.values()) {
+                  if (fUid && n.source_uid !== fUid) continue;
+                  if (fEndpoint && n.endpoint !== fEndpoint) continue;
+                  found.push({ ...n });
                 }
-                return { data: [], error: null };
+                resolve({ data: found, count: found.length, error: null });
+              },
+              catch(reject) {
+                return chain;
               }
             };
+            return chain;
+          },
+          update(updates) {
+            let fUid = null;
+            let fEndpoint = null;
+            let fEndpoints = null;
+            const chain = {
+              eq(col, val) {
+                if (col === 'source_uid') fUid = val;
+                if (col === 'endpoint') fEndpoint = val;
+                if (fUid && fEndpoint) {
+                  const key = String(fUid) + '::' + String(fEndpoint);
+                  if (notifStore.has(key)) {
+                    notifStore.set(key, { ...notifStore.get(key), ...updates });
+                  }
+                }
+                return chain;
+              },
+              in(col, vals) {
+                if (col === 'endpoint') fEndpoints = vals;
+                return chain;
+              },
+              then(resolve) {
+                if (fUid && fEndpoint) {
+                  const key = String(fUid) + '::' + String(fEndpoint);
+                  if (notifStore.has(key)) {
+                    notifStore.set(key, { ...notifStore.get(key), ...updates });
+                  }
+                } else if (fUid && Array.isArray(fEndpoints)) {
+                  for (const ep of fEndpoints) {
+                    const key = String(fUid) + '::' + String(ep);
+                    if (notifStore.has(key)) {
+                      notifStore.set(key, { ...notifStore.get(key), ...updates });
+                    }
+                  }
+                }
+                resolve({ data: null, error: null });
+              }
+            };
+            return chain;
           },
           async insert(record) {
             const r = Array.isArray(record) ? record[0] : record;
@@ -110,11 +212,14 @@ function createMockSupabase(options = {}) {
                 }
                 return chain;
               },
-              then(resolve) {
+              then(resolve, reject) {
                 if (fUid && fEndpoint) {
                   notifStore.delete(`${fUid}::${fEndpoint}`);
                 }
                 resolve({ error: null });
+              },
+              catch(reject) {
+                return chain;
               }
             };
             return chain;
@@ -711,4 +816,858 @@ test('Suite Integral de Notificaciones Automáticas Web Push (Fase 2)', async (t
     assert.equal(mockDb._sismos.size, 1);
     assert.equal(mockDb._notif.size, 1);
   });
+  await t.test('16. Suscriptor legado sin vapid_key_hash (NULL): excluido de envíos automáticos hasta renovación en la app', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const legacySubscriber = {
+      ...sampleSubscriber,
+      vapid_key_hash: null, // Suscripción histórica sin columna/hash
+      failures: 0
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [legacySubscriber]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:55:00.000Z',
+      fecha_hora: '2026-10-25T11:55:00.000Z',
+      magnitud: 4.1,
+      profundidad_km: 15,
+      latitud: 8.1,
+      longitud: -80.1
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(result.motivo, 'Sin suscripciones compatibles con la clave VAPID actual');
+    assert.equal(fetchCalls, 0);
+    assert.equal(mockDb._notif.size, 0);
+  });
+
+  await t.test('17. Reintentos entre 2 ciclos cron consecutivos: fallo 503 en corrida 1 se reintenta y entrega en corrida 2 aun con sismo archivado', async () => {
+    let pushAttempts = 0;
+    globalThis.fetch = async () => {
+      pushAttempts++;
+      if (pushAttempts === 1) {
+        // En la corrida 1 el proveedor push retorna 503 Service Unavailable
+        return new Response('Service Unavailable', { status: 503 });
+      }
+      // En la corrida 2 el proveedor push se recupera
+      return new Response('{}', { status: 201 });
+    };
+
+    const nowRun1 = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const incomingFeed = {
+      eventos: [
+        {
+          fecha: '2026-10-25',
+          hora: '06:55:00', // 11:55 UTC (hace 5 min)
+          latitud: 8.1234,
+          longitud: -80.4567,
+          profundidad: 12,
+          magnitud: 4.5,
+          estado: 'REVISADO',
+          region: 'Panamá - Azuero'
+        }
+      ]
+    };
+
+    // CORRIDA 1: Sismo ingresa por primera vez. Supabase lo archiva como nuevo. Push intenta enviar pero falla con 503.
+    const run1 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun1
+    });
+
+    assert.equal(run1.nuevos, 1);
+    assert.equal(run1.push.enviados, 0);
+    assert.equal(pushAttempts, 1);
+    // La reserva en notificaciones_enviadas fue liberada y failures incrementado a 1
+    assert.equal(mockDb._notif.size, 0);
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 1);
+
+    // CORRIDA 2 (1 minuto después): Sismo sigue en el feed del IGC-UP. Ya está en Supabase (verificados: 1, nuevos: 0).
+    const nowRun2 = new Date('2026-10-25T12:01:00.000Z');
+    const run2 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun2
+    });
+
+    assert.equal(run2.nuevos, 0);
+    assert.equal(run2.verificados, 1);
+    assert.equal(run2.push.enviados, 1);
+    assert.equal(pushAttempts, 2);
+    // Notificación entregada, reserva consolidada y contador de failures restablecido a 0
+    assert.equal(mockDb._notif.size, 1);
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 0);
+  });
+
+  await t.test('18. Deduplicación entre corridas consecutivas: sismo entregado en ciclo 1 no genera duplicados en ciclo 2', async () => {
+    let pushAttempts = 0;
+    globalThis.fetch = async () => {
+      pushAttempts++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const nowRun1 = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const incomingFeed = {
+      eventos: [
+        {
+          fecha: '2026-10-25',
+          hora: '06:58:00', // 11:58 UTC (hace 2 min)
+          latitud: 7.95,
+          longitud: -81.25,
+          profundidad: 18,
+          magnitud: 4.8,
+          estado: 'REVISADO',
+          region: 'Golfo de Montijo'
+        }
+      ]
+    };
+
+    // Ciclo 1: Envío exitoso
+    const run1 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun1
+    });
+
+    assert.equal(run1.nuevos, 1);
+    assert.equal(run1.push.enviados, 1);
+    assert.equal(pushAttempts, 1);
+    assert.equal(mockDb._notif.size, 1);
+
+    // Ciclo 2 (1 minuto después): No debe volver a notificar al mismo dispositivo
+    const nowRun2 = new Date('2026-10-25T12:01:00.000Z');
+    const run2 = await runArchival({
+      sourcePayload: incomingFeed,
+      supabase: mockDb,
+      env: defaultEnv,
+      now: nowRun2
+    });
+
+    assert.equal(run2.nuevos, 0);
+    assert.equal(run2.verificados, 1);
+    assert.equal(run2.push.enviados, 0);
+    assert.equal(pushAttempts, 1); // Cero llamadas fetch adicionales
+    assert.equal(mockDb._notif.size, 1);
+  });
+
+  await t.test('19. Tratamiento de HTTP 429 Too Many Requests: no marca como entregado, libera reserva e incrementa failures', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('Too Many Requests', { status: 429 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:52:00.000Z',
+      fecha_hora: '2026-10-25T11:52:00.000Z',
+      magnitud: 4.2,
+      profundidad_km: 10,
+      latitud: 8.5,
+      longitud: -82.3
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(fetchCalls, 1);
+    // Reserva liberada (no entregado) y fallo registrado
+    assert.equal(mockDb._notif.size, 0);
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 1);
+  });
+
+  await t.test('20. Límite de reintentos (circuit breaker): suscriptor con failures >= 3 es omitido de envíos automáticos', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const deadSubscriber = {
+      ...sampleSubscriber,
+      failures: 3 // Umbral máximo de fallos alcanzado
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [deadSubscriber]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:56:00.000Z',
+      fecha_hora: '2026-10-25T11:56:00.000Z',
+      magnitud: 4.0,
+      profundidad_km: 11,
+      latitud: 8.3,
+      longitud: -81.5
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(result.motivo, 'Sin suscripciones compatibles con la clave VAPID actual');
+    assert.equal(fetchCalls, 0);
+  });
+
+  await t.test('21. Suscriptor permanente no válido (HTTP 404 Not Found): eliminado de push_subscriptions y reserva limpia', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('Not Found', { status: 404 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_2026-10-25T11:57:00.000Z',
+      fecha_hora: '2026-10-25T11:57:00.000Z',
+      magnitud: 3.9,
+      profundidad_km: 9,
+      latitud: 8.4,
+      longitud: -82.1
+    };
+
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(result.enviados, 0);
+    assert.equal(fetchCalls, 1);
+    // Eliminado definitivamente de la base de datos
+    assert.equal(mockDb._subs.size, 0);
+    assert.equal(mockDb._notif.size, 0);
+  });
+
+  await t.test('22. Primera activación de Web Push con 1 a 6 sismos ya archivados en Supabase: cero notificaciones históricas', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const activationTime = new Date('2026-10-25T12:00:00.000Z');
+
+    // 3 sismos existentes ya archivados en Supabase con primera_captura anterior a la activación
+    const archivedEvents = [
+      {
+        source_uid: 'igc_hist_1',
+        fecha_hora: '2026-10-25T11:35:00.000Z',
+        magnitud: 4.8,
+        latitud: 8.1,
+        longitud: -80.1,
+        profundidad_km: 12,
+        primera_captura: '2026-10-25T11:36:00.000Z' // 24 min antes de activación
+      },
+      {
+        source_uid: 'igc_hist_2',
+        fecha_hora: '2026-10-25T11:45:00.000Z',
+        magnitud: 4.2,
+        latitud: 8.2,
+        longitud: -80.2,
+        profundidad_km: 15,
+        primera_captura: '2026-10-25T11:46:00.000Z' // 14 min antes de activación
+      },
+      {
+        source_uid: 'igc_hist_3',
+        fecha_hora: '2026-10-25T11:55:00.000Z',
+        magnitud: 3.9,
+        latitud: 8.3,
+        longitud: -80.3,
+        profundidad_km: 10,
+        primera_captura: '2026-10-25T11:56:00.000Z' // 4 min antes de activación
+      }
+    ];
+
+    const mockDb = createMockSupabase({
+      sismos: archivedEvents,
+      subs: [sampleSubscriber],
+      isFirstActivation: true
+    });
+
+    // Se activa AUTO_PUSH_ENABLED por primera vez
+    const result = await dispatchPushNotifications(archivedEvents, mockDb, defaultEnv, activationTime);
+
+    assert.equal(result.enviados, 0, 'No debe enviar notificaciones para sismos conocidos antes de la activación');
+    assert.equal(result.omitidosHistoricosPreActivacion, 3, 'Los 3 eventos deben omitirse por ser históricos pre-activación');
+    assert.equal(fetchCalls, 0, 'Cero peticiones de red al servicio push');
+    // Hito de activación persistido en notificaciones_enviadas
+    assert.ok(mockDb._notifStore.has('__SYSTEM_PUSH_ACTIVATION__::__SYSTEM__'));
+  });
+
+  await t.test('23. Evento nuevo posterior a la primera activación: se envía exitosamente y conserva reintentos cron', async () => {
+    let pushAttempts = 0;
+    globalThis.fetch = async () => {
+      pushAttempts++;
+      if (pushAttempts === 1) {
+        return new Response('Gateway Timeout', { status: 504 }); // Falla transitoria en ciclo 1
+      }
+      return new Response('{}', { status: 201 }); // Éxito en ciclo 2
+    };
+
+    const activationTime = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: activationTime.toISOString()
+        }
+      ]
+    });
+
+    // Evento genuinamente nuevo capturado a las 12:05 (posterior a la activación de las 12:00)
+    const newEvent = {
+      source_uid: 'igc_post_act_1',
+      fecha_hora: '2026-10-25T12:04:00.000Z',
+      magnitud: 4.6,
+      latitud: 8.25,
+      longitud: -80.5,
+      profundidad_km: 11,
+      primera_captura: '2026-10-25T12:05:00.000Z'
+    };
+
+    // Ciclo 1: intento de despacho falla con 504
+    const res1 = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, new Date('2026-10-25T12:05:00.000Z'));
+    assert.equal(res1.enviados, 0);
+    assert.equal(pushAttempts, 1);
+    // Reserva liberada para reintento y fallo registrado
+    assert.ok(!mockDb._notif.has('igc_post_act_1::' + sampleSubscriber.endpoint));
+
+    // Ciclo 2 (1 min después): reintento legítimo conservado
+    const res2 = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, new Date('2026-10-25T12:06:00.000Z'));
+    assert.equal(res2.enviados, 1);
+    assert.equal(pushAttempts, 2);
+    assert.ok(mockDb._notif.has('igc_post_act_1::' + sampleSubscriber.endpoint));
+    assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 0);
+  });
+
+  await t.test('24. Alta de suscriptor posterior al evento: no recibe sismos capturados antes de su registro', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const eventTime = new Date('2026-10-25T12:00:00.000Z');
+    const existingSubscriber = {
+      ...sampleSubscriber,
+      endpoint: 'https://fcm.googleapis.com/fcm/send/device_veteran_1',
+      created_at: '2026-10-25T11:00:00.000Z' // Registrado 1 hora antes del evento
+    };
+
+    const newLateSubscriber = {
+      ...sampleSubscriber,
+      endpoint: 'https://fcm.googleapis.com/fcm/send/device_latecomer_2',
+      created_at: '2026-10-25T12:05:00.000Z' // Registrado 5 minutos DESPUÉS del evento
+    };
+
+    const mockDb = createMockSupabase({
+      subs: [existingSubscriber, newLateSubscriber],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_1200',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.4,
+      latitud: 7.9,
+      longitud: -81.0,
+      profundidad_km: 14,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Cron se ejecuta a las 12:06 (después de que newLateSubscriber se registró a las 12:05)
+    const result = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, new Date('2026-10-25T12:06:00.000Z'));
+
+    assert.equal(result.enviados, 1, 'Solamente debe notificar al suscriptor preexistente');
+    assert.equal(fetchCalls, 1);
+    assert.ok(mockDb._notif.has('igc_event_1200::' + existingSubscriber.endpoint));
+    assert.ok(!mockDb._notif.has('igc_event_1200::' + newLateSubscriber.endpoint), 'El nuevo suscriptor no debe recibir sismos anteriores');
+  });
+
+  await t.test('25. Circuit breaker: cabecera Retry-After de HTTP 429 activa cooldown y recupera automáticamente al cerrar circuito', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      if (fetchCalls === 1) {
+        // Respuesta 429 con cabecera Retry-After: 120 (segundos)
+        const headers = new Headers();
+        headers.set('Retry-After', '120');
+        return new Response('Rate Limited', { status: 429, headers });
+      }
+      return new Response('{}', { status: 201 });
+    };
+
+    const now0 = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_circuit_1',
+      fecha_hora: '2026-10-25T11:59:00.000Z',
+      magnitud: 4.1,
+      latitud: 8.1,
+      longitud: -80.4,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // 1. Intento inicial a las 12:00:00 -> Recibe 429 con Retry-After: 120
+    const res1 = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now0);
+    assert.equal(res1.enviados, 0);
+    assert.equal(fetchCalls, 1);
+
+    const subAfter429 = mockDb._subs.get(sampleSubscriber.endpoint);
+    assert.equal(subAfter429.failures, 1);
+    assert.ok(subAfter429.retry_after, 'Debe establecer retry_after');
+    assert.equal(new Date(subAfter429.retry_after).getTime(), now0.getTime() + 120000);
+
+    // 2. Corrida cron 1 min después (12:01:00, dentro del cooldown de 120s): circuito ABIERTO, suscriptor omitido
+    const now1min = new Date('2026-10-25T12:01:00.000Z');
+    const res2 = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now1min);
+    assert.equal(res2.enviados, 0);
+    assert.equal(fetchCalls, 1, 'No debe realizar llamadas fetch mientras el circuito está en cooldown');
+
+    // 3. Corrida cron 3 min después (12:03:00, cooldown de 120s ya expiró): circuito HALF-OPEN -> reintento
+    const now3min = new Date('2026-10-25T12:03:00.000Z');
+    const res3 = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now3min);
+    assert.equal(res3.enviados, 1);
+    assert.equal(fetchCalls, 2);
+
+    // Circuito restablecido (CERRADO / saludable)
+    const subRecovered = mockDb._subs.get(sampleSubscriber.endpoint);
+    assert.equal(subRecovered.failures, 0);
+    assert.equal(subRecovered.retry_after, null);
+  });
+
+  await t.test('26. Circuit breaker: backoff progresivo ante fallos consecutivos y resiliencia ante errores de Supabase', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('Internal Server Error', { status: 500 }); // Siempre falla
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 2 }], // Ya acumulaba 2 fallos previos
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_backoff_1',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.3,
+      latitud: 8.0,
+      longitud: -80.5,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Al llegar a 3 fallos sin cabecera Retry-After, aplica escalón de backoff (300 segundos = 5 minutos)
+    const res = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(res.enviados, 0);
+    assert.equal(fetchCalls, 1);
+
+    const sub = mockDb._subs.get(sampleSubscriber.endpoint);
+    assert.equal(sub.failures, 3);
+    assert.ok(sub.retry_after);
+    assert.equal(new Date(sub.retry_after).getTime(), now.getTime() + 300000);
+  });
+
+  await t.test('27. HTTP 401/403 VAPID Auth Error: NUNCA elimina la suscripción; aplica cooldown y preserva suscriptor', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      // Simulamos que el proveedor rechaza la cabecera VAPID por token expirado o desajuste de clave
+      return new Response('{"error":"Invalid VAPID credentials"}', { status: 401 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_401_test',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.5,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const res = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(res.enviados, 0);
+    assert.equal(fetchCalls, 1);
+
+    // CRÍTICO: La suscripción NO fue eliminada (evita borrado masivo por problema VAPID global)
+    assert.equal(mockDb._subs.size, 1);
+    const sub = mockDb._subs.get(sampleSubscriber.endpoint);
+    assert.equal(sub.failures, 1);
+    assert.ok(sub.retry_after, 'Debe haber recibido cooldown para reintentar tras resolver VAPID');
+    // Reserva en notificaciones_enviadas liberada
+    assert.equal(mockDb._notif.size, 0);
+  });
+
+  await t.test('28. HTTP 500/502/503/504 Server Error: tratado como transitorio con cooldown sin eliminar la suscripción', async () => {
+    const statusCodes = [500, 502, 503, 504];
+
+    for (const code of statusCodes) {
+      let fetchCalls = 0;
+      globalThis.fetch = async () => {
+        fetchCalls++;
+        return new Response('Gateway Error', { status: code });
+      };
+
+      const now = new Date('2026-10-25T12:00:00.000Z');
+      const mockDb = createMockSupabase({
+        subs: [{ ...sampleSubscriber, failures: 0 }],
+        notificaciones: [
+          {
+            source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+            endpoint: '__SYSTEM__',
+            enviado_en: '2026-10-25T10:00:00.000Z'
+          }
+        ]
+      });
+
+      const newEvent = {
+        source_uid: `igc_event_${code}_test`,
+        fecha_hora: '2026-10-25T11:58:00.000Z',
+        magnitud: 4.1,
+        latitud: 8.1,
+        longitud: -80.1,
+        profundidad_km: 10,
+        primera_captura: '2026-10-25T12:00:00.000Z'
+      };
+
+      const res = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+      assert.equal(res.enviados, 0);
+      assert.equal(fetchCalls, 1);
+      assert.equal(mockDb._subs.size, 1, `Error HTTP ${code} no debe eliminar la suscripción`);
+      assert.equal(mockDb._notif.size, 0, `Error HTTP ${code} debe liberar la reserva para reintento cron`);
+      assert.equal(mockDb._subs.get(sampleSubscriber.endpoint).failures, 1);
+    }
+  });
+
+  await t.test('29. Escalabilidad: 100 suscriptores procesados en lotes concurrentes rápidos acotados a límites Free', async () => {
+    let pushDeliveries = 0;
+    globalThis.fetch = async () => {
+      pushDeliveries++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs100 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 100; i++) {
+      subs100.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_bulk_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: subs100,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_100_subs',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.9,
+      latitud: 8.2,
+      longitud: -80.2,
+      profundidad_km: 12,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Ciclo 1: aunque el entorno pida 100, debe acotar estrictamente a 15 por ciclo respetando límites Cloudflare Free
+    const res1 = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 100 }, now);
+    assert.equal(res1.enviados, 15, 'Debe acotar a 15 en el primer ciclo respetando límites Cloudflare Free');
+
+    // Drenar los 100 suscriptores a lo largo de ciclos cron sucesivos (15x6 + 10 = 7 ciclos en total)
+    for (let c = 1; c <= 7; c++) {
+      const cycleTime = new Date(now.getTime() + c * 60000);
+      const r = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 100 }, cycleTime);
+      console.log('Cycle', c, 'enviados:', r.enviados, 'total pushDeliveries:', pushDeliveries);
+    }
+
+    assert.equal(pushDeliveries, 100, 'Los 100 suscriptores fueron entregados en ciclos sucesivos');
+    assert.equal(mockDb._notif.size, 100, 'Exactamente 100 notificaciones registradas');
+  });
+
+  await t.test('30. Escalabilidad masiva: 1,000 suscriptores concurrentes procesados de forma segura', async () => {
+    let pushDeliveries = 0;
+    globalThis.fetch = async () => {
+      pushDeliveries++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs1000 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 1000; i++) {
+      subs1000.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_mega_${i}`,
+        created_at: new Date(baseTime + i * 500).toISOString(),
+        failures: 0
+      });
+    }
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: subs1000,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_1000_subs',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 5.2,
+      latitud: 8.3,
+      longitud: -80.3,
+      profundidad_km: 15,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Ciclo 1 con env excesivo (500): debe acotar a 15 y no saturar
+    const res = await dispatchPushNotifications([newEvent], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: 500 }, now);
+
+    assert.equal(res.enviados, 15, 'Debe acotar a 15 suscriptores en el ciclo cron sin saturar');
+    assert.equal(pushDeliveries, 15);
+    assert.equal(mockDb._notif.size, 15);
+  });
+
+  await t.test('31. Fallback Supabase: columnas de circuit breaker no migradas (error 42703) degradan transparentemente', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('Too Many Requests', { status: 429 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const subsStore = new Map([[sampleSubscriber.endpoint, { ...sampleSubscriber, failures: 0 }]]);
+    const notifStore = new Map([['__SYSTEM_PUSH_ACTIVATION__::__SYSTEM__', { source_uid: '__SYSTEM_PUSH_ACTIVATION__', endpoint: '__SYSTEM__', enviado_en: '2026-10-25T10:00:00.000Z' }]]);
+
+    // Simulador Supabase que arroja 42703 (columna inexistente) si se intenta consultar o actualizar retry_after
+    const mockDbUnmigrated = {
+      _notif: notifStore,
+      from(t) {
+        if (t === 'notificaciones_enviadas') {
+          return {
+            select() {
+              const chain = {
+                eq() { return chain; },
+                then(resolve) { resolve({ data: [{ source_uid: '__SYSTEM_PUSH_ACTIVATION__', endpoint: '__SYSTEM__', enviado_en: '2026-10-25T10:00:00.000Z' }], error: null }); }
+              };
+              return chain;
+            },
+            delete() {
+              const chain = { eq() { return chain; } };
+              return chain;
+            },
+            insert() { return { data: [], error: null }; }
+          };
+        }
+        if (t === 'push_subscriptions') {
+          return {
+            select(fields) {
+              return {
+                async limit(n) {
+                  if (fields.includes('retry_after')) {
+                    return { data: null, error: { code: '42703', message: 'column retry_after does not exist' } };
+                  }
+                  return { data: Array.from(subsStore.values()).slice(0, n), error: null };
+                }
+              };
+            },
+            update(payload) {
+              return {
+                async eq(col, val) {
+                  if (payload.retry_after !== undefined) {
+                    return { data: null, error: { code: '42703', message: 'column retry_after does not exist' } };
+                  }
+                  if (subsStore.has(val)) {
+                    subsStore.set(val, { ...subsStore.get(val), ...payload });
+                  }
+                  return { data: null, error: null };
+                }
+              };
+            }
+          };
+        }
+        if (t === 'sismos') {
+          return { select() { return { eq() { return { data: [], error: null }; } }; } };
+        }
+        throw new Error('Tabla desconocida');
+      }
+    };
+
+    const newEvent = {
+      source_uid: 'igc_event_unmigrated_test',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.1,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // No debe lanzar excepción, debe ejecutar fallback limpio
+    const res = await dispatchPushNotifications([newEvent], mockDbUnmigrated, defaultEnv, now);
+    assert.equal(res.enviados, 0);
+    assert.equal(fetchCalls, 1);
+    // El contador de fallos se actualizó exitosamente mediante el fallback
+    assert.equal(subsStore.get(sampleSubscriber.endpoint).failures, 1);
+  });
+
+  await t.test('32. Retry-After con fecha HTTP RFC 7231 (ej. "Sun, 25 Oct 2026 12:02:00 GMT") parseado correctamente', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      const headers = new Headers();
+      headers.set('Retry-After', 'Sun, 25 Oct 2026 12:02:00 GMT'); // Fecha absoluta a 120s en el futuro
+      return new Response('Rate Limited', { status: 429, headers });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const newEvent = {
+      source_uid: 'igc_event_http_date_test',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.3,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const res = await dispatchPushNotifications([newEvent], mockDb, defaultEnv, now);
+    assert.equal(res.enviados, 0);
+    assert.equal(fetchCalls, 1);
+
+    const sub = mockDb._subs.get(sampleSubscriber.endpoint);
+    assert.ok(sub.retry_after);
+    assert.equal(new Date(sub.retry_after).getTime(), new Date('2026-10-25T12:02:00.000Z').getTime());
+  });
+
+  await t.test('33. Idempotencia y tolerancia de reinicio del Worker: eventos ya reservados o completados jamás se duplican', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+    const mockDb = createMockSupabase({
+      subs: [{ ...sampleSubscriber, failures: 0 }],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        },
+        {
+          // Simula que una ejecución anterior completó la entrega para este evento
+          source_uid: 'igc_event_idempotency_1',
+          endpoint: sampleSubscriber.endpoint,
+          enviado_en: '2026-10-25T11:59:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_idempotency_1',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.2,
+      latitud: 8.1,
+      longitud: -80.1,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T11:59:00.000Z'
+    };
+
+    // Al reiniciar o correr en el siguiente cron, detecta que ya fue enviado
+    const res = await dispatchPushNotifications([event], mockDb, defaultEnv, now);
+    assert.equal(res.enviados, 0);
+    assert.equal(fetchCalls, 0, 'Jamás debe llamar a fetch para un evento previamente entregado');
+    assert.equal(mockDb._notif.size, 1);
+  });
+
 });
