@@ -75,67 +75,6 @@
   --shadow-card: 0 4px 16px -2px rgba(0, 0, 0, 0.3);
   --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
-/* ==========================================================================
-   TEMA CLARO PROFESIONAL (ALTO CONTRASTE WCAG AAA)
-   ========================================================================== */
-[data-theme="light"] {
-  color-scheme: light;
-  --bg-root: #F2F6FC;
-  --bg-secondary: #E8EFF8;
-  --bg-surface: #FFFFFF;
-  --bg-surface-2: #F0F4FA;
-  --bg-surface-hover: #E4ECF6;
-  --bg-surface-active: #D9E4F2;
-  --bg-card: #FFFFFF;
-  --bg-elevated: #FFFFFF;
-  --bg-input: #FFFFFF;
-
-  --border-subtle: #E2EAF4;
-  --border-default: #D8E2EE;
-  --border-card: #D8E2EE;
-  --border-strong: #C4D3E5;
-  --border-highlight: rgba(22, 120, 211, 0.40);
-  --border-focus: #1678D3;
-
-  --text-main: #172338;
-  --text-secondary: #4A5D78;
-  --text-muted: #64748B;
-  --text-dim: #94A3B8;
-
-  --color-blue: #1678D3;
-  --color-blue-hover: #0F5CA3;
-  --color-cyan: #0284C7;
-  --color-interactive: #E2EEFC;
-
-  /* Resaltado geográfico adaptado a fondo claro (máximo contraste WCAG AAA) */
-  --geo-highlight: #B45309;
-
-  /* Magnitudes con excelente contraste sobre blanco */
-  --mag-below: #0D9488;
-  --mag-3: #15803D;
-  --mag-4: #C2410C;
-  --mag-5: #DC2626;
-  --mag-neutral: #64748B;
-
-  --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.08);
-  --shadow-subtle: 0 1px 4px rgba(15, 23, 42, 0.05);
-}
-
-[data-theme="light"] html {
-  background-color: var(--bg-root);
-  color-scheme: light;
-}
-
-[data-theme="light"] .hero-circle-dial {
-  background: radial-gradient(circle at center, #FFFFFF 0%, #F0F4FA 100%) !important;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
-}
-
-[data-theme="light"] .hero-circle-val {
-  color: #172338 !important;
-}
-
-
 /* --------------------------------------------------------------------------
    02. BASE RESET & SMOOTH MODERN FINISH
    -------------------------------------------------------------------------- */
@@ -2465,6 +2404,9 @@ td.align-right {
 }
 
 @media (max-width: 640px) {
+  .identity-name small {
+    display: none !important;
+  }
   .page-shell {
     padding: 0 var(--sp-3) calc(76px + env(safe-area-inset-bottom, 0px));
   }
@@ -5737,4 +5679,648 @@ td.align-right {
 #dashboardView[data-active-tab="mas"] > .section-notifications {
   display: block !important;
   margin-top: 0 !important;
+}
+
+/* ==========================================================================
+   TEMA CLARO PROFESIONAL (ALTO CONTRASTE WCAG AAA) — AMOLED 5.2 REFINADO
+   ========================================================================== */
+[data-theme="light"] {
+  color-scheme: light;
+  --bg-root: #F2F6FC;
+  --bg-secondary: #EAF1F8;
+  --bg-surface: #FFFFFF;
+  --bg-surface-2: #EAF1F8;
+  --bg-surface-hover: #DFE8F2;
+  --bg-surface-active: #D3E0EE;
+  --bg-card: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-input: #FFFFFF;
+
+  --border-subtle: #E2EAF4;
+  --border-default: #D8E2EE;
+  --border-card: #D8E2EE;
+  --border-strong: #C4D3E5;
+  --border-highlight: rgba(22, 120, 211, 0.40);
+  --border-focus: #1678D3;
+
+  --text-main: #172338;
+  --text-secondary: #52647A;
+  --text-muted: #52647A;
+  --text-dim: #718096;
+
+  --color-blue: #1678D3;
+  --color-blue-hover: #0F5CA3;
+  --color-cyan: #0284C7;
+  --color-interactive: #EAF1F8;
+
+  /* Resaltado geográfico adaptado a fondo claro (máximo contraste WCAG AAA: 5.2:1) */
+  --geo-highlight: #B45309;
+
+  /* Magnitudes con excelente contraste sobre blanco (WCAG AA/AAA: > 4.6:1) */
+  --mag-below: #0F766E;     /* < 3.0: Turquesa oscuro */
+  --mag-3: #15803D;         /* 3.0 – 3.9: Verde esmeralda oscuro */
+  --mag-4: #C2410C;         /* 4.0 – 4.9: Naranja intenso oscuro */
+  --mag-5: #DC2626;         /* >= 5.0: Rojo intenso */
+  --mag-neutral: #52647A;
+
+  --shadow-card: 0 4px 16px rgba(15, 23, 42, 0.06);
+  --shadow-subtle: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+html[data-theme="light"],
+html[data-theme="light"] body {
+  background-color: #F2F6FC !important;
+  color: #172338 !important;
+  color-scheme: light;
+}
+
+/* 1. CABECERA Y SELECTOR DE TEMA */
+html[data-theme="light"] .topbar {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-bottom: 1px solid #D8E2EE !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-theme="light"] .brand-title,
+html[data-theme="light"] .topbar-brand {
+  color: #172338 !important;
+}
+html[data-theme="light"] .brand-subtitle,
+html[data-theme="light"] .brand-dot {
+  color: #52647A !important;
+}
+html[data-theme="light"] .panama-time,
+html[data-theme="light"] #panamaTime {
+  color: #52647A !important;
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .theme-toggle-btn {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+}
+html[data-theme="light"] .theme-toggle-btn:hover {
+  background: #DFE8F2 !important;
+  border-color: #1678D3 !important;
+  color: #1678D3 !important;
+}
+html[data-theme="light"] .status-pill {
+  border-color: #D8E2EE !important;
+  background: #EAF1F8 !important;
+}
+
+/* 2. TARJETA DEL ÚLTIMO SISMO (HERO CARD) */
+html[data-theme="light"] .last-event,
+html[data-theme="light"] #lastEventPanel {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] .last-top {
+  border-bottom: 1px solid #EAF1F8 !important;
+}
+html[data-theme="light"] .last-header-tag,
+html[data-theme="light"] .hero-header-tag {
+  color: #52647A !important;
+}
+html[data-theme="light"] .hero-region-title {
+  color: #B45309 !important;
+  font-weight: 700 !important;
+}
+html[data-theme="light"] .hero-zone-sub,
+html[data-theme="light"] .hero-place-subtitle {
+  color: #52647A !important;
+}
+html[data-theme="light"] .hero-params-line {
+  color: #52647A !important;
+}
+html[data-theme="light"] .hero-params-line strong,
+html[data-theme="light"] .hero-meta-val {
+  color: #172338 !important;
+}
+html[data-theme="light"] .hero-meta-lbl {
+  color: #52647A !important;
+}
+html[data-theme="light"] .live-dot {
+  background: #15803D !important;
+  box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.2) !important;
+}
+
+/* CÍRCULO Y NÚMERO DE MAGNITUD EN HERO CARD */
+html[data-theme="light"] .hero-circle-dial {
+  background: #FFFFFF !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] .hero-circle-dial.mBelow,
+html[data-theme="light"] .last-event[data-mag-range="mBelow"] .hero-circle-dial {
+  border-color: #0F766E !important;
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .hero-circle-dial.mBelow .hero-circle-val,
+html[data-theme="light"] .last-event[data-mag-range="mBelow"] .hero-circle-val {
+  color: #0F766E !important;
+  font-weight: 800 !important;
+}
+html[data-theme="light"] .hero-circle-dial.m3,
+html[data-theme="light"] .last-event[data-mag-range="m3"] .hero-circle-dial {
+  border-color: #15803D !important;
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .hero-circle-dial.m3 .hero-circle-val,
+html[data-theme="light"] .last-event[data-mag-range="m3"] .hero-circle-val {
+  color: #15803D !important;
+  font-weight: 800 !important;
+}
+html[data-theme="light"] .hero-circle-dial.m4,
+html[data-theme="light"] .last-event[data-mag-range="m4"] .hero-circle-dial {
+  border-color: #C2410C !important;
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .hero-circle-dial.m4 .hero-circle-val,
+html[data-theme="light"] .last-event[data-mag-range="m4"] .hero-circle-val {
+  color: #C2410C !important;
+  font-weight: 800 !important;
+}
+html[data-theme="light"] .hero-circle-dial.m5,
+html[data-theme="light"] .last-event[data-mag-range="m5"] .hero-circle-dial {
+  border-color: #DC2626 !important;
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .hero-circle-dial.m5 .hero-circle-val,
+html[data-theme="light"] .last-event[data-mag-range="m5"] .hero-circle-val {
+  color: #DC2626 !important;
+  font-weight: 800 !important;
+}
+html[data-theme="light"] .hero-circle-dial.mNeutral,
+html[data-theme="light"] .last-event[data-mag-range="mNeutral"] .hero-circle-dial {
+  border-color: #52647A !important;
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .hero-circle-dial.mNeutral .hero-circle-val,
+html[data-theme="light"] .last-event[data-mag-range="mNeutral"] .hero-circle-val {
+  color: #52647A !important;
+  font-weight: 800 !important;
+}
+
+/* TIEMPO TRANSCURRIDO (LIMPIO, SUPERFICIE SECUNDARIA SÓLIDA) */
+html[data-theme="light"] .timer-box {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .timer-label {
+  color: #52647A !important;
+  font-weight: 700 !important;
+}
+html[data-theme="light"] .live-counter,
+html[data-theme="light"] .live-counter strong,
+html[data-theme="light"] .counter-unit strong {
+  color: #172338 !important;
+}
+html[data-theme="light"] .counter-unit small,
+html[data-theme="light"] .counter-sep {
+  color: #52647A !important;
+}
+html[data-theme="light"] .last-foot,
+html[data-theme="light"] #snapshotStatus {
+  color: #52647A !important;
+}
+html[data-theme="light"] .geo-dist-btn {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #1678D3 !important;
+}
+html[data-theme="light"] .hero-btn-primary {
+  background: #1678D3 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #1678D3 !important;
+  box-shadow: 0 2px 8px rgba(22, 120, 211, 0.25) !important;
+}
+
+/* 3. TARJETAS ESTADÍSTICAS (METRICS) */
+html[data-theme="light"] .metric {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05) !important;
+  color: #172338 !important;
+}
+html[data-theme="light"] .metric.primary {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .metric.primary .metric-tag,
+html[data-theme="light"] .metric.primary .metric-tag span {
+  color: #52647A !important;
+}
+html[data-theme="light"] .metric.primary strong {
+  color: #172338 !important;
+}
+html[data-theme="light"] .stat-dist-bar {
+  background: #EAF1F8 !important;
+}
+html[data-theme="light"] .metric-bottom {
+  color: #52647A !important;
+}
+
+/* BOTONES DE MAGNITUD SIN DEGRADADOS GRISES NI FONDOS TRASLÚCIDOS */
+html[data-theme="light"] .metric.m-below-btn {
+  background: #FFFFFF !important;
+  border: 1.5px solid rgba(13, 148, 136, 0.35) !important;
+}
+html[data-theme="light"] .metric.m-below-btn .metric-tag span,
+html[data-theme="light"] .metric.m-below-btn small {
+  color: #52647A !important;
+}
+html[data-theme="light"] .metric.m-below-btn strong {
+  color: #0F766E !important;
+}
+
+html[data-theme="light"] .metric.m-3-btn {
+  background: #FFFFFF !important;
+  border: 1.5px solid rgba(21, 128, 61, 0.35) !important;
+}
+html[data-theme="light"] .metric.m-3-btn .metric-tag span,
+html[data-theme="light"] .metric.m-3-btn small {
+  color: #52647A !important;
+}
+html[data-theme="light"] .metric.m-3-btn strong {
+  color: #15803D !important;
+}
+
+html[data-theme="light"] .metric.m-4-btn {
+  background: #FFFFFF !important;
+  border: 1.5px solid rgba(194, 65, 12, 0.35) !important;
+}
+html[data-theme="light"] .metric.m-4-btn .metric-tag span,
+html[data-theme="light"] .metric.m-4-btn small {
+  color: #52647A !important;
+}
+html[data-theme="light"] .metric.m-4-btn strong {
+  color: #C2410C !important;
+}
+
+html[data-theme="light"] .metric.m-5-btn {
+  background: #FFFFFF !important;
+  border: 1.5px solid rgba(220, 38, 38, 0.35) !important;
+}
+html[data-theme="light"] .metric.m-5-btn .metric-tag span,
+html[data-theme="light"] .metric.m-5-btn small {
+  color: #52647A !important;
+}
+html[data-theme="light"] .metric.m-5-btn strong {
+  color: #DC2626 !important;
+}
+
+/* 4. CATÁLOGO SÍSMICO Y TARJETAS MÓVILES */
+html[data-theme="light"] .panel {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+html[data-theme="light"] .panel-head {
+  border-bottom: 1px solid #EAF1F8 !important;
+}
+html[data-theme="light"] .panel h2,
+html[data-theme="light"] .panel-head h2 {
+  color: #172338 !important;
+}
+html[data-theme="light"] .data-table {
+  background: #FFFFFF !important;
+  border-color: #D8E2EE !important;
+}
+html[data-theme="light"] .data-table th {
+  background: #EAF1F8 !important;
+  color: #52647A !important;
+  border-color: #D8E2EE !important;
+}
+html[data-theme="light"] .data-table td {
+  color: #172338 !important;
+  border-color: #EAF1F8 !important;
+}
+html[data-theme="light"] .data-table tr:hover td {
+  background: #F0F4FA !important;
+}
+
+/* TARJETAS MÓVILES */
+html[data-theme="light"] .sismo-mobile-card {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05) !important;
+}
+html[data-theme="light"] .sismo-mobile-card:active {
+  background: #F0F4FA !important;
+}
+html[data-theme="light"] .card-place-name {
+  color: #172338 !important;
+  font-weight: 700 !important;
+}
+html[data-theme="light"] .card-region-name {
+  color: #52647A !important;
+}
+html[data-theme="light"] .card-params-grid {
+  border-top: 1px solid #EAF1F8 !important;
+}
+html[data-theme="light"] .card-param-txt {
+  color: #52647A !important;
+  font-weight: 600 !important;
+}
+html[data-theme="light"] .card-param-item + .card-param-item::before {
+  color: #D8E2EE !important;
+}
+html[data-theme="light"] .card-action-row {
+  border-top: 1px solid #EAF1F8 !important;
+}
+html[data-theme="light"] .card-ficha-btn {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #1678D3 !important;
+  font-weight: 700 !important;
+}
+html[data-theme="light"] .card-ficha-btn:hover {
+  background: #DFE8F2 !important;
+  border-color: #1678D3 !important;
+}
+
+/* BADGES DE MAGNITUD EN TARJETAS MÓVILES */
+html[data-theme="light"] .card-mag-badge {
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .card-mag-badge.mBelow {
+  border-color: #0F766E !important;
+  color: #0F766E !important;
+}
+html[data-theme="light"] .card-mag-badge.m3 {
+  border-color: #15803D !important;
+  color: #15803D !important;
+}
+html[data-theme="light"] .card-mag-badge.m4 {
+  border-color: #C2410C !important;
+  color: #C2410C !important;
+}
+html[data-theme="light"] .card-mag-badge.m5 {
+  border-color: #DC2626 !important;
+  color: #DC2626 !important;
+}
+html[data-theme="light"] .card-mag-badge.mNeutral {
+  border-color: #52647A !important;
+  color: #52647A !important;
+}
+
+/* 5. PÁNEL DE FILTROS */
+html[data-theme="light"] .filter-panel {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] .filter-label,
+html[data-theme="light"] .filter-group label {
+  color: #52647A !important;
+}
+html[data-theme="light"] .filter-input,
+html[data-theme="light"] .filter-select,
+html[data-theme="light"] .filter-panel select,
+html[data-theme="light"] .filter-panel input {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+}
+html[data-theme="light"] .filtered-count {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #1678D3 !important;
+  font-weight: 700 !important;
+}
+
+/* 6. FICHA DETALLADA (SISMO VIEW) */
+html[data-theme="light"] .sismo-view-bar {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .sismo-tech-panel,
+html[data-theme="light"] .sismo-map-panel {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .sismo-tech-header,
+html[data-theme="light"] .sismo-tech-footer {
+  border-color: #EAF1F8 !important;
+}
+html[data-theme="light"] .sismo-title,
+html[data-theme="light"] .sismo-tech-panel h2 {
+  color: #172338 !important;
+}
+html[data-theme="light"] .sismo-subtitle {
+  color: #52647A !important;
+}
+html[data-theme="light"] .geo-location-highlight {
+  color: #B45309 !important;
+  font-weight: 700 !important;
+}
+html[data-theme="light"] .param-label,
+html[data-theme="light"] .sismo-param-lbl {
+  color: #52647A !important;
+}
+html[data-theme="light"] .param-value,
+html[data-theme="light"] .sismo-param-val {
+  color: #172338 !important;
+}
+html[data-theme="light"] .sismo-back-btn,
+html[data-theme="light"] .sismo-share-btn {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #1678D3 !important;
+}
+
+/* 7. PESTAÑA HISTORIAL */
+html[data-theme="light"] .historico-section {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .historico-controls {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .historico-controls select,
+html[data-theme="light"] .historico-controls input {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+}
+html[data-theme="light"] .hist-kpis .metric {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+html[data-theme="light"] .hist-kpis .metric-tag,
+html[data-theme="light"] .hist-kpis .metric-bottom {
+  color: #52647A !important;
+}
+html[data-theme="light"] .hist-kpis strong {
+  color: #172338 !important;
+}
+html[data-theme="light"] .chart-box,
+html[data-theme="light"] .hist-mag-box,
+html[data-theme="light"] .hist-reg-box {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+
+/* 8. NAVEGACIÓN INFERIOR MÓVIL */
+html[data-theme="light"] .mobile-bottom-nav {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-top: 1px solid #D8E2EE !important;
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] .mobile-nav-btn {
+  color: #52647A !important;
+}
+html[data-theme="light"] .mobile-nav-btn.active {
+  color: #1678D3 !important;
+}
+html[data-theme="light"] .mobile-nav-btn.active .mobile-nav-icon {
+  stroke: #1678D3 !important;
+}
+
+/* 9. CONTROLES Y POPUPS DEL MAPA */
+html[data-theme="light"] .maplibregl-popup-content {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12) !important;
+}
+html[data-theme="light"] .maplibregl-popup-tip {
+  border-top-color: #FFFFFF !important;
+  border-bottom-color: #FFFFFF !important;
+}
+html[data-theme="light"] .maplibre-sismo-popup .popup-title {
+  color: #172338 !important;
+}
+html[data-theme="light"] .maplibre-sismo-popup .popup-subtitle {
+  color: #52647A !important;
+}
+html[data-theme="light"] .maplibregl-ctrl-group {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .maplibregl-ctrl-group button {
+  border-bottom: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .map-legend,
+html[data-theme="light"] #dashboardView[data-active-tab="mapa"] .panel.geography .panel-head {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* 10. PESTAÑA MÁS Y NOTIFICACIONES */
+html[data-theme="light"] .section-notifications {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .notifications-title {
+  color: #172338 !important;
+}
+html[data-theme="light"] .notifications-subtitle {
+  color: #52647A !important;
+}
+html[data-theme="light"] .section-regions {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .region-item {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+}
+html[data-theme="light"] .region-item span {
+  color: #52647A !important;
+}
+html[data-theme="light"] .region-item strong {
+  color: #172338 !important;
+}
+html[data-theme="light"] .chart-main,
+html[data-theme="light"] .mag-panel {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .donut-inner {
+  background: #FFFFFF !important;
+}
+html[data-theme="light"] .section-transparency {
+  background: #FFFFFF !important;
+  border: 1px solid #D8E2EE !important;
+}
+html[data-theme="light"] .sources-list {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+}
+
+html[data-theme="light"] .brand-sismo,
+html[data-theme="light"] .identity-name b .brand-sismo {
+  color: #172338 !important;
+}
+html[data-theme="light"] .brand-pa,
+html[data-theme="light"] .identity-name b .brand-pa {
+  color: #DC2626 !important;
+}
+
+/* REGLAS PROTECTORAS DE VIEWPORT MÓVIL (<= 640px) */
+@media (max-width: 640px) {
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+  }
+  .page-shell {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .topbar {
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+  .identity {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+  .identity-name small {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 160px !important;
+  }
+  .panel-head {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+  .record-actions {
+    width: 100% !important;
+  }
+  .sort-wrap {
+    width: 100% !important;
+  }
+  .sort-wrap select {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  /* Ocultar sección notificaciones en pestañas distintas a Más */
+  #dashboardView[data-active-tab="sismos"] > .section-notifications,
+  #dashboardView[data-active-tab="mapa"] > .section-notifications,
+  #dashboardView[data-active-tab="cerca"] > .section-notifications,
+  #dashboardView[data-active-tab="historial"] > .section-notifications {
+    display: none !important;
+  }
+  .section-notifications {
+    padding: 14px 16px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+@media (max-width: 420px) {
+  
 }

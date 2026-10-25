@@ -71,3 +71,33 @@ test('AMOLED 5.2 — Formato de notificación y exclusión de frases prohibidas'
 test('AMOLED 5.2 — Cron Trigger cada minuto en Cloudflare Worker', () => {
   assert.ok(wranglerToml.includes('crons = ["* * * * *"]'), 'wrangler.toml debe estar configurado para ejecutarse cada minuto (* * * * *)');
 });
+
+test('AMOLED 5.2 — Contraste WCAG AA en paleta de tema claro', () => {
+  function sRGBtoLin(c) {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+  function luminance(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return 0.2126 * sRGBtoLin(r) + 0.7152 * sRGBtoLin(g) + 0.0722 * sRGBtoLin(b);
+  }
+  function contrast(hex1, hex2) {
+    const l1 = luminance(hex1);
+    const l2 = luminance(hex2);
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  const white = '#FFFFFF';
+  assert.ok(contrast('#172338', white) >= 7.0, 'Texto principal #172338 debe cumplir WCAG AAA (>= 7:1)');
+  assert.ok(contrast('#52647A', white) >= 4.5, 'Texto secundario #52647A debe cumplir WCAG AA (>= 4.5:1)');
+  assert.ok(contrast('#1678D3', white) >= 4.5, 'Azul interactivo #1678D3 debe cumplir WCAG AA (>= 4.5:1)');
+  assert.ok(contrast('#B45309', white) >= 4.5, 'Resaltado geográfico #B45309 debe cumplir WCAG AA (>= 4.5:1)');
+  assert.ok(contrast('#0F766E', white) >= 4.5, 'Magnitud <3.0 #0F766E debe cumplir WCAG AA (>= 4.5:1)');
+  assert.ok(contrast('#15803D', white) >= 4.5, 'Magnitud 3.0-3.9 #15803D debe cumplir WCAG AA (>= 4.5:1)');
+  assert.ok(contrast('#C2410C', white) >= 4.5, 'Magnitud 4.0-4.9 #C2410C debe cumplir WCAG AA (>= 4.5:1)');
+  assert.ok(contrast('#DC2626', white) >= 4.5, 'Magnitud >=5.0 #DC2626 debe cumplir WCAG AA (>= 4.5:1)');
+});

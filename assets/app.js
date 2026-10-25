@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261025amoled52';
+  const APP_BUILD_VERSION = '20261025amoled521';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
@@ -74,12 +74,19 @@
     if (mag >= 3.0) return 'm3';
     return 'mBelow';
   };
+  const getThemeColors = () => {
+    const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
+    return isLight
+      ? ['#0F766E', '#15803D', '#C2410C', '#DC2626']
+      : ['#31E8D0', '#39E59A', '#FF9A32', '#FF5266'];
+  };
   const magColor = mag => {
-    if (!isValidMag(mag)) return NEUTRAL_COLOR;
-    if (mag >= 5.0) return COLORS[3];
-    if (mag >= 4.0) return COLORS[2];
-    if (mag >= 3.0) return COLORS[1];
-    return COLORS[0];
+    if (!isValidMag(mag)) return (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? '#52647A' : NEUTRAL_COLOR);
+    const colors = getThemeColors();
+    if (mag >= 5.0) return colors[3];
+    if (mag >= 4.0) return colors[2];
+    if (mag >= 3.0) return colors[1];
+    return colors[0];
   };
   const magText = n => Number(n).toFixed(1);
   const pct = (a, total) => total ? `${Math.round(a / total * 100)}%` : '0%';
@@ -2396,6 +2403,12 @@
       try {
         localStorage.setItem('sismopa_theme', newTheme);
       } catch (e) {}
+      if (state.events && state.events.length) {
+        try {
+          renderCharts(filteredEvents());
+          renderMetrics(filteredEvents());
+        } catch (e) {}
+      }
     });
   }
 
