@@ -332,6 +332,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
 
     if (!existing) {
       // Evento nuevo
+      r.primera_captura = nowISO;
       payloads.push({
         ...r,
         primera_captura: nowISO,
@@ -341,6 +342,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
       nuevosCount++;
       nuevosRecords.push(r);
     } else {
+      r.primera_captura = existing.primera_captura || nowISO;
       // Evento existente: evaluar si hubo revisión de magnitud, profundidad, estado o coordenadas
       const cambioMagnitud = Math.abs(Number(existing.magnitud) - Number(r.magnitud)) > 0.01;
       const cambioProfundidad = Math.abs(Number(existing.profundidad_km) - Number(r.profundidad_km)) > 0.1;
@@ -524,6 +526,39 @@ async function sha256Hex(str) {
 }
 
 /**
+ * Calcula la fecha ISO hasta la cual debe pausarse una suscripción (cooldown / circuito abierto).
+ * Prioriza la cabecera Retry-After del proveedor y aplica backoff progresivo ante fallos transitorios.
+ */
+function calculateRetryAfterDate(retryAfterHeader, failures, now = new Date()) {
+  const nowMs = now.getTime();
+  if (retryAfterHeader && typeof retryAfterHeader === 'string') {
+    const trimmed = retryAfterHeader.trim();
+    const seconds = parseInt(trimmed, 10);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      const boundedSeconds = Math.min(Math.max(seconds, 10), 3600);
+      return new Date(nowMs + boundedSeconds * 1000).toISOString();
+    }
+    const parsedDate = new Date(trimmed);
+    if (Number.isFinite(parsedDate.getTime())) {
+      const diffMs = parsedDate.getTime() - nowMs;
+      if (diffMs > 0) {
+        const boundedMs = Math.min(Math.max(diffMs, 10000), 3600 * 1000);
+        return new Date(nowMs + boundedMs).toISOString();
+      }
+    }
+  }
+
+  // Backoff escalonado progresivo: 1 fallo -> 60s, 2 -> 120s, 3 -> 300s, 4 -> 900s, 5+ -> 1800s
+  let cooldownSec = 60;
+  if (failures === 2) cooldownSec = 120;
+  else if (failures === 3) cooldownSec = 300;
+  else if (failures === 4) cooldownSec = 900;
+  else if (failures >= 5) cooldownSec = 1800;
+
+  return new Date(nowMs + cooldownSec * 1000).toISOString();
+}
+
+/**
  * Distribuye notificaciones Web Push para sismos verdaderamente nuevos (máximo 30 min de antigüedad).
  * Protegido contra ráfagas (lote masivo > 3) y duplicados mediante notificaciones_enviadas.
  * Requiere explícitamente AUTO_PUSH_ENABLED=true para enviar notificaciones reales.
@@ -554,23 +589,112 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, omitidosPorAntiguedad: nuevosRecords.length };
   }
 
-  // 2. Protección contra ráfagas anómalas / cold start / backfill masivo:
-  // Si en la ventana reciente aparecen más de 6 eventos, se considera importación masiva y se omite.
-  if (recentEvents.length > 6) {
-    console.warn(`[Push] Despacho omitido por lote masivo (${recentEvents.length} eventos recientes). Protección contra ráfagas activa.`);
-    return { enviados: 0, omitidosPorLoteMasivo: recentEvents.length };
+  // 2. Comprobar / registrar hito persistente de activación de Web Push en Supabase
+  let activationTimestamp = null;
+  if (env && env.PUSH_ACTIVATED_AT) {
+    activationTimestamp = env.PUSH_ACTIVATED_AT;
+  } else {
+    try {
+      const { data: actRows } = await supabase
+        .from('notificaciones_enviadas')
+        .select('enviado_en')
+        .eq('source_uid', '__SYSTEM_PUSH_ACTIVATION__')
+        .eq('endpoint', '__SYSTEM__');
+
+      if (actRows && actRows.length > 0 && actRows[0].enviado_en) {
+        activationTimestamp = actRows[0].enviado_en;
+      } else {
+        const nowIso = now.toISOString();
+        const { error: insErr } = await supabase
+          .from('notificaciones_enviadas')
+          .insert({
+            source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+            endpoint: '__SYSTEM__',
+            enviado_en: nowIso
+          });
+
+        if (!insErr) {
+          activationTimestamp = nowIso;
+        } else {
+          const { data: afterRows } = await supabase
+            .from('notificaciones_enviadas')
+            .select('enviado_en')
+            .eq('source_uid', '__SYSTEM_PUSH_ACTIVATION__')
+            .eq('endpoint', '__SYSTEM__');
+          activationTimestamp = (afterRows && afterRows[0]?.enviado_en) || nowIso;
+        }
+      }
+    } catch (e) {
+      console.warn('[Push] Advertencia comprobando activación persistente:', e.message);
+    }
   }
 
-  // 3. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
-  // Ordenar por magnitud descendente y notificar los 3 más significativos para no saturar al usuario
-  const sortedEvents = [...recentEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
+  const activationTime = activationTimestamp ? new Date(activationTimestamp).getTime() : 0;
+
+  // 3. Filtrar eventos conocidos/archivados antes de la activación de Web Push (cero notificaciones históricas)
+  const activeEvents = [];
+  for (const e of recentEvents) {
+    let capturedTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
+
+    if (!capturedTime) {
+      try {
+        const { data: sismoRows } = await supabase
+          .from('sismos')
+          .select('primera_captura')
+          .eq('source_uid', e.source_uid);
+        if (sismoRows && sismoRows[0] && sismoRows[0].primera_captura) {
+          capturedTime = new Date(sismoRows[0].primera_captura).getTime();
+          e.primera_captura = sismoRows[0].primera_captura;
+        }
+      } catch {}
+    }
+
+    if (!capturedTime) {
+      capturedTime = nowTime;
+      e.primera_captura = now.toISOString();
+    }
+
+    // Si el evento fue capturado antes del hito de activación (con 2s de tolerancia para jitter), omitir
+    if (activationTime > 0 && capturedTime < activationTime - 2000) {
+      continue;
+    }
+
+    activeEvents.push(e);
+  }
+
+  if (!activeEvents.length) {
+    return { enviados: 0, omitidosHistoricosPreActivacion: recentEvents.length };
+  }
+
+  // 4. Protección contra ráfagas anómalas / cold start / backfill masivo
+  if (activeEvents.length > 6) {
+    console.warn(`[Push] Despacho omitido por lote masivo (${activeEvents.length} eventos recientes). Protección contra ráfagas activa.`);
+    return { enviados: 0, omitidosPorLoteMasivo: activeEvents.length };
+  }
+
+  // 5. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
+  const sortedEvents = [...activeEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
   const eligibleEvents = sortedEvents.slice(0, 3);
 
-  // Obtener suscripciones activas
-  const { data: subs, error: subsErr } = await supabase
+  // Obtener suscripciones activas (con fallback si columnas de circuit breaker aún no existen)
+  let subs = null;
+  let subsErr = null;
+  const selectQuery = await supabase
     .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, vapid_key_hash, failures')
+    .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after')
     .limit(500);
+
+  if (selectQuery.error && (selectQuery.error.code === '42703' || selectQuery.error.message?.includes('retry_after'))) {
+    const fallbackQuery = await supabase
+      .from('push_subscriptions')
+      .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at')
+      .limit(500);
+    subs = fallbackQuery.data;
+    subsErr = fallbackQuery.error;
+  } else {
+    subs = selectQuery.data;
+    subsErr = selectQuery.error;
+  }
 
   if (subsErr || !subs || !subs.length) {
     return { enviados: 0, motivo: subsErr ? subsErr.message : 'Sin suscripciones activas' };
@@ -586,14 +710,20 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY inválida' };
   }
 
-  // Filtrar exclusivamente suscripciones con hash VAPID coincidente (nunca asumir NULL como compatible)
-  // y descartar las que han acumulado 3 o más fallos consecutivos (circuit breaker)
+  // Filtrar exclusivamente suscripciones con hash VAPID coincidente y que no estén en periodo de cooldown
   const validSubs = subs.filter(s => {
     if (!s || !s.endpoint || !s.p256dh || !s.auth) return false;
     if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) {
       return false;
     }
-    if (typeof s.failures === 'number' && s.failures >= 3) {
+    // Circuito Abierto: si tiene retry_after en el futuro, pausar envíos hasta que expire el cooldown
+    if (s.retry_after) {
+      const retryAfterTime = new Date(s.retry_after).getTime();
+      if (Number.isFinite(retryAfterTime) && nowTime < retryAfterTime) {
+        return false;
+      }
+    } else if (typeof s.failures === 'number' && s.failures >= 3) {
+      // Fallback si no hay columna retry_after: pausar tras 5 fallos consecutivos
       return false;
     }
     return true;
@@ -613,7 +743,21 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       .eq('source_uid', ev.source_uid);
 
     const endpointsNotificados = new Set((yaEnviados || []).map(r => r.endpoint));
-    const subsPendientes = validSubs.filter(s => !endpointsNotificados.has(s.endpoint));
+    const evCapturedTime = new Date(ev.primera_captura || ev.fecha_hora).getTime();
+
+    // Filtrar suscriptores:
+    // 1. Que no hayan sido notificados previamente
+    // 2. Que no se hayan registrado DESPUÉS de que el evento fue capturado
+    const subsPendientes = validSubs.filter(s => {
+      if (endpointsNotificados.has(s.endpoint)) return false;
+      if (s.created_at) {
+        const subCreatedTime = new Date(s.created_at).getTime();
+        if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) {
+          return false;
+        }
+      }
+      return true;
+    });
 
     if (!subsPendientes.length) continue;
 
@@ -678,12 +822,24 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
         if (res && res.ok) {
           totalEnviados++;
-          if (sub.failures && sub.failures > 0) {
+          // Recuperación automática: circuito cerrado, limpiar fallos y cooldowns
+          if ((sub.failures && sub.failures > 0) || sub.retry_after) {
             try {
-              await supabase
+              let { error: updErr } = await supabase
                 .from('push_subscriptions')
-                .update({ failures: 0 })
+                .update({
+                  failures: 0,
+                  retry_after: null,
+                  last_failure_at: null
+                })
                 .eq('endpoint', sub.endpoint);
+
+              if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                await supabase
+                  .from('push_subscriptions')
+                  .update({ failures: 0 })
+                  .eq('endpoint', sub.endpoint);
+              }
             } catch {}
           }
         } else if (res && (res.expired || res.status === 401 || res.status === 403)) {
@@ -704,11 +860,23 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
             .eq('endpoint', sub.endpoint);
 
           const nextFailures = (sub.failures || 0) + 1;
+          const retryAfterIso = calculateRetryAfterDate(res?.retryAfter, nextFailures, now);
           try {
-            await supabase
+            let { error: updErr } = await supabase
               .from('push_subscriptions')
-              .update({ failures: nextFailures })
+              .update({
+                failures: nextFailures,
+                retry_after: retryAfterIso,
+                last_failure_at: now.toISOString()
+              })
               .eq('endpoint', sub.endpoint);
+
+            if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+              await supabase
+                .from('push_subscriptions')
+                .update({ failures: nextFailures })
+                .eq('endpoint', sub.endpoint);
+            }
           } catch {}
         }
       } catch (err) {
@@ -720,11 +888,23 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
           .eq('endpoint', sub.endpoint);
 
         const nextFailures = (sub.failures || 0) + 1;
+        const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
         try {
-          await supabase
+          let { error: updErr } = await supabase
             .from('push_subscriptions')
-            .update({ failures: nextFailures })
+            .update({
+              failures: nextFailures,
+              retry_after: retryAfterIso,
+              last_failure_at: now.toISOString()
+            })
             .eq('endpoint', sub.endpoint);
+
+          if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+            await supabase
+              .from('push_subscriptions')
+              .update({ failures: nextFailures })
+              .eq('endpoint', sub.endpoint);
+          }
         } catch {}
 
         console.warn(`[Push] Error de red enviando a ${sub.endpoint}:`, err.message);
@@ -744,6 +924,7 @@ export {
   generateSourceUid,
   syncEventsToSupabase,
   dispatchPushNotifications,
+  calculateRetryAfterDate,
   sha256Hex,
   geoDistanceKm,
   CRON_SCHEDULE

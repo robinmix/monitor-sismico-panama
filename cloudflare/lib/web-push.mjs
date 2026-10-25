@@ -460,6 +460,7 @@ export async function sendWebPush(subscription, payloadObj, env = {}) {
     ok: res.status >= 200 && res.status < 300,
     status: res.status,
     expired: res.status === 404 || res.status === 410,
+    retryAfter: res.headers ? res.headers.get('Retry-After') : null,
     providerDetail: providerResponseText ? providerResponseText.slice(0, 200).trim() : ''
   };
 }
