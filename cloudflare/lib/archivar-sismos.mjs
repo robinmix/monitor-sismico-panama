@@ -1075,7 +1075,11 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       // Pre-reservar presupuesto de subrequests en el peor caso razonable:
       // Cada suscriptor puede consumir: 1 reserva + 1 push + 2 limpieza/actualización errores = hasta 4 subrequests
       const remainingBudget = MAX_PUSH_SUBREQUESTS - pushSubrequestsCount;
-      const maxSubsForRemainingBudget = Math.floor((remainingBudget - 1) / 2);
+      // Pre-reserva conservadora: acota según presupuesto disponible para la ruta estándar (2 subreqs/sub)
+      // y cota dura garantizada de 4 operaciones por suscriptor en el peor caso de fallbacks (bajo límite 48):
+      const maxSubsHappyPath = Math.max(0, Math.floor((remainingBudget - 1) / 2));
+      const maxSubsWorstCase = Math.max(0, Math.floor((48 - pushSubrequestsCount) / 4));
+      const maxSubsForRemainingBudget = Math.min(maxSubsHappyPath, maxSubsWorstCase);
       if (maxSubsForRemainingBudget <= 0) {
         console.log(`[Push] Presupuesto de subrequests reservado alcanzado (${pushSubrequestsCount}/${MAX_PUSH_SUBREQUESTS}). Suscriptores diferidos al siguiente cron.`);
         break;
@@ -1240,23 +1244,29 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
       // Confirmar reservas exitosas del lote de forma agrupada (1 subrequest por lote)
       if (successfulEndpoints.length > 0) {
-        pushSubrequestsCount++;
-        try {
-          let { error: confErr } = await supabase
-            .from('notificaciones_enviadas')
-            .update({ estado: 'CONFIRMADA', lease_expires_at: null })
-            .eq('source_uid', ev.source_uid)
-            .in('endpoint', successfulEndpoints);
-          if (confErr) {
-            for (const ep of successfulEndpoints) {
-              await supabase
-                .from('notificaciones_enviadas')
-                .update({ estado: 'CONFIRMADA', lease_expires_at: null })
-                .eq('source_uid', ev.source_uid)
-                .eq('endpoint', ep);
+        if (pushSubrequestsCount < 48) {
+          pushSubrequestsCount++;
+          try {
+            let { error: confErr } = await supabase
+              .from('notificaciones_enviadas')
+              .update({ estado: 'CONFIRMADA', lease_expires_at: null })
+              .eq('source_uid', ev.source_uid)
+              .in('endpoint', successfulEndpoints);
+            if (confErr) {
+              for (const ep of successfulEndpoints) {
+                if (pushSubrequestsCount >= 48) break;
+                pushSubrequestsCount++;
+                try {
+                  await supabase
+                    .from('notificaciones_enviadas')
+                    .update({ estado: 'CONFIRMADA', lease_expires_at: null })
+                    .eq('source_uid', ev.source_uid)
+                    .eq('endpoint', ep);
+                } catch {}
+              }
             }
-          }
-        } catch {}
+          } catch {}
+        }
       }
     }
   }

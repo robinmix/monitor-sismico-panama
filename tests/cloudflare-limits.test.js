@@ -1525,4 +1525,119 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
     assert.equal(archivalRes.ok, true, 'La ingesta y archivado de sismos NUNCA se interrumpe');
     assert.ok(mockDb.getSubrequestsCount() <= 40, 'Consumo total acotado bajo el límite de Cloudflare Free');
   });
+  await t.test('28. Confirmación agrupada fallida: fallback a individuales incrementa subrequests y respeta cota < 48', async () => {
+    globalThis.fetch = async () => new Response('{}', { status: 201 });
+
+    const subs5 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 5; i++) {
+      subs5.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_batch_fallback_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs5,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    // Simular que el update en lote (.in) falla, forzando la ruta de confirmación individual
+    const origFrom = mockDb.from;
+    mockDb.from = function(table) {
+      const res = origFrom.call(mockDb, table);
+      if (table === 'notificaciones_enviadas') {
+        const origUpdate = res.update;
+        res.update = function(updates) {
+          const chain = origUpdate.call(res, updates);
+          const origIn = chain.in;
+          chain.in = function(col, vals) {
+            origIn.call(chain, col, vals);
+            return {
+              then(resolve) {
+                // Simular fallo en batch .in() de PostgreSQL
+                resolve({ error: new Error('Batch update syntax error (simulated)') });
+              }
+            };
+          };
+          return chain;
+        };
+      }
+      return res;
+    };
+
+    const event = {
+      source_uid: 'igc_event_batch_fail',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.8,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const res = await dispatchPushNotifications([event], mockDb, defaultEnv, new Date('2026-10-25T12:01:00.000Z'));
+
+    assert.equal(res.enviados, 5, 'Los 5 suscriptores son confirmados individualmente tras el fallo agrupado');
+    assert.ok(mockDb.getSubrequestsCount() <= 40, `Subrequests totales respetan presupuesto (consumió ${mockDb.getSubrequestsCount()})`);
+    // Confirmar que todas las 5 notificaciones quedaron en estado CONFIRMADA
+    for (const sub of subs5) {
+      const notif = mockDb._notifStore.get(`${event.source_uid}::${sub.endpoint}`);
+      assert.ok(notif, 'Notificación existe');
+      assert.equal(notif.estado, 'CONFIRMADA', 'Estado confirmado individualmente');
+    }
+  });
+
+  await t.test('29. Contador compartido y pre-reserva conservadora: garantiza cota < 48 bajo fallbacks y errores simultáneos', async () => {
+    globalThis.fetch = async () => {
+      // Simular respuestas de error de red que activan fallbacks de base de datos
+      throw new Error('Connection reset by peer');
+    };
+
+    const subs15 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 15; i++) {
+      subs15.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_shared_counter_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs15,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_concurrent_fallback',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.6,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const res = await dispatchPushNotifications([event], mockDb, defaultEnv, new Date('2026-10-25T12:01:00.000Z'));
+
+    assert.equal(res.enviados, 0, 'Cero entregas exitosas por fallo de red');
+    assert.ok(mockDb.getSubrequestsCount() < 48, `Presupuesto acotado bajo el límite seguro < 48 (consumió ${mockDb.getSubrequestsCount()})`);
+    assert.ok(res.subrequests < 48, `Reporte de subrequests coincide estrictamente bajo cota 48 (reportó ${res.subrequests})`);
+  });
 });
