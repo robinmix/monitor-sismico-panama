@@ -437,15 +437,20 @@ async function runArchival(options = {}) {
 
     // 4. Notificar eventos recientes mediante Web Push (nuevos o pendientes de reintento)
     let pushResult = { enviados: 0, omitidos: 'SIN_EVENTOS_RECIENTES' };
-    const MAX_PUSH_CANDIDATE_AGE_MS = 45 * 60 * 1000;
+    const MAX_DISCOVERY_AGE_MS = 45 * 60 * 1000;
+    const MAX_ALERT_LIFECYCLE_MS = 90 * 60 * 1000;
     const MAX_PUSH_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
     const nowTime = now.getTime();
 
     const recentCandidates = (normalized || []).filter(e => {
       const ts = new Date(e.fecha_hora).getTime();
       if (!Number.isFinite(ts)) return false;
+      const capTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
+      if (capTime && Number.isFinite(capTime)) {
+        return (nowTime - capTime) <= MAX_ALERT_LIFECYCLE_MS;
+      }
       const diff = nowTime - ts;
-      return diff >= -MAX_PUSH_FUTURE_TOLERANCE_MS && diff <= MAX_PUSH_CANDIDATE_AGE_MS;
+      return diff >= -MAX_PUSH_FUTURE_TOLERANCE_MS && diff <= MAX_DISCOVERY_AGE_MS;
     });
 
     if (recentCandidates.length > 0 && options.enablePush !== false) {
@@ -516,6 +521,22 @@ const rawHandler = async function(event, context, options = {}) {
   }
 };
 
+/**
+ * Anonimiza un endpoint Web Push para registros seguros sin filtrar tokens de dispositivos.
+ */
+function anonymizeEndpoint(endpoint) {
+  if (!endpoint || typeof endpoint !== 'string') return '[endpoint_anonimo]';
+  try {
+    const u = new URL(endpoint);
+    const parts = u.pathname.split('/').filter(Boolean);
+    const token = parts[parts.length - 1] || '';
+    const masked = token.length > 8 ? token.slice(0, 4) + '...' + token.slice(-4) : '***';
+    return u.origin + '/.../' + masked;
+  } catch {
+    return endpoint.length > 16 ? endpoint.slice(0, 8) + '...' + endpoint.slice(-4) : '[endpoint_protegido]';
+  }
+}
+
 async function sha256Hex(str) {
   if (!str || typeof str !== 'string') return null;
   const buf = new TextEncoder().encode(str);
@@ -573,16 +594,21 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
   }
 
-  const MAX_AGE_MS = 45 * 60 * 1000; // 45 minutos (tolera demoras de revisión del IGC)
+  const MAX_DISCOVERY_AGE_MS = 45 * 60 * 1000; // Descubrimiento dentro de 45 min de ocurrido
+  const MAX_ALERT_LIFECYCLE_MS = 90 * 60 * 1000; // Vigencia de entrega de hasta 90 min desde primera_captura
   const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
   const nowTime = now.getTime();
 
-  // 1. Filtrar eventos por antigüedad real primero
+  // 1. Filtrar eventos candidatos considerando fecha de origen y vigencia de entrega
   const recentEvents = nuevosRecords.filter(e => {
     const ts = new Date(e.fecha_hora).getTime();
     if (!Number.isFinite(ts)) return false;
+    const capTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
+    if (capTime && Number.isFinite(capTime)) {
+      return (nowTime - capTime) <= MAX_ALERT_LIFECYCLE_MS;
+    }
     const diff = nowTime - ts;
-    return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_AGE_MS;
+    return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_DISCOVERY_AGE_MS;
   });
 
   if (!recentEvents.length) {
@@ -592,8 +618,13 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
   // 2. Comprobar / registrar hito persistente de activación de Web Push en Supabase
   let activationTimestamp = null;
   if (env && env.PUSH_ACTIVATED_AT) {
-    activationTimestamp = env.PUSH_ACTIVATED_AT;
-  } else {
+    const parsedTime = new Date(env.PUSH_ACTIVATED_AT).getTime();
+    if (Number.isFinite(parsedTime)) {
+      activationTimestamp = env.PUSH_ACTIVATED_AT;
+    }
+  }
+
+  if (!activationTimestamp) {
     try {
       const { data: actRows } = await supabase
         .from('notificaciones_enviadas')
@@ -634,11 +665,12 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
   const activationTime = activationTimestamp ? new Date(activationTimestamp).getTime() : nowTime;
 
   // 3. Filtrar eventos conocidos/archivados antes de la activación de Web Push (cero notificaciones históricas)
+  // y aplicar política estricta de certidumbre temporal (Fase 6)
   const activeEvents = [];
   for (const e of recentEvents) {
     let capturedTime = e.primera_captura ? new Date(e.primera_captura).getTime() : null;
 
-    if (!capturedTime) {
+    if (!capturedTime || !Number.isFinite(capturedTime)) {
       try {
         const { data: sismoRows } = await supabase
           .from('sismos')
@@ -651,13 +683,27 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       } catch {}
     }
 
-    if (!capturedTime) {
+    const eventTs = new Date(e.fecha_hora).getTime();
+    if (!Number.isFinite(eventTs)) {
+      continue; // Descartar por timestamp geofísico inválido
+    }
+
+    if (!capturedTime || !Number.isFinite(capturedTime)) {
+      // Política segura ante ambigüedad temporal: si el sismo ocurrió hace más de 45 min
+      // y no tiene primera_captura fiable en la base de datos, omitir por falta de evidencia.
+      if (nowTime - eventTs > MAX_DISCOVERY_AGE_MS) {
+        continue;
+      }
       capturedTime = nowTime;
       e.primera_captura = now.toISOString();
     }
 
-    // Si el evento fue capturado antes del hito de activación (con 2s de tolerancia para jitter), omitir
-    // Si el evento fue capturado en o antes del hito de activación, omitir (cero notificaciones históricas)
+    // Caducidad de entrega: si ya pasaron más de 90 min desde su detección, caducar
+    if (nowTime - capturedTime > MAX_ALERT_LIFECYCLE_MS) {
+      continue;
+    }
+
+    // Si el evento fue capturado en o antes del hito de activación, omitir (cero históricos)
     if (activationTime > 0 && capturedTime <= activationTime) {
       continue;
     }
@@ -675,33 +721,9 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, omitidosPorLoteMasivo: activeEvents.length };
   }
 
-  // 5. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
+  // 5. Manejo de enjambres sísmicos ordenando por magnitud descendente (hasta 3 eventos activos)
   const sortedEvents = [...activeEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
   const eligibleEvents = sortedEvents.slice(0, 3);
-
-  // Obtener suscripciones activas (con fallback si columnas de circuit breaker aún no existen)
-  let subs = null;
-  let subsErr = null;
-  const selectQuery = await supabase
-    .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after')
-    .limit(500);
-
-  if (selectQuery.error && (selectQuery.error.code === '42703' || selectQuery.error.message?.includes('retry_after'))) {
-    const fallbackQuery = await supabase
-      .from('push_subscriptions')
-      .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at')
-      .limit(500);
-    subs = fallbackQuery.data;
-    subsErr = fallbackQuery.error;
-  } else {
-    subs = selectQuery.data;
-    subsErr = selectQuery.error;
-  }
-
-  if (subsErr || !subs || !subs.length) {
-    return { enviados: 0, motivo: subsErr ? subsErr.message : 'Sin suscripciones activas' };
-  }
 
   // Comprobar clave pública VAPID en entorno
   if (!env || !env.VAPID_PUBLIC_KEY) {
@@ -713,68 +735,167 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     return { enviados: 0, motivo: 'VAPID_PUBLIC_KEY inválida' };
   }
 
-  // Filtrar exclusivamente suscripciones con hash VAPID coincidente y que no estén en periodo de cooldown
-  const validSubs = subs.filter(s => {
-    if (!s || !s.endpoint || !s.p256dh || !s.auth) return false;
-    if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) {
-      return false;
-    }
-    // Circuito Abierto: si tiene retry_after en el futuro, pausar envíos hasta que expire el cooldown
-    if (s.retry_after) {
-      const retryAfterTime = new Date(s.retry_after).getTime();
-      if (Number.isFinite(retryAfterTime) && nowTime < retryAfterTime) {
-        return false;
-      }
-    } else if (typeof s.failures === 'number' && s.failures >= 3) {
-      // Fallback si no hay columna retry_after: pausar tras 5 fallos consecutivos
-      return false;
-    }
-    return true;
-  });
+  // Parámetros validados estrictamente como enteros positivos acotados a límites seguros de Workers Free:
+  const rawMaxSubs = Math.floor(Number(env?.PUSH_MAX_SUBS_PER_CYCLE));
+  const MAX_SUBS_PER_CYCLE = Number.isFinite(rawMaxSubs) && rawMaxSubs > 0
+    ? Math.min(rawMaxSubs, 500)
+    : 15; // Default seguro de 15 suscriptores por minuto (Cloudflare Free)
 
-  if (!validSubs.length) {
-    return { enviados: 0, motivo: 'Sin suscripciones compatibles con la clave VAPID actual' };
-  }
+  const rawConcurrency = Math.floor(Number(env?.PUSH_CONCURRENCY));
+  const PUSH_CONCURRENCY = Number.isFinite(rawConcurrency) && rawConcurrency > 0
+    ? Math.min(rawConcurrency, 25)
+    : 5; // Máximo 5 conexiones simultáneas por defecto (Cloudflare Free permite máx 6)
 
+  const MAX_PUSH_SUBREQUESTS = Number(env?.PUSH_MAX_SUBREQUESTS) || (MAX_SUBS_PER_CYCLE > 15 ? MAX_SUBS_PER_CYCLE * 4 : 40);
+  let pushSubrequestsCount = 0;
+  let totalIntentos = 0;
   let totalEnviados = 0;
+  let hadAnySubscribersInDb = false;
+  let hadAnyVapidCompatibleSubscribers = false;
 
-  // Parámetros ajustados estrictamente a los límites de Cloudflare Workers Free:
-  // - Máximo 6 conexiones simultáneas: limitamos PUSH_CONCURRENCY a 5.
-  // - Máximo 50 subrequests por invocación: limitamos a 15 suscriptores por minuto (~30-36 subrequests totales).
-  // - El resto de suscriptores pendientes se drenan de forma ordenada en los siguientes ciclos cron.
-  const PUSH_CONCURRENCY = Math.min(Number(env?.PUSH_CONCURRENCY) || 5, 5);
-  const MAX_SUBS_PER_CYCLE = Number(env?.PUSH_MAX_SUBS_PER_CYCLE) || 15;
+  const activeEventsCount = eligibleEvents.length;
 
-  for (const ev of eligibleEvents) {
-    const quotaRemaining = Math.max(0, MAX_SUBS_PER_CYCLE - totalEnviados);
-    if (quotaRemaining <= 0) {
-      console.log(`[Push] Cuota global por ciclo alcanzada (${MAX_SUBS_PER_CYCLE}). Suscriptores restantes diferidos al siguiente cron.`);
+  for (let evIndex = 0; evIndex < eligibleEvents.length; evIndex++) {
+    const ev = eligibleEvents[evIndex];
+
+    if (totalIntentos >= MAX_SUBS_PER_CYCLE || pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) {
+      console.log(`[Push] Presupuesto global alcanzado (intentos: ${totalIntentos}/${MAX_SUBS_PER_CYCLE}, subrequests: ${pushSubrequestsCount}/${MAX_PUSH_SUBREQUESTS}). Restante diferido al siguiente cron.`);
       break;
     }
-    // Consultar envíos previos para este sismo para evitar notificaciones duplicadas
-    const { data: yaEnviados } = await supabase
-      .from('notificaciones_enviadas')
-      .select('endpoint')
-      .eq('source_uid', ev.source_uid);
 
-    const endpointsNotificados = new Set((yaEnviados || []).map(r => r.endpoint));
+    const remainingIntentos = MAX_SUBS_PER_CYCLE - totalIntentos;
+    const eventsRemaining = activeEventsCount - evIndex;
+    const quotaForEvent = Math.max(1, Math.min(remainingIntentos, Math.ceil(remainingIntentos / eventsRemaining)));
+
+    // Consultar envíos previos y reservas en curso
+    pushSubrequestsCount++;
+    let yaEnviados = [];
+    let totalSentCount = 0;
+    try {
+      const { data, count } = await supabase
+        .from('notificaciones_enviadas')
+        .select('endpoint, estado, lease_expires_at', { count: 'exact' })
+        .eq('source_uid', ev.source_uid);
+      yaEnviados = data || [];
+      totalSentCount = count !== null && count !== undefined ? count : yaEnviados.length;
+    } catch {}
+
+    const endpointsNotificados = new Set();
+    const abandonedEndpoints = [];
+
+    for (const row of yaEnviados) {
+      if (!row || !row.endpoint) continue;
+      const leaseExpiry = row.lease_expires_at ? new Date(row.lease_expires_at).getTime() : 0;
+      const isEnProceso = row.estado === 'EN_PROCESO';
+
+      if (isEnProceso && leaseExpiry > 0 && leaseExpiry <= nowTime) {
+        abandonedEndpoints.push(row.endpoint);
+      } else {
+        endpointsNotificados.add(row.endpoint);
+      }
+    }
+
+    // Reclamar reservas abandonadas (Worker anterior cayó o fue interrumpido)
+    if (abandonedEndpoints.length > 0) {
+      for (const abEndpoint of abandonedEndpoints) {
+        if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) break;
+        pushSubrequestsCount++;
+        try {
+          await supabase
+            .from('notificaciones_enviadas')
+            .delete()
+            .eq('source_uid', ev.source_uid)
+            .eq('endpoint', abEndpoint);
+        } catch {}
+      }
+    }
+
+    // Paginación segura de push_subscriptions para admitir miles de usuarios sin desbordar memoria
+    const PAGE_SIZE = 100;
+    let currentOffset = Math.max(0, totalSentCount - 10);
+    let pageSubs = [];
+
+    while (pageSubs.length < quotaForEvent) {
+      if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) break;
+      pushSubrequestsCount++;
+      let batch = [];
+      try {
+        let pageQuery = supabase
+          .from('push_subscriptions')
+          .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after');
+
+        if (typeof pageQuery.order === 'function') {
+          pageQuery = pageQuery.order('created_at', { ascending: true });
+        }
+        if (typeof pageQuery.range === 'function') {
+          pageQuery = pageQuery.range(currentOffset, currentOffset + PAGE_SIZE - 1);
+        } else if (typeof pageQuery.limit === 'function') {
+          pageQuery = pageQuery.limit(PAGE_SIZE);
+        }
+
+        const { data, error } = await pageQuery;
+        if (error && (error.code === '42703' || error.message?.includes('retry_after'))) {
+          let fallbackQuery = supabase
+            .from('push_subscriptions')
+            .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at');
+          if (typeof fallbackQuery.order === 'function') fallbackQuery = fallbackQuery.order('created_at', { ascending: true });
+          if (typeof fallbackQuery.range === 'function') fallbackQuery = fallbackQuery.range(currentOffset, currentOffset + PAGE_SIZE - 1);
+          else if (typeof fallbackQuery.limit === 'function') fallbackQuery = fallbackQuery.limit(PAGE_SIZE);
+          const fb = await fallbackQuery;
+          batch = fb.data || [];
+        } else {
+          batch = data || [];
+        }
+      } catch {}
+
+      if (!batch || batch.length === 0) break;
+      pageSubs.push(...batch);
+      currentOffset += batch.length;
+      if (batch.length < PAGE_SIZE) break;
+    }
+
+    if (pageSubs && pageSubs.length > 0) {
+      hadAnySubscribersInDb = true;
+      for (const s of pageSubs) {
+        if (s && s.vapid_key_hash === currentVapidHash) {
+          const inCooldown = (s.retry_after && nowTime < new Date(s.retry_after).getTime()) ||
+                             (typeof s.failures === 'number' && s.failures >= 3);
+          if (!inCooldown) {
+            hadAnyVapidCompatibleSubscribers = true;
+          }
+        }
+      }
+    }
+
     const evCapturedTime = new Date(ev.primera_captura || ev.fecha_hora).getTime();
 
-    // Filtrar suscriptores:
-    // 1. Que no hayan sido notificados previamente
-    // 2. Que no se hayan registrado DESPUÉS de que el evento fue capturado
-    const subsPendientes = validSubs.filter(s => {
+    // Filtrar suscriptores compatibles y pendientes
+    const subsPendientes = pageSubs.filter(s => {
+      if (!s || !s.endpoint || !s.p256dh || !s.auth) return false;
+      if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) return false;
+
+      // Circuito Abierto / cooldown
+      if (s.retry_after) {
+        const retryAfterTime = new Date(s.retry_after).getTime();
+        if (Number.isFinite(retryAfterTime) && nowTime < retryAfterTime) return false;
+      } else if (typeof s.failures === 'number' && s.failures >= 3) {
+        return false;
+      }
+
+      // No haber sido notificado previamente
       if (endpointsNotificados.has(s.endpoint)) return false;
+
+      // No haberse registrado después de la captura del sismo (+15s jitter)
       if (s.created_at) {
         const subCreatedTime = new Date(s.created_at).getTime();
-        if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) {
-          return false;
-        }
+        if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) return false;
       }
       return true;
     });
 
     if (!subsPendientes.length) continue;
+
+    const subsToProcess = subsPendientes.slice(0, quotaForEvent);
 
     // Resolver denominación geográfica oficial
     const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
@@ -813,27 +934,52 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       tag: `sismo-${ev.source_uid}`
     };
 
-    const subsToProcess = subsPendientes.slice(0, quotaRemaining);
-
-    // Despacho en lotes concurrentes respetando el límite de 6 conexiones de Cloudflare Free
+    // Despacho en lotes concurrentes respetando límites de conexiones de Cloudflare Free
     for (let i = 0; i < subsToProcess.length; i += PUSH_CONCURRENCY) {
+      if (totalIntentos >= MAX_SUBS_PER_CYCLE || pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) {
+        break;
+      }
       const chunk = subsToProcess.slice(i, i + PUSH_CONCURRENCY);
+      const successfulEndpoints = [];
       await Promise.allSettled(chunk.map(async (sub) => {
-        // Reserva atómica en notificaciones_enviadas para evitar condiciones de carrera por concurrencia
-        const { error: reserveErr } = await supabase
-          .from('notificaciones_enviadas')
-          .insert({
-            source_uid: ev.source_uid,
-            endpoint: sub.endpoint,
-            enviado_en: now.toISOString()
-          });
+        if (pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) return;
+        totalIntentos++;
 
-        // Si falló por restricción única (otra instancia concurrente ya reservó o envió), omitir
-        if (reserveErr) {
-          return;
+        // 1. Reserva atómica con lease temporal (90s)
+        const leaseExpiryIso = new Date(nowTime + 90000).toISOString();
+        pushSubrequestsCount++;
+        let reserveErr = null;
+        try {
+          const { error } = await supabase
+            .from('notificaciones_enviadas')
+            .insert({
+              source_uid: ev.source_uid,
+              endpoint: sub.endpoint,
+              enviado_en: now.toISOString(),
+              estado: 'EN_PROCESO',
+              lease_expires_at: leaseExpiryIso,
+              intentos: 1
+            });
+          reserveErr = error;
+          if (reserveErr && (reserveErr.code === '42703' || reserveErr.message?.includes('estado'))) {
+            const { error: fbErr } = await supabase
+              .from('notificaciones_enviadas')
+              .insert({
+                source_uid: ev.source_uid,
+                endpoint: sub.endpoint,
+                enviado_en: now.toISOString()
+              });
+            reserveErr = fbErr;
+          }
+        } catch (e) {
+          reserveErr = e;
         }
 
+        if (reserveErr) return;
+
+        // 2. Envío Web Push
         try {
+          pushSubrequestsCount++;
           const res = await sendWebPush(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
             payload,
@@ -842,129 +988,119 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
           if (res && res.ok) {
             totalEnviados++;
-            // Recuperación automática: circuito cerrado, limpiar fallos y cooldowns
+            successfulEndpoints.push(sub.endpoint);
+
             if ((sub.failures && sub.failures > 0) || sub.retry_after) {
+              pushSubrequestsCount++;
               try {
                 let { error: updErr } = await supabase
                   .from('push_subscriptions')
-                  .update({
-                    failures: 0,
-                    retry_after: null,
-                    last_failure_at: null
-                  })
+                  .update({ failures: 0, retry_after: null, last_failure_at: null })
                   .eq('endpoint', sub.endpoint);
-
                 if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-                  await supabase
-                    .from('push_subscriptions')
-                    .update({ failures: 0 })
-                    .eq('endpoint', sub.endpoint);
+                  await supabase.from('push_subscriptions').update({ failures: 0 }).eq('endpoint', sub.endpoint);
                 }
               } catch {}
             }
           } else if (res && (res.status === 410 || res.status === 404 || res.expired)) {
-            // Suscripción verdaderamente expirada o dada de baja en el servicio Push (410/404):
-            // Eliminar únicamente cuando el proveedor confirme que el endpoint ya no existe
-            await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-            await supabase
-              .from('notificaciones_enviadas')
-              .delete()
-              .eq('source_uid', ev.source_uid)
-              .eq('endpoint', sub.endpoint);
+            pushSubrequestsCount += 2;
+            try {
+              await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+              await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
+            } catch {}
           } else if (res && (res.status === 401 || res.status === 403 || res.authError)) {
-            // Error de autenticación/autorización VAPID (HTTP 401/403):
-            // NUNCA eliminar suscripciones masivamente por desajustes de clave VAPID o permisos en servidor.
-            // Suspender temporalmente con cooldown (300s) para permitir resolución administrativa sin perder usuarios.
-            await supabase
-              .from('notificaciones_enviadas')
-              .delete()
-              .eq('source_uid', ev.source_uid)
-              .eq('endpoint', sub.endpoint);
-
+            pushSubrequestsCount += 2;
+            try {
+              await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
+            } catch {}
             const nextFailures = (sub.failures || 0) + 1;
             const retryAfterIso = calculateRetryAfterDate(res?.retryAfter || '300', nextFailures, now);
-            console.warn(`[Push] Advertencia de autenticación VAPID (HTTP ${res.status}). Suspensión temporal aplicada, suscripción preservada.`);
+            console.warn(`[Push] Advertencia de autenticación VAPID (HTTP ${res.status}) para ${anonymizeEndpoint(sub.endpoint)}. Suspensión temporal aplicada.`);
             try {
               let { error: updErr } = await supabase
                 .from('push_subscriptions')
-                .update({
-                  failures: nextFailures,
-                  retry_after: retryAfterIso,
-                  last_failure_at: now.toISOString()
-                })
+                .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
                 .eq('endpoint', sub.endpoint);
-
               if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-                await supabase
-                  .from('push_subscriptions')
-                  .update({ failures: nextFailures })
-                  .eq('endpoint', sub.endpoint);
+                await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
               }
             } catch {}
           } else {
-            // Error transitorio del proveedor (ej. 429 Too Many Requests, 500, 502, 503, 504 u otros 4xx):
-            // Liberar reserva para reintento en el siguiente ciclo cron (nunca marcar como entregado lo que falló)
-            await supabase
-              .from('notificaciones_enviadas')
-              .delete()
-              .eq('source_uid', ev.source_uid)
-              .eq('endpoint', sub.endpoint);
-
+            pushSubrequestsCount += 2;
+            try {
+              await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
+            } catch {}
             const nextFailures = (sub.failures || 0) + 1;
             const retryAfterIso = calculateRetryAfterDate(res?.retryAfter, nextFailures, now);
             try {
               let { error: updErr } = await supabase
                 .from('push_subscriptions')
-                .update({
-                  failures: nextFailures,
-                  retry_after: retryAfterIso,
-                  last_failure_at: now.toISOString()
-                })
+                .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
                 .eq('endpoint', sub.endpoint);
-
               if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-                await supabase
-                  .from('push_subscriptions')
-                  .update({ failures: nextFailures })
-                  .eq('endpoint', sub.endpoint);
+                await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
               }
             } catch {}
           }
         } catch (err) {
-          // En caso de fallo de red, timeout o desconexión, liberar reserva para permitir reintento posterior
-          await supabase
-            .from('notificaciones_enviadas')
-            .delete()
-            .eq('source_uid', ev.source_uid)
-            .eq('endpoint', sub.endpoint);
-
+          pushSubrequestsCount += 2;
+          try {
+            await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
+          } catch {}
           const nextFailures = (sub.failures || 0) + 1;
           const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
           try {
             let { error: updErr } = await supabase
               .from('push_subscriptions')
-              .update({
-                failures: nextFailures,
-                retry_after: retryAfterIso,
-                last_failure_at: now.toISOString()
-              })
+              .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
               .eq('endpoint', sub.endpoint);
-
             if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-              await supabase
-                .from('push_subscriptions')
-                .update({ failures: nextFailures })
-                .eq('endpoint', sub.endpoint);
+              await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
             }
           } catch {}
-
-          console.warn(`[Push] Error de red o timeout enviando a ${sub.endpoint}:`, err.message);
+          console.warn(`[Push] Error de red o timeout enviando a ${anonymizeEndpoint(sub.endpoint)}:`, err.message);
         }
       }));
+
+      // Confirmar reservas exitosas del lote de forma agrupada (1 subrequest por lote)
+      if (successfulEndpoints.length > 0) {
+        pushSubrequestsCount++;
+        try {
+          let { error: confErr } = await supabase
+            .from('notificaciones_enviadas')
+            .update({ estado: 'CONFIRMADA', lease_expires_at: null })
+            .eq('source_uid', ev.source_uid)
+            .in('endpoint', successfulEndpoints);
+          if (confErr) {
+            for (const ep of successfulEndpoints) {
+              await supabase
+                .from('notificaciones_enviadas')
+                .update({ estado: 'CONFIRMADA', lease_expires_at: null })
+                .eq('source_uid', ev.source_uid)
+                .eq('endpoint', ep);
+            }
+          }
+        } catch {}
+      }
     }
   }
 
-  return { enviados: totalEnviados, sismosNotificados: eligibleEvents.length };
+  const returnObj = {
+    enviados: totalEnviados,
+    intentos: totalIntentos,
+    subrequests: pushSubrequestsCount,
+    sismosNotificados: eligibleEvents.length
+  };
+
+  if (totalEnviados === 0 && totalIntentos === 0) {
+    if (!hadAnySubscribersInDb) {
+      returnObj.motivo = 'Sin suscripciones activas';
+    } else if (!hadAnyVapidCompatibleSubscribers) {
+      returnObj.motivo = 'Sin suscripciones compatibles con la clave VAPID actual';
+    }
+  }
+
+  return returnObj;
 }
 
 export {
@@ -976,6 +1112,7 @@ export {
   generateSourceUid,
   syncEventsToSupabase,
   dispatchPushNotifications,
+  anonymizeEndpoint,
   calculateRetryAfterDate,
   sha256Hex,
   geoDistanceKm,

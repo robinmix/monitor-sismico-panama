@@ -83,13 +83,27 @@ function createTrackedMockSupabase(options = {}) {
       if (table === 'push_subscriptions') {
         return {
           select(fields) {
-            subrequestCount++;
-            return {
-              async limit(n) {
-                const rows = Array.from(subsStore.values()).slice(0, n);
-                return { data: rows, error: null };
-              }
+            let offset = 0;
+            let limitNum = 500;
+            const chain = {
+              order(col, opts = {}) { return chain; },
+              range(from, to) {
+                offset = from;
+                limitNum = to - from + 1;
+                return chain;
+              },
+              limit(n) {
+                limitNum = n;
+                return chain;
+              },
+              then(resolve, reject) {
+                subrequestCount++;
+                const rows = Array.from(subsStore.values()).slice(offset, offset + limitNum);
+                resolve({ data: rows, error: null });
+              },
+              catch(reject) { return chain; }
             };
+            return chain;
           },
           delete() {
             return {
@@ -119,7 +133,7 @@ function createTrackedMockSupabase(options = {}) {
 
       if (table === 'notificaciones_enviadas') {
         return {
-          select(fields) {
+          select(fields, selectOpts = {}) {
             let fUid = null;
             let fEndpoint = null;
             const chain = {
@@ -136,10 +150,50 @@ function createTrackedMockSupabase(options = {}) {
                   if (fEndpoint && n.endpoint !== fEndpoint) continue;
                   found.push({ ...n });
                 }
-                resolve({ data: found, error: null });
+                resolve({ data: found, count: found.length, error: null });
               },
               catch(reject) {
                 return chain;
+              }
+            };
+            return chain;
+          },
+          update(updates) {
+            let fUid = null;
+            let fEndpoint = null;
+            let fEndpoints = null;
+            const chain = {
+              eq(col, val) {
+                if (col === 'source_uid') fUid = val;
+                if (col === 'endpoint') fEndpoint = val;
+                if (fUid && fEndpoint) {
+                  const key = `${fUid}::${fEndpoint}`;
+                  if (notifStore.has(key)) {
+                    notifStore.set(key, { ...notifStore.get(key), ...updates });
+                  }
+                }
+                return chain;
+              },
+              in(col, vals) {
+                if (col === 'endpoint') fEndpoints = vals;
+                return chain;
+              },
+              then(resolve) {
+                subrequestCount++;
+                if (fUid && fEndpoint) {
+                  const key = `${fUid}::${fEndpoint}`;
+                  if (notifStore.has(key)) {
+                    notifStore.set(key, { ...notifStore.get(key), ...updates });
+                  }
+                } else if (fUid && Array.isArray(fEndpoints)) {
+                  for (const ep of fEndpoints) {
+                    const key = `${fUid}::${ep}`;
+                    if (notifStore.has(key)) {
+                      notifStore.set(key, { ...notifStore.get(key), ...updates });
+                    }
+                  }
+                }
+                resolve({ data: null, error: null });
               }
             };
             return chain;
@@ -771,6 +825,243 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
     const res = await dispatchPushNotifications([historicalEvent], mockDbFailing, defaultEnv, now);
 
     assert.equal(res.enviados, 0, 'No debe notificar sismos históricos aun con fallo de Supabase');
+    assert.equal(pushCalls, 0);
+  });
+  await t.test('14. Reclamación de Reservas Abandonadas: lease expirado (>90s) es reclamado y entregado exitosamente', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const now = new Date('2026-10-25T12:05:00.000Z');
+    const abandonedLeaseTime = new Date('2026-10-25T12:02:00.000Z').toISOString(); // Expiró hace 3 minutos
+
+    const mockDb = createTrackedMockSupabase({
+      subs: [sampleSubscriber],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        },
+        {
+          source_uid: 'igc_event_abandoned_lease',
+          endpoint: sampleSubscriber.endpoint,
+          estado: 'EN_PROCESO',
+          lease_expires_at: abandonedLeaseTime,
+          enviado_en: '2026-10-25T12:00:30.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_abandoned_lease',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.8,
+      latitud: 8.1,
+      longitud: -80.1,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const res = await dispatchPushNotifications([event], mockDb, defaultEnv, now);
+
+    assert.equal(res.enviados, 1, 'Debe reclamar la reserva abandonada y entregar la notificación');
+    assert.equal(pushCalls, 1);
+    const saved = mockDb._notifStore.get(`${event.source_uid}::${sampleSubscriber.endpoint}`);
+    assert.equal(saved.estado, 'CONFIRMADA');
+  });
+
+  await t.test('15. Reparto Equitativo de Cuota entre Sismos Simultáneos: evita inanición entre 2 eventos activos', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs20 = [];
+    for (let i = 1; i <= 20; i++) {
+      subs20.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_fair_${i}`,
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs20
+    });
+
+    const event1 = {
+      source_uid: 'igc_event_fair_1',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 5.2,
+      latitud: 8.1,
+      longitud: -80.1,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+    const event2 = {
+      source_uid: 'igc_event_fair_2',
+      fecha_hora: '2026-10-25T11:59:00.000Z',
+      magnitud: 4.6,
+      latitud: 7.9,
+      longitud: -80.5,
+      profundidad_km: 15,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Cuota default = 15. Con 2 eventos, event1 recibe ceil(15/2) = 8, event2 recibe los 7 restantes.
+    const res = await dispatchPushNotifications([event1, event2], mockDb, defaultEnv, new Date('2026-10-25T12:01:00.000Z'));
+
+    assert.equal(res.enviados, 15);
+    assert.equal(res.sismosNotificados, 2);
+
+    // Comprobar que AMBOS eventos recibieron suscriptores (cero inanición)
+    let countEv1 = 0;
+    let countEv2 = 0;
+    for (const [k, v] of mockDb._notif.entries()) {
+      if (k.startsWith('igc_event_fair_1::')) countEv1++;
+      if (k.startsWith('igc_event_fair_2::')) countEv2++;
+    }
+
+    assert.equal(countEv1, 8, 'Event 1 (mayor magnitud) recibe su cuota equitativa');
+    assert.equal(countEv2, 7, 'Event 2 recibe el remanente equitativo sin quedar en inanición');
+  });
+
+  await t.test('16. Paginación y Drenaje para 501, 1,000 y 2,000 Suscriptores: procesa más allá del umbral 500 sin exclusiones', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs501 = [];
+    for (let i = 1; i <= 501; i++) {
+      subs501.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_501_${i}`,
+        failures: 0
+      });
+    }
+
+    // Simulamos que los primeros 490 ya fueron entregados
+    const prevNotif = [
+      {
+        source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+        endpoint: '__SYSTEM__',
+        enviado_en: '2026-10-25T10:00:00.000Z'
+      }
+    ];
+    for (let i = 1; i <= 490; i++) {
+      prevNotif.push({
+        source_uid: 'igc_event_501_test',
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_501_${i}`,
+        estado: 'CONFIRMADA',
+        enviado_en: '2026-10-25T12:00:00.000Z'
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs501,
+      notificaciones: prevNotif
+    });
+
+    const event = {
+      source_uid: 'igc_event_501_test',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 5.0,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    // Este ciclo debe despachar los 11 restantes (491 al 501), superando limpiamente la barrera de 500
+    const res = await dispatchPushNotifications([event], mockDb, defaultEnv, new Date('2026-10-25T12:01:00.000Z'));
+
+    assert.equal(res.enviados, 11, 'Despacha los 11 suscriptores restantes incluyendo el suscriptor 501');
+    assert.equal(mockDb._notif.size, 501, 'Los 501 suscriptores completados');
+  });
+
+  await t.test('17. Ciclo de Vida de Alerta (90 minutos): alerta caduca tras 90 min de primera_captura', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const mockDb = createTrackedMockSupabase({
+      subs: [sampleSubscriber]
+    });
+
+    const now = new Date('2026-10-25T13:35:00.000Z');
+
+    // 1. Evento con primera_captura de hace 95 minutos (caducado)
+    const expiredEvent = {
+      source_uid: 'igc_event_expired_95m',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 5.0,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z' // 95 min antes de now (13:35)
+    };
+
+    const resExpired = await dispatchPushNotifications([expiredEvent], mockDb, defaultEnv, now);
+    assert.equal(resExpired.enviados, 0, 'Sismo con más de 90 min de detectado debe caducar');
+    assert.equal(pushCalls, 0);
+
+    // 2. Evento con primera_captura de hace 85 minutos (aún vigente para drenaje)
+    const validEvent = {
+      source_uid: 'igc_event_valid_85m',
+      fecha_hora: '2026-10-25T12:05:00.000Z',
+      magnitud: 5.0,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:10:00.000Z' // 85 min antes de now (13:35)
+    };
+
+    const resValid = await dispatchPushNotifications([validEvent], mockDb, defaultEnv, now);
+    assert.equal(resValid.enviados, 1, 'Sismo dentro de los 90 min de detectado se entrega');
+    assert.equal(pushCalls, 1);
+  });
+
+  await t.test('18. Anonimización de Endpoints en Logs: cero tokens o endpoints completos filtrados', async () => {
+    const { anonymizeEndpoint } = await import('../cloudflare/lib/archivar-sismos.mjs');
+
+    const fcmEndpoint = 'https://fcm.googleapis.com/fcm/send/dK98sLkjasd098123kjasd098123lkjasd987123';
+    const anonymized = anonymizeEndpoint(fcmEndpoint);
+
+    assert.ok(!anonymized.includes('dK98sLkjasd098123kjasd098123lkjasd987123'), 'No debe contener el token completo');
+    assert.ok(anonymized.startsWith('https://fcm.googleapis.com/.../'), 'Conserva el dominio y formato anonimizado');
+    assert.ok(anonymized.endsWith('7123'), 'Conserva los últimos 4 dígitos como hash visual');
+
+    assert.equal(anonymizeEndpoint(null), '[endpoint_anonimo]');
+    assert.equal(anonymizeEndpoint(''), '[endpoint_anonimo]');
+  });
+
+  await t.test('19. Robustez ante Timestamps Corruptos o Ambigüedad Temporal: omitidos de forma segura', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const mockDb = createTrackedMockSupabase({
+      subs: [sampleSubscriber]
+    });
+
+    const corruptEvents = [
+      { source_uid: 'igc_corrupt_1', fecha_hora: 'not-a-date', magnitud: 4.5, latitud: 8.0, longitud: -80.0 },
+      { source_uid: 'igc_corrupt_2', fecha_hora: null, magnitud: 4.5, latitud: 8.0, longitud: -80.0 },
+      { source_uid: 'igc_corrupt_3', fecha_hora: '2026-10-25T15:00:00.000Z', magnitud: 4.5, latitud: 8.0, longitud: -80.0 } // 3 horas en el futuro
+    ];
+
+    const res = await dispatchPushNotifications(corruptEvents, mockDb, defaultEnv, new Date('2026-10-25T12:00:00.000Z'));
+    assert.equal(res.enviados, 0);
     assert.equal(pushCalls, 0);
   });
 });

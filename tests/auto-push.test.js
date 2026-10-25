@@ -74,12 +74,26 @@ function createMockSupabase(options = {}) {
       if (table === 'push_subscriptions') {
         return {
           select(fields) {
-            return {
-              async limit(n) {
-                const rows = Array.from(subsStore.values()).slice(0, n);
-                return { data: rows, error: null };
-              }
+            let offset = 0;
+            let limitNum = 500;
+            const chain = {
+              order(col, opts = {}) { return chain; },
+              range(from, to) {
+                offset = from;
+                limitNum = to - from + 1;
+                return chain;
+              },
+              limit(n) {
+                limitNum = n;
+                return chain;
+              },
+              then(resolve, reject) {
+                const rows = Array.from(subsStore.values()).slice(offset, offset + limitNum);
+                resolve({ data: rows, error: null });
+              },
+              catch(reject) { return chain; }
             };
+            return chain;
           },
           delete() {
             return {
@@ -113,7 +127,7 @@ function createMockSupabase(options = {}) {
 
       if (table === 'notificaciones_enviadas') {
         return {
-          select(fields) {
+          select(fields, selectOpts = {}) {
             let fUid = null;
             let fEndpoint = null;
             const chain = {
@@ -129,10 +143,31 @@ function createMockSupabase(options = {}) {
                   if (fEndpoint && n.endpoint !== fEndpoint) continue;
                   found.push({ ...n });
                 }
-                resolve({ data: found, error: null });
+                resolve({ data: found, count: found.length, error: null });
               },
               catch(reject) {
                 return chain;
+              }
+            };
+            return chain;
+          },
+          update(updates) {
+            let fUid = null;
+            let fEndpoint = null;
+            const chain = {
+              eq(col, val) {
+                if (col === 'source_uid') fUid = val;
+                if (col === 'endpoint') fEndpoint = val;
+                if (fUid && fEndpoint) {
+                  const key = `${fUid}::${fEndpoint}`;
+                  if (notifStore.has(key)) {
+                    notifStore.set(key, { ...notifStore.get(key), ...updates });
+                  }
+                }
+                return chain;
+              },
+              then(resolve) {
+                resolve({ data: null, error: null });
               }
             };
             return chain;
