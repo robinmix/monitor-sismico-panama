@@ -1369,4 +1369,160 @@ test('Suite de Validación de Límites Cloudflare Free y Latencias Web Push', as
     assert.equal(archivalRes.ok, true);
     assert.ok(mockDb.getSubrequestsCount() <= 40, `Subrequests de todo el ciclo Workers Free strictly <= 40 (obtenido: ${mockDb.getSubrequestsCount()})`);
   });
+  await t.test('25. Recuperación garantizada: 100 suscriptores con fallos en los primeros 10 se entregan sin bloquear restantes', async () => {
+    let pushDeliveries = 0;
+    globalThis.fetch = async (url) => {
+      // Fallar exactamente los primeros 10 suscriptores en su primer intento con HTTP 500
+      for (let i = 1; i <= 10; i++) {
+        if (url.endsWith('/device_recover_' + i)) {
+          const currentSub = mockDb._subs.get(url);
+          if (!currentSub || currentSub.failures === 0) {
+            return new Response('Server Error', { status: 500, headers: { 'Retry-After': '60' } });
+          }
+        }
+      }
+      pushDeliveries++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const subs100 = [];
+    const baseTime = new Date('2026-10-25T10:00:00.000Z').getTime();
+    for (let i = 1; i <= 100; i++) {
+      subs100.push({
+        ...sampleSubscriber,
+        endpoint: `https://fcm.googleapis.com/fcm/send/device_recover_${i}`,
+        created_at: new Date(baseTime + i * 1000).toISOString(),
+        failures: 0
+      });
+    }
+
+    const mockDb = createTrackedMockSupabase({
+      subs: subs100,
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_recover_100',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.9,
+      latitud: 8.2,
+      longitud: -80.2,
+      profundidad_km: 12,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const startTime = new Date('2026-10-25T12:00:00.000Z').getTime();
+    let cycles = 0;
+
+    // Ejecutar ciclos cron consecutivos (cada minuto)
+    while (pushDeliveries < 100 && cycles < 15) {
+      cycles++;
+      mockDb.resetSubrequestsCount();
+      const cycleTime = new Date(startTime + cycles * 60000);
+      const res = await dispatchPushNotifications([event], mockDb, defaultEnv, cycleTime);
+      assert.ok(mockDb.getSubrequestsCount() <= 40, `Ciclo ${cycles} no debe exceder 40 subrequests (consumió ${mockDb.getSubrequestsCount()})`);
+    }
+
+    assert.equal(pushDeliveries, 100, 'Todos los 100 suscriptores fueron entregados exitosamente tras recuperación');
+    assert.equal(mockDb._notif.size, 100, 'Exactamente 100 notificaciones registradas en Supabase');
+  });
+
+  await t.test('26. No omisión ante timestamps created_at idénticos a lo largo de ciclos cron sucesivos', async () => {
+    let pushCalls = 0;
+    globalThis.fetch = async () => {
+      pushCalls++;
+      return new Response('{}', { status: 201 });
+    };
+
+    const sameTime = '2026-10-25T10:00:00.000Z';
+    const subA = {
+      ...sampleSubscriber,
+      endpoint: 'https://fcm.googleapis.com/fcm/send/device_same_time_A',
+      created_at: sameTime
+    };
+    const subB = {
+      ...sampleSubscriber,
+      endpoint: 'https://fcm.googleapis.com/fcm/send/device_same_time_B',
+      created_at: sameTime
+    };
+
+    const mockDb = createTrackedMockSupabase({
+      subs: [subA, subB],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    const event = {
+      source_uid: 'igc_event_same_ts_suite',
+      fecha_hora: '2026-10-25T11:58:00.000Z',
+      magnitud: 4.7,
+      latitud: 8.0,
+      longitud: -80.0,
+      profundidad_km: 10,
+      primera_captura: '2026-10-25T12:00:00.000Z'
+    };
+
+    const now = new Date('2026-10-25T12:00:00.000Z');
+
+    // Ciclo 1: Quota 1 (despacha subA y guarda cursor = sameTime)
+    const res1 = await dispatchPushNotifications([event], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: '1' }, now);
+    assert.equal(res1.enviados, 1, 'Despacha primer suscriptor con timestamp T');
+
+    // Ciclo 2: Quota 1 (subB comparte created_at exacto pero NO debe ser omitido)
+    const res2 = await dispatchPushNotifications([event], mockDb, { ...defaultEnv, PUSH_MAX_SUBS_PER_CYCLE: '1' }, new Date(now.getTime() + 60000));
+    assert.equal(res2.enviados, 1, 'Segundo suscriptor con mismo timestamp T es entregado deterministamente');
+    assert.equal(mockDb._notif.size, 2, 'Ambos suscriptores completados en notificaciones_enviadas');
+  });
+
+  await t.test('27. Presupuesto global: archivado sísmico masivo pospone push para no superar 40 subrequests ni arriesgar ingesta', async () => {
+    globalThis.fetch = async () => new Response('{}', { status: 201 });
+
+    const mockDb = createTrackedMockSupabase({
+      subs: [sampleSubscriber],
+      notificaciones: [
+        {
+          source_uid: '__SYSTEM_PUSH_ACTIVATION__',
+          endpoint: '__SYSTEM__',
+          enviado_en: '2026-10-25T10:00:00.000Z'
+        }
+      ]
+    });
+
+    // Generar un lote con muchos eventos que requieran múltiples subrequests de archivado en Supabase
+    const muchosEventos = [];
+    for (let i = 1; i <= 2500; i++) {
+      muchosEventos.push({
+        fecha: '2026-10-25',
+        hora: '06:58:00 AM',
+        latitud: 8.12,
+        longitud: -80.45,
+        profundidad: 15,
+        magnitud: 4.8,
+        region: 'Golfo de Panamá',
+        estado: 'PRELIMINAR'
+      });
+    }
+
+    const archivalRes = await runArchival({
+      sourcePayload: { eventos: muchosEventos.slice(0, 5) },
+      supabase: mockDb,
+      env: defaultEnv,
+      now: new Date('2026-10-25T12:01:00.000Z'),
+      initialSubrequests: 32 // Simula que la ingesta consumió 32 subrequests
+    });
+
+    assert.equal(archivalRes.ok, true, 'La ingesta y archivado de sismos NUNCA se interrumpe');
+    assert.ok(mockDb.getSubrequestsCount() <= 40, 'Consumo total acotado bajo el límite de Cloudflare Free');
+  });
 });

@@ -258,8 +258,9 @@ function getSupabaseClient(env = {}) {
  */
 async function syncEventsToSupabase(records, supabase, now = new Date()) {
   if (!records || !records.length) {
-    return { nuevos: 0, actualizados: 0, verificados: 0, total: 0 };
+    return { nuevos: 0, actualizados: 0, verificados: 0, total: 0, subrequests: 0 };
   }
+  let syncSubrequests = 0;
 
   const nowISO = now.toISOString();
   const sourceUids = records.map(r => r.source_uid);
@@ -272,6 +273,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
   const CHUNK_QUERY = 200;
   for (let i = 0; i < sourceUids.length; i += CHUNK_QUERY) {
     const sliceUids = sourceUids.slice(i, i + CHUNK_QUERY);
+    syncSubrequests++;
     const { data, error } = await supabase
       .from('sismos')
       .select('source_uid, fecha_hora, primera_captura, actualizado_en, magnitud, profundidad_km, latitud, longitud, estado')
@@ -290,6 +292,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
   // Consultar también por fecha_hora para detectar conciliaciones de eventos que pudiesen haber tenido UID canónico
   for (let i = 0; i < fechasHoras.length; i += CHUNK_QUERY) {
     const sliceTimes = fechasHoras.slice(i, i + CHUNK_QUERY);
+    syncSubrequests++;
     const { data, error } = await supabase
       .from('sismos')
       .select('source_uid, fecha_hora, primera_captura, actualizado_en, magnitud, profundidad_km, latitud, longitud, estado')
@@ -375,6 +378,7 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
   const CHUNK_UPSERT = 100;
   for (let i = 0; i < payloads.length; i += CHUNK_UPSERT) {
     const chunk = payloads.slice(i, i + CHUNK_UPSERT);
+    syncSubrequests++;
     const { error: upsertError } = await supabase
       .from('sismos')
       .upsert(chunk, { onConflict: 'source_uid' });
@@ -394,7 +398,8 @@ async function syncEventsToSupabase(records, supabase, now = new Date()) {
     nuevosRecords,
     actualizados: actualizadosCount,
     verificados: verificadosCount,
-    total: payloads.length
+    total: payloads.length,
+    subrequests: syncSubrequests
   };
 }
 
@@ -455,7 +460,20 @@ async function runArchival(options = {}) {
 
     if (recentCandidates.length > 0 && options.enablePush !== false) {
       try {
-        pushResult = await dispatchPushNotifications(recentCandidates, supabase, options.env, now);
+        const igcSubrequests = options.sourcePayload ? 0 : 1;
+        const syncSubrequests = syncResult?.subrequests ?? 3;
+        const archivalSubrequests = igcSubrequests + syncSubrequests;
+        const SAFE_MAX_SUBREQUESTS = 40;
+        const MIN_PUSH_SUBREQUESTS = 10;
+
+        if (archivalSubrequests >= 30 || (SAFE_MAX_SUBREQUESTS - archivalSubrequests < MIN_PUSH_SUBREQUESTS)) {
+          console.log(`[Archivado Sismos] Ingesta sísmica consumió ${archivalSubrequests} subrequests. Despacho push pospuesto para proteger la ingesta.`);
+          pushResult = { enviados: 0, omitidos: 'PRESUPUESTO_INSUFICIENTE_POST_ARCHIVADO', archivalSubrequests };
+        } else {
+          pushResult = await dispatchPushNotifications(recentCandidates, supabase, options.env, now, {
+            initialSubrequests: archivalSubrequests
+          });
+        }
       } catch (pushErr) {
         console.warn('[Archivado Sismos] Advertencia en despacho de notificaciones:', pushErr.message);
         pushResult = { error: pushErr.message };
@@ -821,13 +839,15 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       }
     }
 
-    // Paginación por cursor y orden cronológico para admitir miles de usuarios sin bucles
+    // Paginación por cursor y orden cronológico con soporte de timestamps idénticos y recuperación
     const PAGE_SIZE = 100;
     let pageSubs = [];
     const evCapturedTime = new Date(ev.primera_captura || ev.fecha_hora).getTime();
+    let currentCursor = cursorCreatedAt;
+    let strictGt = false;
+    let reachedEnd = false;
 
     while (pageSubs.length < quotaForEvent) {
-      // Reservar al menos 4 subrequests para poder procesar suscriptores de la página
       if (pushSubrequestsCount + 4 >= MAX_PUSH_SUBREQUESTS) break;
       pushSubrequestsCount++;
       let batch = [];
@@ -839,8 +859,14 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         if (typeof pageQuery.order === 'function') {
           pageQuery = pageQuery.order('created_at', { ascending: true });
         }
-        if (cursorCreatedAt && typeof pageQuery.gt === 'function') {
-          pageQuery = pageQuery.gt('created_at', cursorCreatedAt);
+        if (currentCursor) {
+          if (strictGt && typeof pageQuery.gt === 'function') {
+            pageQuery = pageQuery.gt('created_at', currentCursor);
+          } else if (!strictGt && typeof pageQuery.gte === 'function') {
+            pageQuery = pageQuery.gte('created_at', currentCursor);
+          } else if (typeof pageQuery.gt === 'function') {
+            pageQuery = pageQuery.gt('created_at', currentCursor);
+          }
         }
         if (typeof pageQuery.limit === 'function') {
           pageQuery = pageQuery.limit(PAGE_SIZE);
@@ -854,8 +880,14 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
           if (typeof fallbackQuery.order === 'function') {
             fallbackQuery = fallbackQuery.order('created_at', { ascending: true });
           }
-          if (cursorCreatedAt && typeof fallbackQuery.gt === 'function') {
-            fallbackQuery = fallbackQuery.gt('created_at', cursorCreatedAt);
+          if (currentCursor) {
+            if (strictGt && typeof fallbackQuery.gt === 'function') {
+              fallbackQuery = fallbackQuery.gt('created_at', currentCursor);
+            } else if (!strictGt && typeof fallbackQuery.gte === 'function') {
+              fallbackQuery = fallbackQuery.gte('created_at', currentCursor);
+            } else if (typeof fallbackQuery.gt === 'function') {
+              fallbackQuery = fallbackQuery.gt('created_at', currentCursor);
+            }
           }
           if (typeof fallbackQuery.limit === 'function') {
             fallbackQuery = fallbackQuery.limit(PAGE_SIZE);
@@ -867,14 +899,18 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         }
       } catch {}
 
-      if (!batch || batch.length === 0) break;
+      if (!batch || batch.length === 0) {
+        reachedEnd = true;
+        break;
+      }
       hadAnySubscribersInDb = true;
+      if (batch.length < PAGE_SIZE) {
+        reachedEnd = true;
+      }
 
       for (const s of batch) {
-        if (s && s.created_at) {
-          lastSeenCreatedAt = s.created_at;
-        }
         if (!s || !s.endpoint || !s.p256dh || !s.auth) continue;
+
         if (s.vapid_key_hash === currentVapidHash) {
           const inCooldown = (s.retry_after && nowTime < new Date(s.retry_after).getTime()) ||
                              (typeof s.failures === 'number' && s.failures >= 3);
@@ -882,6 +918,10 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
             hadAnyVapidCompatibleSubscribers = true;
           }
         }
+
+        // Si ya fue notificado o tiene reserva activa no expirada: omitir
+        if (endpointsNotificados.has(s.endpoint)) continue;
+
         if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) continue;
         if (s.retry_after) {
           const retryAfterTime = new Date(s.retry_after).getTime();
@@ -889,25 +929,90 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         } else if (typeof s.failures === 'number' && s.failures >= 3) {
           continue;
         }
-        if (endpointsNotificados.has(s.endpoint)) continue;
         if (s.created_at) {
           const subCreatedTime = new Date(s.created_at).getTime();
           if (Number.isFinite(subCreatedTime) && subCreatedTime > evCapturedTime + 15000) continue;
         }
 
         pageSubs.push(s);
+        if (s.created_at) {
+          lastSeenCreatedAt = s.created_at;
+        }
         if (pageSubs.length >= quotaForEvent) break;
       }
 
-      if (pageSubs.length < quotaForEvent && batch.length === PAGE_SIZE) {
-        cursorCreatedAt = lastSeenCreatedAt;
+      if (pageSubs.length >= quotaForEvent) {
+        break;
+      }
+
+      if (!reachedEnd && batch.length === PAGE_SIZE) {
+        const lastItem = batch[batch.length - 1];
+        if (lastItem && lastItem.created_at) {
+          if (lastItem.created_at === currentCursor) {
+            strictGt = true;
+          } else {
+            currentCursor = lastItem.created_at;
+            strictGt = false;
+          }
+        }
       } else {
         break;
       }
     }
 
-    // Persistir el avance del cursor para este evento si se inspeccionaron nuevos suscriptores
-    if (lastSeenCreatedAt && lastSeenCreatedAt !== (cursorRow?.enviado_en) && pushSubrequestsCount < MAX_PUSH_SUBREQUESTS) {
+    // Política de fin de lista: Si el cursor avanzó y no quedan elegibles al frente,
+    // reiniciar cursor a null para barrer en el siguiente cron los suscriptores que salieron de cooldown o fallaron
+    if (pageSubs.length === 0 && cursorCreatedAt !== null) {
+      console.log(`[Push] Fin de cola alcanzado para sismo ${ev.source_uid}. Reiniciando cursor para barrido de reintentos.`);
+      lastSeenCreatedAt = null;
+      if (pushSubrequestsCount < MAX_PUSH_SUBREQUESTS) {
+        pushSubrequestsCount++;
+        try {
+          await supabase.from('notificaciones_enviadas').upsert({
+            source_uid: ev.source_uid,
+            endpoint: '__CURSOR__',
+            enviado_en: null,
+            estado: 'CONFIRMADA'
+          }, { onConflict: 'source_uid,endpoint' });
+        } catch {}
+      }
+
+      // Si aún disponemos de presupuesto, intentar barrido inmediato desde el inicio
+      if (pushSubrequestsCount + 6 < MAX_PUSH_SUBREQUESTS) {
+        pushSubrequestsCount++;
+        try {
+          let sweepQuery = supabase
+            .from('push_subscriptions')
+            .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after');
+          if (typeof sweepQuery.order === 'function') sweepQuery = sweepQuery.order('created_at', { ascending: true });
+          if (typeof sweepQuery.limit === 'function') sweepQuery = sweepQuery.limit(PAGE_SIZE);
+          const { data: sweepBatch } = await sweepQuery;
+          if (sweepBatch) {
+            for (const s of sweepBatch) {
+              if (!s || !s.endpoint || !s.p256dh || !s.auth) continue;
+              if (endpointsNotificados.has(s.endpoint)) continue;
+              if (!s.vapid_key_hash || s.vapid_key_hash !== currentVapidHash) continue;
+              if (s.retry_after) {
+                const rTime = new Date(s.retry_after).getTime();
+                if (Number.isFinite(rTime) && nowTime < rTime) continue;
+              } else if (typeof s.failures === 'number' && s.failures >= 3) {
+                continue;
+              }
+              if (s.created_at) {
+                const cTime = new Date(s.created_at).getTime();
+                if (Number.isFinite(cTime) && cTime > evCapturedTime + 15000) continue;
+              }
+              pageSubs.push(s);
+              if (s.created_at) lastSeenCreatedAt = s.created_at;
+              if (pageSubs.length >= quotaForEvent) break;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // Persistir el avance del cursor para este evento
+    if (lastSeenCreatedAt !== undefined && lastSeenCreatedAt !== (cursorRow?.enviado_en) && pushSubrequestsCount < MAX_PUSH_SUBREQUESTS) {
       pushSubrequestsCount++;
       try {
         await supabase.from('notificaciones_enviadas').upsert({
@@ -960,23 +1065,26 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       tag: `sismo-${ev.source_uid}`
     };
 
-    // Despacho en lotes concurrentes respetando límites de conexiones de Cloudflare Free
-    for (let i = 0; i < subsToProcess.length; i += PUSH_CONCURRENCY) {
+    // Despacho en lotes concurrentes con pre-reserva conservadora para el peor caso
+    let chunkIndex = 0;
+    while (chunkIndex < subsToProcess.length) {
       if (totalIntentos >= MAX_SUBS_PER_CYCLE || pushSubrequestsCount >= MAX_PUSH_SUBREQUESTS) {
         break;
       }
 
-      // Pre-reservar presupuesto de subrequests antes de iniciar el lote concurrente:
+      // Pre-reservar presupuesto de subrequests en el peor caso razonable:
+      // Cada suscriptor puede consumir: 1 reserva + 1 push + 2 limpieza/actualización errores = hasta 4 subrequests
       const remainingBudget = MAX_PUSH_SUBREQUESTS - pushSubrequestsCount;
       const maxSubsForRemainingBudget = Math.floor((remainingBudget - 1) / 2);
       if (maxSubsForRemainingBudget <= 0) {
-        console.log(`[Push] Presupuesto de subrequests reservado alcanzado. Suscriptores diferidos al siguiente cron.`);
+        console.log(`[Push] Presupuesto de subrequests reservado alcanzado (${pushSubrequestsCount}/${MAX_PUSH_SUBREQUESTS}). Suscriptores diferidos al siguiente cron.`);
         break;
       }
 
       const actualChunkSize = Math.min(PUSH_CONCURRENCY, maxSubsForRemainingBudget);
-      const chunk = subsToProcess.slice(i, i + actualChunkSize);
+      const chunk = subsToProcess.slice(chunkIndex, chunkIndex + actualChunkSize);
       if (!chunk.length) break;
+      chunkIndex += actualChunkSize;
 
       const successfulEndpoints = [];
       await Promise.allSettled(chunk.map(async (sub) => {
@@ -985,7 +1093,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
         // 1. Reserva atómica con lease temporal (90s)
         const leaseExpiryIso = new Date(nowTime + 90000).toISOString();
-        pushSubrequestsCount++;
+        if (pushSubrequestsCount < 48) pushSubrequestsCount++;
         let reserveErr = null;
         try {
           const { error } = await supabase
@@ -1000,14 +1108,17 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
             });
           reserveErr = error;
           if (reserveErr && (reserveErr.code === '42703' || reserveErr.message?.includes('estado'))) {
-            const { error: fbErr } = await supabase
-              .from('notificaciones_enviadas')
-              .insert({
-                source_uid: ev.source_uid,
-                endpoint: sub.endpoint,
-                enviado_en: now.toISOString()
-              });
-            reserveErr = fbErr;
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              const { error: fbErr } = await supabase
+                .from('notificaciones_enviadas')
+                .insert({
+                  source_uid: ev.source_uid,
+                  endpoint: sub.endpoint,
+                  enviado_en: now.toISOString()
+                });
+              reserveErr = fbErr;
+            }
           }
         } catch (e) {
           reserveErr = e;
@@ -1017,7 +1128,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
 
         // 2. Envío Web Push
         try {
-          pushSubrequestsCount++;
+          if (pushSubrequestsCount < 48) pushSubrequestsCount++;
           const res = await sendWebPush(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
             payload,
@@ -1029,73 +1140,100 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
             successfulEndpoints.push(sub.endpoint);
 
             if ((sub.failures && sub.failures > 0) || sub.retry_after) {
+              if (pushSubrequestsCount < 48) {
+                pushSubrequestsCount++;
+                try {
+                  let { error: updErr } = await supabase
+                    .from('push_subscriptions')
+                    .update({ failures: 0, retry_after: null, last_failure_at: null })
+                    .eq('endpoint', sub.endpoint);
+                  if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                    if (pushSubrequestsCount < 48) {
+                      pushSubrequestsCount++;
+                      await supabase.from('push_subscriptions').update({ failures: 0 }).eq('endpoint', sub.endpoint);
+                    }
+                  }
+                } catch {}
+              }
+            }
+          } else if (res && (res.status === 410 || res.status === 404 || res.expired)) {
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); } catch {}
+            }
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+            }
+          } else if (res && (res.status === 401 || res.status === 403 || res.authError)) {
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+            }
+            const nextFailures = (sub.failures || 0) + 1;
+            const retryAfterIso = calculateRetryAfterDate(res?.retryAfter || '300', nextFailures, now);
+            console.warn(`[Push] Advertencia de autenticación VAPID (HTTP ${res.status}) para ${anonymizeEndpoint(sub.endpoint)}. Suspensión temporal aplicada.`);
+            if (pushSubrequestsCount < 48) {
               pushSubrequestsCount++;
               try {
                 let { error: updErr } = await supabase
                   .from('push_subscriptions')
-                  .update({ failures: 0, retry_after: null, last_failure_at: null })
+                  .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
                   .eq('endpoint', sub.endpoint);
                 if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-                  await supabase.from('push_subscriptions').update({ failures: 0 }).eq('endpoint', sub.endpoint);
+                  if (pushSubrequestsCount < 48) {
+                    pushSubrequestsCount++;
+                    await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                  }
                 }
               } catch {}
             }
-          } else if (res && (res.status === 410 || res.status === 404 || res.expired)) {
-            pushSubrequestsCount += 2;
-            try {
-              await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-              await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
-            } catch {}
-          } else if (res && (res.status === 401 || res.status === 403 || res.authError)) {
-            pushSubrequestsCount += 2;
-            try {
-              await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
-            } catch {}
-            const nextFailures = (sub.failures || 0) + 1;
-            const retryAfterIso = calculateRetryAfterDate(res?.retryAfter || '300', nextFailures, now);
-            console.warn(`[Push] Advertencia de autenticación VAPID (HTTP ${res.status}) para ${anonymizeEndpoint(sub.endpoint)}. Suspensión temporal aplicada.`);
-            try {
-              let { error: updErr } = await supabase
-                .from('push_subscriptions')
-                .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
-                .eq('endpoint', sub.endpoint);
-              if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-                await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
-              }
-            } catch {}
           } else {
-            pushSubrequestsCount += 2;
-            try {
-              await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
-            } catch {}
+            // Error transitorio (HTTP 429, 500, 502, 503, 504, etc.)
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+            }
             const nextFailures = (sub.failures || 0) + 1;
             const retryAfterIso = calculateRetryAfterDate(res?.retryAfter, nextFailures, now);
+            if (pushSubrequestsCount < 48) {
+              pushSubrequestsCount++;
+              try {
+                let { error: updErr } = await supabase
+                  .from('push_subscriptions')
+                  .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
+                  .eq('endpoint', sub.endpoint);
+                if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
+                  if (pushSubrequestsCount < 48) {
+                    pushSubrequestsCount++;
+                    await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch (err) {
+          if (pushSubrequestsCount < 48) {
+            pushSubrequestsCount++;
+            try { await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint); } catch {}
+          }
+          const nextFailures = (sub.failures || 0) + 1;
+          const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
+          if (pushSubrequestsCount < 48) {
+            pushSubrequestsCount++;
             try {
               let { error: updErr } = await supabase
                 .from('push_subscriptions')
                 .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
                 .eq('endpoint', sub.endpoint);
               if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-                await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                if (pushSubrequestsCount < 48) {
+                  pushSubrequestsCount++;
+                  await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
+                }
               }
             } catch {}
           }
-        } catch (err) {
-          pushSubrequestsCount += 2;
-          try {
-            await supabase.from('notificaciones_enviadas').delete().eq('source_uid', ev.source_uid).eq('endpoint', sub.endpoint);
-          } catch {}
-          const nextFailures = (sub.failures || 0) + 1;
-          const retryAfterIso = calculateRetryAfterDate(null, nextFailures, now);
-          try {
-            let { error: updErr } = await supabase
-              .from('push_subscriptions')
-              .update({ failures: nextFailures, retry_after: retryAfterIso, last_failure_at: now.toISOString() })
-              .eq('endpoint', sub.endpoint);
-            if (updErr && (updErr.code === '42703' || updErr.message?.includes('retry_after'))) {
-              await supabase.from('push_subscriptions').update({ failures: nextFailures }).eq('endpoint', sub.endpoint);
-            }
-          } catch {}
           console.warn(`[Push] Error de red o timeout enviando a ${anonymizeEndpoint(sub.endpoint)}:`, err.message);
         }
       }));
