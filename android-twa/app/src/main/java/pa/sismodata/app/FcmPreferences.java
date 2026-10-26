@@ -4,14 +4,27 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 /**
- * Gestor seguro de preferencias locales para el consentimiento y tokens FCM en sismoPA.
+ * Gestor seguro de preferencias locales y máquina de estados FCM en sismoPA.
  * No comparte datos personales ni identificadores de hardware.
  */
 public final class FcmPreferences {
+    public enum State {
+        DESACTIVADO,
+        SOLICITANDO_PERMISO,
+        SUSCRIBIENDO,
+        ACTIVO,
+        ERROR,
+        REVOCANDO
+    }
+
     private static final String PREF_NAME = "sismopa_fcm_prefs";
+    private static final String KEY_STATE = "fcm_state";
     private static final String KEY_OPTED_IN = "fcm_opted_in";
+    private static final String KEY_DECIDED = "fcm_decided_consent";
+    private static final String KEY_TOPIC_SUBSCRIBED = "fcm_topic_subscribed";
     private static final String KEY_TOKEN = "fcm_token";
     private static final String KEY_TOKEN_SYNCED = "fcm_token_synced";
+    private static final String KEY_LAST_ERROR = "fcm_last_error";
     private static final String PREF_PREFIX_NOTIFIED = "notif_seen_";
 
     private FcmPreferences() {}
@@ -20,12 +33,58 @@ public final class FcmPreferences {
         return context.getApplicationContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
     }
 
+    public static State getState(Context context) {
+        String name = getPrefs(context).getString(KEY_STATE, State.DESACTIVADO.name());
+        try {
+            return State.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return State.DESACTIVADO;
+        }
+    }
+
+    public static void setState(Context context, State state) {
+        if (state == null) state = State.DESACTIVADO;
+        boolean isActive = (state == State.ACTIVO);
+        getPrefs(context).edit()
+                .putString(KEY_STATE, state.name())
+                .putBoolean(KEY_OPTED_IN, isActive)
+                .apply();
+    }
+
+    /**
+     * El consentimiento se considera activo ÚNICAMENTE si la máquina de estados
+     * se encuentra en ACTIVO y la suscripción al topic oficial fue confirmada.
+     */
     public static boolean isOptedIn(Context context) {
-        return getPrefs(context).getBoolean(KEY_OPTED_IN, false);
+        return getState(context) == State.ACTIVO && isTopicSubscribed(context);
     }
 
     public static void setOptedIn(Context context, boolean optedIn) {
-        getPrefs(context).edit().putBoolean(KEY_OPTED_IN, optedIn).apply();
+        setState(context, optedIn ? State.ACTIVO : State.DESACTIVADO);
+    }
+
+    public static boolean hasDecidedConsent(Context context) {
+        return getPrefs(context).getBoolean(KEY_DECIDED, false);
+    }
+
+    public static void setDecidedConsent(Context context, boolean decided) {
+        getPrefs(context).edit().putBoolean(KEY_DECIDED, decided).apply();
+    }
+
+    public static boolean isTopicSubscribed(Context context) {
+        return getPrefs(context).getBoolean(KEY_TOPIC_SUBSCRIBED, false);
+    }
+
+    public static void setTopicSubscribed(Context context, boolean subscribed) {
+        getPrefs(context).edit().putBoolean(KEY_TOPIC_SUBSCRIBED, subscribed).apply();
+    }
+
+    public static String getLastError(Context context) {
+        return getPrefs(context).getString(KEY_LAST_ERROR, "");
+    }
+
+    public static void setLastError(Context context, String error) {
+        getPrefs(context).edit().putString(KEY_LAST_ERROR, error != null ? error : "").apply();
     }
 
     public static String getToken(Context context) {

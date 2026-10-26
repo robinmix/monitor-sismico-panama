@@ -2461,26 +2461,61 @@
     if (isTwa) {
       try { localStorage.setItem('sismopa_platform', 'android_twa'); } catch (e) {}
 
+      // Limpieza proactiva de Web Push residual en APK: evita que el navegador muestre notificaciones Web Push duplicadas
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        navigator.serviceWorker.ready.then(async (reg) => {
+          try {
+            const sub = await reg.pushManager.getSubscription();
+            if (sub) {
+              console.log('[TWA] Cancelando suscripción Web Push residual en la APK para dar exclusividad al canal FCM nativo');
+              await sub.unsubscribe();
+              fetch('/api/push-unsubscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: sub.endpoint })
+              }).catch(() => {});
+            }
+          } catch (errClean) {
+            console.warn('[TWA] Limpieza Web Push omitida:', errClean);
+          }
+        }).catch(() => {});
+      }
+
       if (window.location.search.includes('fcm_status=active')) {
         try { localStorage.setItem('sismopa_fcm_active', '1'); } catch (e) {}
       } else if (window.location.search.includes('fcm_status=inactive')) {
         try { localStorage.removeItem('sismopa_fcm_active'); } catch (e) {}
       }
 
+      // Escuchar eventos postMessage autenticados desde el canal nativo TWA
+      window.addEventListener('message', (event) => {
+        try {
+          const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          if (msg && msg.type === 'SISMO_FCM_STATUS') {
+            if (msg.active) {
+              localStorage.setItem('sismopa_fcm_active', '1');
+            } else {
+              localStorage.removeItem('sismopa_fcm_active');
+            }
+            renderTwaFcmState();
+          }
+        } catch (e) {}
+      });
+
       function renderTwaFcmState() {
         const isActive = localStorage.getItem('sismopa_fcm_active') === '1';
         if (isActive) {
           badge.textContent = 'Activas (App sismoPA)';
           badge.className = 'notif-status-badge active';
-          detail.textContent = 'Recibirás alertas inmediatas atribuidas a sismoPA con icono propio en este dispositivo Android.';
-          btnToggle.textContent = 'Desactivar notificaciones';
+          detail.textContent = 'Alertas oficiales activas en tu teléfono Android con icono propio y sonido prioritario.';
+          btnToggle.textContent = 'Gestionar en app sismoPA';
           btnToggle.className = 'btn-push-toggle active';
           btnToggle.disabled = false;
         } else {
           badge.textContent = 'Desactivadas';
           badge.className = 'notif-status-badge inactive';
-          detail.textContent = 'Activa las notificaciones oficiales de sismoPA para recibir alertas inmediatas de sismos en Panamá.';
-          btnToggle.textContent = 'Activar notificaciones';
+          detail.textContent = 'Toca el botón para configurar o activar las notificaciones nativas de sismoPA en tu teléfono.';
+          btnToggle.textContent = 'Configurar alertas sismoPA';
           btnToggle.className = 'btn-push-toggle';
           btnToggle.disabled = false;
         }
@@ -2489,11 +2524,14 @@
 
       renderTwaFcmState();
 
+      // Iniciar interfaz nativa garantizada sin confiar en parámetros URL manipulables
       btnToggle.onclick = () => {
-        btnToggle.disabled = true;
-        const isActive = localStorage.getItem('sismopa_fcm_active') === '1';
-        const action = isActive ? 'twa_fcm_opt_out' : 'twa_fcm_opt_in';
-        window.location.href = `https://sismopa.pages.dev/?action=${action}&ts=${Date.now()}`;
+        // 1. Notificar por postMessage si el canal está abierto
+        try {
+          window.postMessage({ type: 'OPEN_SETTINGS' }, '*');
+        } catch (e) {}
+        // 2. Disparar deep link nativo sismopa:// independiente de Chrome o Brave
+        window.location.href = 'sismopa://notifications';
       };
 
       return;

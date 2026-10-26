@@ -77,13 +77,13 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     }
   });
 
-  await t.test('3. build.gradle de app tiene versión 1.0.4, versionCode 5 y dependencias Firebase', () => {
+  await t.test('3. build.gradle de app tiene versión 1.0.5, versionCode 6 y dependencias Firebase', () => {
     const gradlePath = path.join(rootDir, 'android-twa/app/build.gradle');
     assert.ok(fs.existsSync(gradlePath), 'app/build.gradle debe existir');
     const content = fs.readFileSync(gradlePath, 'utf8');
 
-    assert.ok(content.includes('versionCode 5'), 'versionCode debe incrementarse a 5');
-    assert.ok(content.includes('versionName "1.0.4"'), 'versionName debe ser 1.0.4');
+    assert.ok(content.includes('versionCode 6'), 'versionCode debe incrementarse a 6');
+    assert.ok(content.includes('versionName "1.0.5"'), 'versionName debe ser 1.0.5');
     assert.ok(content.includes("id 'com.google.gms.google-services'"), 'Debe aplicar plugin com.google.gms.google-services');
     assert.ok(content.includes('firebase-bom'), 'Debe incluir Firebase BoM');
     assert.ok(content.includes('firebase-messaging'), 'Debe incluir firebase-messaging');
@@ -136,8 +136,12 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     const launcherCode = fs.readFileSync(launcher, 'utf8');
     assert.ok(launcherCode.includes('"platform", "android_twa"') || launcherCode.includes('platform=android_twa'), 'Debe comunicar plataforma android_twa a la PWA');
     assert.ok(launcherCode.includes('sismos_panama'), 'Debe gestionar suscripción al topic sismos_panama');
-    assert.ok(launcherCode.includes('setAutoInitEnabled(true)'), 'Debe activar auto-init al suscribirse voluntariamente');
-    assert.ok(launcherCode.includes('setAutoInitEnabled(false)'), 'Debe desactivar auto-init al revocar suscripción');
+
+    const settingsActivity = path.join(javaDir, 'SismoNotificationSettingsActivity.java');
+    assert.ok(fs.existsSync(settingsActivity), 'SismoNotificationSettingsActivity.java debe existir');
+    const settingsCode = fs.readFileSync(settingsActivity, 'utf8');
+    assert.ok(settingsCode.includes('setAutoInitEnabled(true)'), 'Debe activar auto-init al suscribirse voluntariamente');
+    assert.ok(settingsCode.includes('setAutoInitEnabled(false)'), 'Debe desactivar auto-init al revocar suscripción');
   });
 
   await t.test('6. FCM API: isValidFcmToken valida estrictamente formato y longitud', () => {
@@ -277,8 +281,8 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     const content = fs.readFileSync(appJsPath, 'utf8');
 
     assert.ok(content.includes('hasAndroidAppReferrer'), 'Debe validar origen android-app://pa.sismodata.app');
-    assert.ok(content.includes('twa_fcm_opt_in'), 'Debe incluir acción de opt-in twa_fcm_opt_in');
-    assert.ok(content.includes('twa_fcm_opt_out'), 'Debe incluir acción de opt-out twa_fcm_opt_out');
+    assert.ok(content.includes('sismopa://notifications'), 'Debe invocar deep link nativo sismopa://notifications');
+    assert.ok(content.includes('SISMO_FCM_STATUS'), 'Debe escuchar eventos SISMO_FCM_STATUS vía postMessage');
     assert.ok(content.includes('Activas (App sismoPA)'), 'Debe etiquetar el estado activo nativo');
   });
 });

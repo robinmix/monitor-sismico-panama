@@ -15,26 +15,30 @@
  */
 package pa.sismodata.app;
 
-import android.Manifest;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
+import androidx.annotation.Nullable;
+import androidx.browser.customtabs.CustomTabsCallback;
+import androidx.browser.customtabs.CustomTabsSession;
 
-import com.google.firebase.messaging.FirebaseMessaging;
+import java.lang.reflect.Field;
 
 public class LauncherActivity
         extends com.google.androidbrowserhelper.trusted.LauncherActivity {
 
     private static final String TAG = "SismoLauncherActivity";
-    private static final int RC_NOTIFICATION_PERMISSION = 2026;
     public static final String FCM_TOPIC = "sismos_panama";
+    public static final String TWA_ORIGIN = "https://sismopa.pages.dev";
+
+    private CustomTabsSession mCustomTabsSession;
+    private boolean mIsRelationshipValidated = false;
+    private boolean mIsMessageChannelReady = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,107 +50,119 @@ public class LauncherActivity
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         }
 
-        // Crear canal de notificación sismoPA
+        // Crear canal de notificación nativo sismoPA
         SismoNotificationHelper.createNotificationChannel(this);
 
-        // Procesar posibles acciones de consentimiento iniciadas por deep link / web
-        handleFcmAction(getIntent());
+        // Procesar deep links nativos sismopa://
+        handleIncomingIntent(getIntent());
+
+        // En el primer arranque, invitar de forma transparente a configurar las alertas nativas
+        if (!FcmPreferences.hasDecidedConsent(this)) {
+            Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
+            settingsIntent.putExtra("first_run", true);
+            startActivity(settingsIntent);
+        }
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        handleFcmAction(intent);
+        handleIncomingIntent(intent);
     }
 
-    private void handleFcmAction(Intent intent) {
+    private void handleIncomingIntent(Intent intent) {
         if (intent == null || intent.getData() == null) return;
 
         Uri data = intent.getData();
-        String action = data.getQueryParameter("action");
-        if (action == null) return;
+        String scheme = data.getScheme();
+        String host = data.getHost();
 
-        Log.i(TAG, "Acción FCM recibida desde URL: " + action);
+        Log.i(TAG, "Intent recibido con URI: " + data);
 
-        if ("twa_fcm_opt_in".equalsIgnoreCase(action) || "fcm_subscribe".equalsIgnoreCase(action)) {
-            // Solicitar permiso POST_NOTIFICATIONS en Android 13+ si aún no se ha otorgado
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, RC_NOTIFICATION_PERMISSION);
-                    return;
-                }
-            }
-            executeFcmEnrollment();
-        } else if ("twa_fcm_opt_out".equalsIgnoreCase(action) || "fcm_unsubscribe".equalsIgnoreCase(action)) {
-            executeFcmRevocation();
-        }
-    }
-
-    private void executeFcmEnrollment() {
-        Log.i(TAG, "Ejecutando consentimiento y suscripción voluntaria FCM");
-        FcmPreferences.setOptedIn(this, true);
-
-        try {
-            // Habilitar explícitamente auto-inicialización tras autorización del usuario
-            FirebaseMessaging.getInstance().setAutoInitEnabled(true);
-
-            // Suscribirse al topic oficial para sismos de Panamá
-            FirebaseMessaging.getInstance().subscribeToTopic(FCM_TOPIC)
-                    .addOnCompleteListener(task -> {
-                        if (task.isSuccessful()) {
-                            Log.i(TAG, "Suscripción al topic FCM exitosa: " + FCM_TOPIC);
-                        } else {
-                            Log.w(TAG, "Fallo al suscribirse al topic FCM", task.getException());
-                        }
-                    });
-
-            // Obtener y registrar token de dispositivo
-            FirebaseMessaging.getInstance().getToken()
-                    .addOnCompleteListener(task -> {
-                        if (task.isSuccessful() && task.getResult() != null) {
-                            String token = task.getResult();
-                            FcmPreferences.setToken(this, token);
-                            SismoFirebaseMessagingService.syncTokenWithServer(this, token, true);
-                        }
-                    });
-        } catch (Exception e) {
-            Log.w(TAG, "Excepción durante la suscripción FCM: " + e.getMessage());
-        }
-    }
-
-    private void executeFcmRevocation() {
-        Log.i(TAG, "Ejecutando revocación de suscripción FCM");
-        FcmPreferences.setOptedIn(this, false);
-
-        try {
-            // Deshabilitar auto-inicialización para impedir renovaciones automáticas no deseadas
-            FirebaseMessaging.getInstance().setAutoInitEnabled(false);
-
-            FirebaseMessaging.getInstance().unsubscribeFromTopic(FCM_TOPIC)
-                    .addOnCompleteListener(task -> Log.i(TAG, "Desuscripción del topic completada"));
-
-            String token = FcmPreferences.getToken(this);
-            if (token != null) {
-                SismoFirebaseMessagingService.syncTokenWithServer(this, token, false);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Excepción durante la revocación FCM: " + e.getMessage());
+        // Si es un enlace nativo de sismoPA para ajustes de notificaciones
+        if ("sismopa".equalsIgnoreCase(scheme)) {
+            Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
+            startActivity(settingsIntent);
         }
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == RC_NOTIFICATION_PERMISSION) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.i(TAG, "Permiso POST_NOTIFICATIONS otorgado por el usuario");
-                executeFcmEnrollment();
-            } else {
-                Log.w(TAG, "Permiso POST_NOTIFICATIONS denegado por el usuario");
-                FcmPreferences.setOptedIn(this, false);
+    protected CustomTabsCallback getCustomTabsCallback() {
+        return new CustomTabsCallback() {
+            @Override
+            public void onRelationshipValidationResult(int relation, @NonNull Uri requestedOrigin, boolean result, @Nullable Bundle extras) {
+                super.onRelationshipValidationResult(relation, requestedOrigin, result, extras);
+                Log.i(TAG, "Validación DAL de origen: " + requestedOrigin + ", éxito: " + result);
+
+                if (result && requestedOrigin != null && "sismopa.pages.dev".equalsIgnoreCase(requestedOrigin.getHost())) {
+                    mIsRelationshipValidated = true;
+                    initPostMessageChannel(requestedOrigin);
+                }
             }
+
+            @Override
+            public void onMessageChannelReady(@Nullable Bundle extras) {
+                super.onMessageChannelReady(extras);
+                Log.i(TAG, "Canal TWA postMessage listo");
+                mIsMessageChannelReady = true;
+                sendFcmStatusToWeb();
+            }
+
+            @Override
+            public void onPostMessage(@NonNull String message, @Nullable Bundle extras) {
+                super.onPostMessage(message, extras);
+                Log.i(TAG, "Mensaje postMessage recibido desde la web: " + message);
+                handleWebPostMessage(message);
+            }
+        };
+    }
+
+    private void initPostMessageChannel(Uri origin) {
+        CustomTabsSession session = getSessionFromLauncher();
+        if (session != null) {
+            mCustomTabsSession = session;
+            boolean channelRequested = session.requestPostMessageChannel(origin);
+            Log.i(TAG, "requestPostMessageChannel para " + origin + " resultado: " + channelRequested);
+        }
+    }
+
+    private CustomTabsSession getSessionFromLauncher() {
+        if (mCustomTabsSession != null) return mCustomTabsSession;
+        try {
+            Field launcherField = com.google.androidbrowserhelper.trusted.LauncherActivity.class.getDeclaredField("mTwaLauncher");
+            launcherField.setAccessible(true);
+            Object twaLauncher = launcherField.get(this);
+            if (twaLauncher != null) {
+                Field sessionField = com.google.androidbrowserhelper.trusted.TwaLauncher.class.getDeclaredField("mSession");
+                sessionField.setAccessible(true);
+                return (CustomTabsSession) sessionField.get(twaLauncher);
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "mSession aún no establecida en TwaLauncher: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private void sendFcmStatusToWeb() {
+        CustomTabsSession session = getSessionFromLauncher();
+        if (session != null) {
+            boolean active = FcmPreferences.isOptedIn(this);
+            String stateName = FcmPreferences.getState(this).name();
+            String json = "{\"type\":\"SISMO_FCM_STATUS\",\"active\":" + active + ",\"state\":\"" + stateName + "\"}";
+            session.postMessage(json, null);
+            Log.i(TAG, "Estado FCM enviado a la web vía postMessage: " + json);
+        }
+    }
+
+    private void handleWebPostMessage(String message) {
+        if (message == null) return;
+
+        if (message.contains("GET_FCM_STATUS")) {
+            sendFcmStatusToWeb();
+        } else if (message.contains("OPEN_SETTINGS") || message.contains("OPEN_NOTIFICATIONS")) {
+            Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
+            startActivity(settingsIntent);
         }
     }
 

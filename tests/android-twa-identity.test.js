@@ -16,7 +16,7 @@ test('Auditoría Integral de Identidad de Notificaciones Android TWA y Web Push'
     assert.equal(manifest.host, 'sismopa.pages.dev', 'Host debe ser sismopa.pages.dev');
     assert.equal(manifest.name, 'sismoPA', 'Nombre de la app debe ser sismoPA');
     assert.equal(manifest.launcherName, 'sismoPA', 'Launcher name debe ser sismoPA');
-    assert.ok(['1.0.3', '1.0.4'].includes(manifest.appVersionName), 'appVersionName debe ser 1.0.3 o 1.0.4');
+    assert.ok(['1.0.3', '1.0.4', '1.0.5'].includes(manifest.appVersionName), 'appVersionName debe ser 1.0.3, 1.0.4 o 1.0.5');
     assert.ok(manifest.appVersionCode >= 4, 'appVersionCode debe ser >= 4 (superior a versión 3 de Google Play)');
     assert.equal(manifest.enableNotifications, true, 'enableNotifications DEBE ser true para permitir delegación');
     assert.equal(
@@ -276,8 +276,8 @@ test('Auditoría Integral de Identidad de Notificaciones Android TWA y Web Push'
 
     // Versión final y package
     assert.match(xml, /package="pa\.sismodata\.app"/, 'Package ID en manifiesto final');
-    assert.match(xml, /android:versionCode="(4|5)"/, 'versionCode >= 4 en manifiesto final');
-    assert.match(xml, /android:versionName="1\.0\.(3|4)"/, 'versionName 1.0.x en manifiesto final');
+    assert.match(xml, /android:versionCode="(4|5|6)"/, 'versionCode >= 4 en manifiesto final');
+    assert.match(xml, /android:versionName="1\.0\.(3|4|5)"/, 'versionName 1.0.x en manifiesto final');
 
     // Permiso POST_NOTIFICATIONS
     assert.match(xml, /<uses-permission\s+android:name="android\.permission\.POST_NOTIFICATIONS"\s*\/>/, 'Permiso POST_NOTIFICATIONS en manifiesto final');

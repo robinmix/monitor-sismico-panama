@@ -3,6 +3,7 @@ package pa.sismodata.app;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
@@ -35,7 +36,7 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
         Log.i(TAG, "Nuevo token FCM recibido en el dispositivo");
         FcmPreferences.setToken(this, token);
 
-        // Si el usuario ya dio su consentimiento voluntario previo, sincronizar el nuevo token
+        // Si el usuario ya dio su consentimiento voluntario previo y está activo, sincronizar nuevo token
         if (FcmPreferences.isOptedIn(this)) {
             syncTokenWithServer(this, token, true);
         }
@@ -46,9 +47,9 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
         super.onMessageReceived(remoteMessage);
         Log.i(TAG, "Mensaje FCM recibido de: " + remoteMessage.getFrom());
 
-        // Comprobación estricta de consentimiento: si el usuario desactivó las alertas, suprimir mensaje
+        // Comprobación estricta de consentimiento: si el usuario no está en estado ACTIVO, suprimir mensaje
         if (!FcmPreferences.isOptedIn(this)) {
-            Log.i(TAG, "Mensaje FCM omitido: el usuario tiene las notificaciones desactivadas voluntariamente.");
+            Log.i(TAG, "Mensaje FCM omitido: alertas no activas en la máquina de estados local.");
             return;
         }
 
@@ -147,8 +148,16 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
                 conn.setReadTimeout(10000);
                 conn.setDoOutput(true);
 
+                String appVersion = "1.0.5";
+                try {
+                    PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+                    if (pInfo.versionName != null) {
+                        appVersion = pInfo.versionName;
+                    }
+                } catch (Exception ignored) {}
+
                 String action = subscribe ? "subscribe" : "unsubscribe";
-                String payload = "{\"action\":\"" + action + "\",\"token\":\"" + token + "\",\"platform\":\"android\",\"app_version\":\"1.0.4\"}";
+                String payload = "{\"action\":\"" + action + "\",\"token\":\"" + token + "\",\"platform\":\"android\",\"app_version\":\"" + appVersion + "\"}";
 
                 byte[] out = payload.getBytes(StandardCharsets.UTF_8);
                 conn.setFixedLengthStreamingMode(out.length);

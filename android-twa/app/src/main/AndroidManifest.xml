@@ -192,6 +192,25 @@
             android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".SismoNotificationSettingsActivity"
+            android:label="Alertas Sísmicas sismoPA"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sismopa" android:host="notifications" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sismopa" android:host="settings" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".SismoFirebaseMessagingService"
             android:exported="false">
