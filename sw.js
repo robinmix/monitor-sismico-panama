@@ -31,6 +31,7 @@ const STATIC_ASSETS = [
   './manifest.webmanifest',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
+  './assets/icons/badge-96.png',
   './assets/icons/apple-touch-icon.png',
   './assets/icons/favicon-32.png',
   './assets/icons/favicon-16.png',
@@ -245,7 +246,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || 'Actividad sísmica registrada en Panamá.',
     icon: './assets/icons/icon-192.png',
-    badge: './assets/icons/icon-192.png',
+    badge: './assets/icons/badge-96.png',
     data: {
       url: data.url || './'
     },

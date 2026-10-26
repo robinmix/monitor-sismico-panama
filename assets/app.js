@@ -2585,6 +2585,8 @@
       }
 
       function safeMigrateWebPushToFcm() {
+        const isFcmConfirmedActive = localStorage.getItem('sismopa_fcm_active') === '1';
+        if (!isFcmConfirmedActive) return;
         // Preservar íntegramente las suscripciones Web Push existentes;
         // NO desuscribir automáticamente mientras el despacho FCM automático desde Cloudflare no esté desplegado en producción.
         return;
