@@ -89,29 +89,32 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     assert.ok(content.includes('firebase-messaging'), 'Debe incluir firebase-messaging');
   });
 
-  await t.test('4. google-services.json existe con formato válido y paquete pa.sismodata.app', () => {
+  await t.test('4. google-services.json oficial apunta a sismopa-notificaciones y paquete pa.sismodata.app', () => {
     const gsPath = path.join(rootDir, 'android-twa/app/google-services.json');
     assert.ok(fs.existsSync(gsPath), 'google-services.json debe existir');
 
     const parsed = JSON.parse(fs.readFileSync(gsPath, 'utf8'));
-    assert.ok(parsed.project_info, 'Debe contener project_info');
+    assert.equal(parsed.project_info?.project_id, 'sismopa-notificaciones', 'El project_id debe ser sismopa-notificaciones');
+    assert.equal(parsed.project_info?.project_number, '829586447612', 'El project_number oficial debe coincidir');
     assert.ok(Array.isArray(parsed.client), 'Debe contener arreglo de clientes');
 
     const client = parsed.client.find(
       c => c.client_info?.android_client_info?.package_name === 'pa.sismodata.app'
     );
     assert.ok(client, 'Debe estar configurado para el paquete oficial pa.sismodata.app');
+    assert.ok(client.client_info?.mobilesdk_app_id.includes('829586447612'), 'mobilesdk_app_id debe pertenecer al proyecto oficial');
   });
 
-  await t.test('5. Clases Java nativas existen y contienen lógica requerida', () => {
+  await t.test('5. Clases Java nativas gestionan consentimiento voluntario, auto-init y deduplicación', () => {
     const javaDir = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app');
 
     const fcmService = path.join(javaDir, 'SismoFirebaseMessagingService.java');
     assert.ok(fs.existsSync(fcmService), 'SismoFirebaseMessagingService.java debe existir');
     const serviceCode = fs.readFileSync(fcmService, 'utf8');
     assert.ok(serviceCode.includes('extends FirebaseMessagingService'), 'Debe heredar de FirebaseMessagingService');
-    assert.ok(serviceCode.includes('onNewToken'), 'Debe implementar onNewToken');
-    assert.ok(serviceCode.includes('onMessageReceived'), 'Debe implementar onMessageReceived');
+    assert.ok(serviceCode.includes('isOptedIn'), 'Debe verificar consentimiento voluntario antes de procesar');
+    assert.ok(serviceCode.includes('isAlreadyNotified'), 'Debe incluir deduplicación local de eventos');
+    assert.ok(serviceCode.includes('markAsNotified'), 'Debe marcar sismos notificados para evitar repeticiones');
     assert.ok(serviceCode.includes('R.drawable.ic_notification_icon'), 'Debe usar ic_notification_icon');
 
     const notifHelper = path.join(javaDir, 'SismoNotificationHelper.java');
@@ -122,12 +125,19 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
 
     const fcmPrefs = path.join(javaDir, 'FcmPreferences.java');
     assert.ok(fs.existsSync(fcmPrefs), 'FcmPreferences.java debe existir');
+    const prefsCode = fs.readFileSync(fcmPrefs, 'utf8');
+    assert.ok(prefsCode.includes('isAlreadyNotified'), 'FcmPreferences debe implementar isAlreadyNotified');
+
+    const appCode = fs.readFileSync(path.join(javaDir, 'Application.java'), 'utf8');
+    assert.ok(appCode.includes('setAutoInitEnabled'), 'Application.java debe controlar setAutoInitEnabled según consentimiento');
 
     const launcher = path.join(javaDir, 'LauncherActivity.java');
     assert.ok(fs.existsSync(launcher), 'LauncherActivity.java debe existir');
     const launcherCode = fs.readFileSync(launcher, 'utf8');
     assert.ok(launcherCode.includes('"platform", "android_twa"') || launcherCode.includes('platform=android_twa'), 'Debe comunicar plataforma android_twa a la PWA');
     assert.ok(launcherCode.includes('sismos_panama'), 'Debe gestionar suscripción al topic sismos_panama');
+    assert.ok(launcherCode.includes('setAutoInitEnabled(true)'), 'Debe activar auto-init al suscribirse voluntariamente');
+    assert.ok(launcherCode.includes('setAutoInitEnabled(false)'), 'Debe desactivar auto-init al revocar suscripción');
   });
 
   await t.test('6. FCM API: isValidFcmToken valida estrictamente formato y longitud', () => {
@@ -140,7 +150,7 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     assert.equal(isValidFcmToken(validMockToken), true);
   });
 
-  await t.test('7. FCM Dispatcher: sendFcmTopicMessage emite carga útil de alta prioridad con exactamente 1 subrequest', async () => {
+  await t.test('7. FCM Dispatcher: emite mensajes Data-Only de alta prioridad sin duplicar notificaciones del sistema', async () => {
     let subrequestCount = 0;
     let capturedUrl = null;
     let capturedBody = null;
@@ -162,7 +172,7 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ name: 'projects/test-project/messages/msg-12345' })
+          json: async () => ({ name: 'projects/sismopa-notificaciones/messages/msg-12345' })
         };
       }
       throw new Error(`URL no manejada: ${url}`);
@@ -170,7 +180,6 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
 
     _resetOAuthCache();
 
-    // Generar clave RSA real en memoria para firma Web Crypto RS256
     const keyPair = await crypto.subtle.generateKey(
       {
         name: 'RSASSA-PKCS1-v1_5',
@@ -186,8 +195,8 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     const pem = `-----BEGIN PRIVATE KEY-----\n${btoa(binaryStr)}\n-----END PRIVATE KEY-----`;
 
     const serviceAccount = {
-      project_id: 'sismopa-test',
-      client_email: 'test@sismopa-test.iam.gserviceaccount.com',
+      project_id: 'sismopa-notificaciones',
+      client_email: 'firebase-adminsdk@sismopa-notificaciones.iam.gserviceaccount.com',
       private_key: pem
     };
 
@@ -201,17 +210,20 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
 
     const res = await sendFcmTopicMessage(serviceAccount, 'sismos_panama', payload, mockFetch);
     assert.equal(res.ok, true);
-    assert.equal(res.messageId, 'projects/test-project/messages/msg-12345');
+    assert.equal(res.messageId, 'projects/sismopa-notificaciones/messages/msg-12345');
 
-    assert.ok(capturedUrl.includes('projects/sismopa-test/messages:send'));
+    assert.ok(capturedUrl.includes('projects/sismopa-notificaciones/messages:send'));
     assert.equal(capturedHeaders['Authorization'], 'Bearer mock-oauth-token-12345');
 
     assert.equal(capturedBody.message.topic, 'sismos_panama');
     assert.equal(capturedBody.message.data.source_uid, '20261026_test_sismo');
     assert.equal(capturedBody.message.data.magnitud, '4.8');
     assert.equal(capturedBody.message.android.priority, 'high');
-    assert.equal(capturedBody.message.android.notification.channel_id, 'sismo_alertas_channel');
-    assert.equal(capturedBody.message.android.notification.icon, 'ic_notification_icon');
+
+    // PROTECCIÓN CRÍTICA CONTRA DUPLICADOS:
+    // El mensaje debe ser Data-Only (sin bloque notification a nivel de raíz),
+    // garantizando que Android no cree automáticamente una notificación genérica en background
+    assert.equal(capturedBody.message.notification, undefined, 'No debe incluir bloque notification a nivel de raíz');
 
     // Reutilización de token OAuth en caché (1 subrequest a FCM, 0 a oauth2)
     const subrequestsBefore = subrequestCount;
@@ -220,7 +232,7 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     assert.equal(subrequestCount - subrequestsBefore, 1);
   });
 
-  await t.test('8. FCM Dispatcher: sendFcmDirectMessage despacha correctamente a token individual', async () => {
+  await t.test('8. FCM Dispatcher: sendFcmDirectMessage despacha mensaje Data-Only a token individual', async () => {
     let capturedBody = null;
     const mockFetch = async (url, options) => {
       if (url.includes('fcm.googleapis.com')) {
@@ -228,22 +240,23 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ name: 'projects/test-project/messages/direct-12345' })
+          json: async () => ({ name: 'projects/sismopa-notificaciones/messages/direct-12345' })
         };
       }
       return { ok: true, json: async () => ({ access_token: 'tok' }) };
     };
 
     const serviceAccount = {
-      project_id: 'sismopa-test',
-      client_email: 'test@sismopa-test.iam.gserviceaccount.com'
+      project_id: 'sismopa-notificaciones',
+      client_email: 'test@sismopa-notificaciones.iam.gserviceaccount.com'
     };
 
     const directToken = 'device_fcm_token_xyz_987654321';
     const res = await sendFcmDirectMessage(serviceAccount, directToken, { source_uid: 'TEST' }, mockFetch);
     assert.equal(res.ok, true);
     assert.equal(capturedBody.message.token, directToken);
-    assert.equal(capturedBody.message.android.notification.channel_id, 'sismo_alertas_channel');
+    assert.equal(capturedBody.message.notification, undefined, 'Direct message debe ser Data-Only');
+    assert.equal(capturedBody.message.android.priority, 'high');
   });
 
   await t.test('9. Supabase Migration: 20261026_fcm_device_tokens.sql define tablas, índices y RLS aditivas', () => {
@@ -258,12 +271,12 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     assert.ok(sql.includes('uq_fcm_notif_sismo_target'), 'Debe incluir constraint única para prevención de duplicados');
   });
 
-  await t.test('10. Web Client: assets/app.js detecta TWA y redirige consentimiento al flujo nativo', () => {
+  await t.test('10. Web Client: assets/app.js detecta TWA con validación de origen y no confía solo en query params', () => {
     const appJsPath = path.join(rootDir, 'assets/app.js');
     assert.ok(fs.existsSync(appJsPath), 'assets/app.js debe existir');
     const content = fs.readFileSync(appJsPath, 'utf8');
 
-    assert.ok(content.includes('platform=android_twa'), 'Debe detectar plataforma android_twa');
+    assert.ok(content.includes('hasAndroidAppReferrer'), 'Debe validar origen android-app://pa.sismodata.app');
     assert.ok(content.includes('twa_fcm_opt_in'), 'Debe incluir acción de opt-in twa_fcm_opt_in');
     assert.ok(content.includes('twa_fcm_opt_out'), 'Debe incluir acción de opt-out twa_fcm_opt_out');
     assert.ok(content.includes('Activas (App sismoPA)'), 'Debe etiquetar el estado activo nativo');

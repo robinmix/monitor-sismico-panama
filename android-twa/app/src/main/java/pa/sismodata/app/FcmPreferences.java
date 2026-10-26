@@ -12,6 +12,7 @@ public final class FcmPreferences {
     private static final String KEY_OPTED_IN = "fcm_opted_in";
     private static final String KEY_TOKEN = "fcm_token";
     private static final String KEY_TOKEN_SYNCED = "fcm_token_synced";
+    private static final String PREF_PREFIX_NOTIFIED = "notif_seen_";
 
     private FcmPreferences() {}
 
@@ -41,5 +42,24 @@ public final class FcmPreferences {
 
     public static void setTokenSynced(Context context, boolean synced) {
         getPrefs(context).edit().putBoolean(KEY_TOKEN_SYNCED, synced).apply();
+    }
+
+    /**
+     * Comprueba si un sismo ya fue notificado localmente en este dispositivo (deduplicación defensiva).
+     */
+    public static boolean isAlreadyNotified(Context context, String sourceUid) {
+        if (sourceUid == null || sourceUid.isEmpty()) return false;
+        long seenAt = getPrefs(context).getLong(PREF_PREFIX_NOTIFIED + sourceUid, 0L);
+        if (seenAt == 0L) return false;
+        // Considerar duplicado si se recibió en las últimas 3 horas
+        return (System.currentTimeMillis() - seenAt) < (3 * 3600 * 1000L);
+    }
+
+    /**
+     * Registra que un sismo ha sido notificado al usuario en este dispositivo.
+     */
+    public static void markAsNotified(Context context, String sourceUid) {
+        if (sourceUid == null || sourceUid.isEmpty()) return;
+        getPrefs(context).edit().putLong(PREF_PREFIX_NOTIFIED + sourceUid, System.currentTimeMillis()).apply();
     }
 }

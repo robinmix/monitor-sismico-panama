@@ -46,13 +46,26 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
         super.onMessageReceived(remoteMessage);
         Log.i(TAG, "Mensaje FCM recibido de: " + remoteMessage.getFrom());
 
+        // Comprobación estricta de consentimiento: si el usuario desactivó las alertas, suprimir mensaje
+        if (!FcmPreferences.isOptedIn(this)) {
+            Log.i(TAG, "Mensaje FCM omitido: el usuario tiene las notificaciones desactivadas voluntariamente.");
+            return;
+        }
+
+        Map<String, String> data = remoteMessage.getData();
+        String sourceUid = data.get("source_uid");
+
+        // Deduplicación preventiva local en el dispositivo (evita duplicados si llega por múltiples rutas)
+        if (sourceUid != null && FcmPreferences.isAlreadyNotified(this, sourceUid)) {
+            Log.i(TAG, "Notificación omitida por deduplicación local para el evento: " + sourceUid);
+            return;
+        }
+
         // Asegurar que el canal de notificaciones esté activo (Android 8.0+)
         SismoNotificationHelper.createNotificationChannel(this);
 
-        Map<String, String> data = remoteMessage.getData();
         String title = data.get("title");
         String body = data.get("body");
-        String sourceUid = data.get("source_uid");
         String urlString = data.get("url");
 
         if (title == null || title.isEmpty()) {
@@ -107,6 +120,7 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
 
         try {
             NotificationManagerCompat.from(this).notify(notifId, builder.build());
+            FcmPreferences.markAsNotified(this, sourceUid);
             Log.i(TAG, "Notificación nativa sismoPA enviada al gestor de Android. ID: " + notifId);
         } catch (SecurityException se) {
             Log.w(TAG, "Permiso POST_NOTIFICATIONS denegado en Android 13+: " + se.getMessage());

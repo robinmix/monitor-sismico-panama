@@ -16,6 +16,7 @@
 package pa.sismodata.app;
 
 import com.google.firebase.FirebaseApp;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 public class Application extends android.app.Application {
 
@@ -29,8 +30,11 @@ public class Application extends android.app.Application {
       // Inicializar FirebaseApp si está disponible la configuración
       try {
           FirebaseApp.initializeApp(this);
+          // Control estricto de auto-inicialización basado exclusivamente en el consentimiento voluntario
+          boolean optedIn = FcmPreferences.isOptedIn(this);
+          FirebaseMessaging.getInstance().setAutoInitEnabled(optedIn);
       } catch (Exception ignored) {
-          // Si google-services.json es temporal o falta inicialización automática
+          // Tolerancia ante entornos de prueba sin google-services
       }
   }
 }

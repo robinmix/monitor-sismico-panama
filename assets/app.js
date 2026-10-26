@@ -2449,10 +2449,14 @@
     if (!badge || !btnToggle) return;
 
     // Estrategia de canal preferido: Si se ejecuta dentro de la APK TWA oficial de sismoPA,
-    // utilizar el canal nativo FCM con identidad y permisos nativos de Android
-    const isTwa = /platform=android_twa/.test(window.location.search) ||
-                  (document.referrer && document.referrer.includes('android-app://pa.sismodata.app')) ||
-                  localStorage.getItem('sismopa_platform') === 'android_twa';
+    // utilizar el canal nativo FCM con identidad y permisos nativos de Android.
+    // Detección rigurosa de identidad nativa: No confiar exclusivamente en query params manipulables.
+    const isAndroidDevice = /Android/i.test(navigator.userAgent);
+    const hasAndroidAppReferrer = Boolean(document.referrer && document.referrer.startsWith('android-app://pa.sismodata.app'));
+    if (isAndroidDevice && hasAndroidAppReferrer) {
+      try { localStorage.setItem('sismopa_twa_verified', '1'); } catch (e) {}
+    }
+    const isTwa = isAndroidDevice && (hasAndroidAppReferrer || (window.matchMedia('(display-mode: standalone)').matches && localStorage.getItem('sismopa_twa_verified') === '1'));
 
     if (isTwa) {
       try { localStorage.setItem('sismopa_platform', 'android_twa'); } catch (e) {}

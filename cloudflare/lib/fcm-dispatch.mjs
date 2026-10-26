@@ -116,7 +116,7 @@ export function _resetOAuthCache() {
  * Consume EXACTAMENTE 1 subrequest hacia Google FCM para todos los usuarios Android suscritos.
  */
 export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, customFetch = fetch) {
-  const projectId = serviceAccount.project_id;
+  const projectId = serviceAccount.project_id || 'sismopa-notificaciones';
   if (!projectId) {
     throw new Error('Falta project_id en la configuración de Firebase');
   }
@@ -127,13 +127,12 @@ export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, c
   const title = sismoPayload.title || `Sismo M ${sismoPayload.magnitud || '?'} - ${sismoPayload.lugar || 'Panamá'}`;
   const body = sismoPayload.body || `Prof: ${sismoPayload.profundidad || '?'} km | ${sismoPayload.hora_local || ''}. Toque para ver detalles.`;
 
+  // Mensaje de datos de alta prioridad (Data-Only Message).
+  // Evita que Firebase SDK y el sistema Android creen una notificación automática duplicada
+  // cuando la app está en segundo plano o cerrada, delegando 100% el control a SismoFirebaseMessagingService.
   const message = {
     message: {
       topic: topic.replace(/^\/topics\//, ''),
-      notification: {
-        title,
-        body
-      },
       data: {
         source_uid: String(sismoPayload.source_uid || ''),
         magnitud: String(sismoPayload.magnitud || ''),
@@ -145,14 +144,7 @@ export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, c
         body
       },
       android: {
-        priority: 'high',
-        notification: {
-          channel_id: 'sismo_alertas_channel',
-          icon: 'ic_notification_icon',
-          color: '#D32F2F',
-          default_vibrate_timings: true,
-          notification_priority: 'PRIORITY_MAX'
-        }
+        priority: 'high'
       }
     }
   };
@@ -188,7 +180,7 @@ export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, c
  * Envía una notificación directa a un dispositivo específico por token FCM (para pruebas individuales).
  */
 export async function sendFcmDirectMessage(serviceAccount, token, sismoPayload, customFetch = fetch) {
-  const projectId = serviceAccount.project_id;
+  const projectId = serviceAccount.project_id || 'sismopa-notificaciones';
   if (!projectId) {
     throw new Error('Falta project_id en la configuración de Firebase');
   }
@@ -202,10 +194,6 @@ export async function sendFcmDirectMessage(serviceAccount, token, sismoPayload, 
   const message = {
     message: {
       token: token.trim(),
-      notification: {
-        title,
-        body
-      },
       data: {
         source_uid: String(sismoPayload.source_uid || 'TEST_FCM'),
         url: String(sismoPayload.url || 'https://sismopa.pages.dev/'),
@@ -213,12 +201,7 @@ export async function sendFcmDirectMessage(serviceAccount, token, sismoPayload, 
         body
       },
       android: {
-        priority: 'high',
-        notification: {
-          channel_id: 'sismo_alertas_channel',
-          icon: 'ic_notification_icon',
-          color: '#D32F2F'
-        }
+        priority: 'high'
       }
     }
   };

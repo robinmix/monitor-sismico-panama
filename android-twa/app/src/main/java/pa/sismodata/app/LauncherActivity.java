@@ -89,6 +89,9 @@ public class LauncherActivity
         FcmPreferences.setOptedIn(this, true);
 
         try {
+            // Habilitar explícitamente auto-inicialización tras autorización del usuario
+            FirebaseMessaging.getInstance().setAutoInitEnabled(true);
+
             // Suscribirse al topic oficial para sismos de Panamá
             FirebaseMessaging.getInstance().subscribeToTopic(FCM_TOPIC)
                     .addOnCompleteListener(task -> {
@@ -118,6 +121,9 @@ public class LauncherActivity
         FcmPreferences.setOptedIn(this, false);
 
         try {
+            // Deshabilitar auto-inicialización para impedir renovaciones automáticas no deseadas
+            FirebaseMessaging.getInstance().setAutoInitEnabled(false);
+
             FirebaseMessaging.getInstance().unsubscribeFromTopic(FCM_TOPIC)
                     .addOnCompleteListener(task -> Log.i(TAG, "Desuscripción del topic completada"));
 

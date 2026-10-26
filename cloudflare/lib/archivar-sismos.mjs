@@ -687,9 +687,9 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       fcmServiceAccount = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string'
         ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT)
         : env.FIREBASE_SERVICE_ACCOUNT;
-    } else if (env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY) {
+    } else if ((env.FIREBASE_PROJECT_ID || env.FIREBASE_CLIENT_EMAIL) && env.FIREBASE_PRIVATE_KEY) {
       fcmServiceAccount = {
-        project_id: env.FIREBASE_PROJECT_ID,
+        project_id: env.FIREBASE_PROJECT_ID || 'sismopa-notificaciones',
         client_email: env.FIREBASE_CLIENT_EMAIL,
         private_key: env.FIREBASE_PRIVATE_KEY
       };
