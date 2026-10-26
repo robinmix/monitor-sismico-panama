@@ -27,14 +27,14 @@ test('FCM State Machine, Native UI & Robust Channel Suite', async (t) => {
       assert.ok(content.includes(st), `FcmPreferences debe contener el estado ${st}`);
     }
 
-    // isOptedIn exige estrictamente ACTIVO y confirmación de topic
+    // isOptedIn exige estrictamente ACTIVO, topic confirmado y token no nulo
     assert.ok(
-      content.includes('getState(context) == State.ACTIVO && isTopicSubscribed(context)'),
-      'isOptedIn debe verificar simultáneamente State.ACTIVO y topic confirmado'
+      content.includes('isStateActivo && isTopic && (token != null && !token.isEmpty())'),
+      'isOptedIn debe verificar simultáneamente State.ACTIVO, topic confirmado y token válido'
     );
   });
 
-  await t.test('2. SismoNotificationSettingsActivity proporciona UI nativa y no confía en parámetros URL', () => {
+  await t.test('2. SismoNotificationSettingsActivity proporciona UI nativa y no indica ACTIVAS sin confirmar Firebase', () => {
     const activityPath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/SismoNotificationSettingsActivity.java');
     assert.ok(fs.existsSync(activityPath), 'SismoNotificationSettingsActivity.java debe existir');
     const content = fs.readFileSync(activityPath, 'utf8');
@@ -44,6 +44,16 @@ test('FCM State Machine, Native UI & Robust Channel Suite', async (t) => {
     assert.ok(content.includes('unsubscribeFromTopic'), 'Debe ejecutar unsubscribeFromTopic al revocar');
     assert.ok(content.includes('sendLocalTestNotification'), 'Debe contar con botón para probar notificación nativa local');
     assert.ok(content.includes('ClipboardManager'), 'Debe permitir copiar el FCM token para pruebas directas');
+
+    // Auditoría de indicación de «ALERTAS ACTIVAS»: solo tras isOptedIn() confirmado
+    assert.ok(
+      content.includes('boolean isTrulyActive = FcmPreferences.isOptedIn(this)'),
+      'Debe verificar isOptedIn() real en updateUi()'
+    );
+    assert.ok(
+      content.includes('SINCRONIZANDO...'),
+      'Si el estado dice ACTIVO pero falta confirmación de Firebase, debe mostrar SINCRONIZANDO... y no ACTIVAS'
+    );
   });
 
   await t.test('3. LauncherActivity eliminó autorización automática por parámetros URL manipulables', () => {
@@ -98,13 +108,18 @@ test('FCM State Machine, Native UI & Robust Channel Suite', async (t) => {
     assert.ok(content.includes('sismopa.pages.dev'), 'Debe validar origen sismopa.pages.dev');
   });
 
-  await t.test('6. assets/app.js desuscribe Web Push residual en APK y redirige a interfaz nativa', () => {
+  await t.test('6. assets/app.js migra Web Push de forma segura SOLO con FCM confirmado activo', () => {
     const appJsPath = path.join(rootDir, 'assets/app.js');
     const content = fs.readFileSync(appJsPath, 'utf8');
 
+    // No desuscribir incondicionalmente por el simple hecho de ser TWA
     assert.ok(
-      content.includes('[TWA] Cancelando suscripción Web Push residual en la APK'),
-      'Debe incluir desuscripción preventiva de Web Push en TWA para evitar notificaciones duplicadas'
+      content.includes('function safeMigrateWebPushToFcm()'),
+      'Debe definir función de migración segura y condicional safeMigrateWebPushToFcm'
+    );
+    assert.ok(
+      content.includes('if (!isFcmConfirmedActive)'),
+      'Debe abortar desuscripción si FCM no está confirmado activo'
     );
     assert.ok(
       content.includes('window.location.href = \'sismopa://notifications\''),
@@ -173,5 +188,69 @@ test('FCM State Machine, Native UI & Robust Channel Suite', async (t) => {
     const twaContent = JSON.parse(fs.readFileSync(twaManifestPath, 'utf8'));
     assert.equal(twaContent.appVersionCode, 6, 'twa-manifest debe tener appVersionCode 6');
     assert.equal(twaContent.appVersionName, '1.0.5', 'twa-manifest debe tener appVersionName 1.0.5');
+  });
+
+  await t.test('11. Migración defensiva desde Alpha 1.0.4 en FcmPreferences', () => {
+    const prefsPath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/FcmPreferences.java');
+    const content = fs.readFileSync(prefsPath, 'utf8');
+
+    // Valida que getState() maneje el caso en que KEY_STATE no existía previamente
+    assert.ok(
+      content.includes('legacyOptedIn && token != null && !token.isEmpty() && topicSub'),
+      'Debe exigir token y topic confirmado para migrar un estado anterior como ACTIVO'
+    );
+    assert.ok(
+      content.includes('return State.DESACTIVADO;'),
+      'Debe caer en DESACTIVADO por defecto ante cualquier inconsistencia de datos'
+    );
+  });
+
+  await t.test('12. Manejo de activación FCM fallida (error en topic o token)', () => {
+    const activityPath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/SismoNotificationSettingsActivity.java');
+    const content = fs.readFileSync(activityPath, 'utf8');
+
+    // Si subTask o tokenTask fallan, debe registrar State.ERROR y no dejar autoInit activo
+    assert.ok(
+      content.includes('FcmPreferences.setState(this, FcmPreferences.State.ERROR)'),
+      'Debe transicionar a State.ERROR ante fallos'
+    );
+    assert.ok(
+      content.includes('FirebaseMessaging.getInstance().setAutoInitEnabled(false)'),
+      'Debe revocar autoInit ante fallos de conexión'
+    );
+  });
+
+  await t.test('13. Manejo de permisos POST_NOTIFICATIONS denegados en Android 13+', () => {
+    const activityPath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/SismoNotificationSettingsActivity.java');
+    const content = fs.readFileSync(activityPath, 'utf8');
+
+    assert.ok(
+      content.includes('Permiso POST_NOTIFICATIONS denegado'),
+      'Debe registrar log y error explícito si el usuario niega el permiso'
+    );
+    assert.ok(
+      content.includes('Permiso de notificaciones denegado en ajustes de Android'),
+      'Debe almacenar mensaje descriptivo en getLastError()'
+    );
+  });
+
+  await t.test('14. Coexistencia de navegadores: navegadores estándar fuera de TWA conservan Web Push', () => {
+    const appJsPath = path.join(rootDir, 'assets/app.js');
+    const content = fs.readFileSync(appJsPath, 'utf8');
+
+    // La lógica de Web Push estándar (PushManager, getVapidPublicKey, /api/push-subscribe)
+    // debe estar fuera del bloque `if (isTwa)` y permanecer 100% operativa para navegadores regulares
+    assert.ok(
+      content.includes("const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window"),
+      'Debe verificar soporte estándar de Web Push para navegadores web'
+    );
+    assert.ok(
+      content.includes('getVapidPublicKey()'),
+      'Debe conservar llamada a getVapidPublicKey() para clientes web estándar'
+    );
+    assert.ok(
+      content.includes('/api/push-subscribe'),
+      'Debe conservar registro en /api/push-subscribe para clientes web estándar'
+    );
   });
 });

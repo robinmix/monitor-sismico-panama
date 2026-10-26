@@ -34,7 +34,20 @@ public final class FcmPreferences {
     }
 
     public static State getState(Context context) {
-        String name = getPrefs(context).getString(KEY_STATE, State.DESACTIVADO.name());
+        SharedPreferences prefs = getPrefs(context);
+        String name = prefs.getString(KEY_STATE, null);
+        if (name == null) {
+            // Migración defensiva desde Alpha 1.0.4:
+            // Si existía fcm_opted_in previo pero no fcm_state, verificar integridad completa
+            boolean legacyOptedIn = prefs.getBoolean(KEY_OPTED_IN, false);
+            String token = prefs.getString(KEY_TOKEN, null);
+            boolean topicSub = prefs.getBoolean(KEY_TOPIC_SUBSCRIBED, false);
+            if (legacyOptedIn && token != null && !token.isEmpty() && topicSub) {
+                return State.ACTIVO;
+            }
+            // Si falta cualquier elemento o no fue confirmado en Firebase, forzar DESACTIVADO
+            return State.DESACTIVADO;
+        }
         try {
             return State.valueOf(name);
         } catch (IllegalArgumentException e) {
@@ -53,10 +66,14 @@ public final class FcmPreferences {
 
     /**
      * El consentimiento se considera activo ÚNICAMENTE si la máquina de estados
-     * se encuentra en ACTIVO y la suscripción al topic oficial fue confirmada.
+     * se encuentra en ACTIVO, la suscripción al topic oficial fue confirmada
+     * y existe un token de registro FCM válido.
      */
     public static boolean isOptedIn(Context context) {
-        return getState(context) == State.ACTIVO && isTopicSubscribed(context);
+        boolean isStateActivo = (getState(context) == State.ACTIVO);
+        boolean isTopic = isTopicSubscribed(context);
+        String token = getToken(context);
+        return isStateActivo && isTopic && (token != null && !token.isEmpty());
     }
 
     public static void setOptedIn(Context context, boolean optedIn) {

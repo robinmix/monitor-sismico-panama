@@ -233,8 +233,27 @@ public class SismoNotificationSettingsActivity extends Activity {
         GradientDrawable badgeBg = new GradientDrawable();
         badgeBg.setCornerRadius(dp(6));
 
+        boolean isTrulyActive = FcmPreferences.isOptedIn(this);
+
         switch (state) {
             case ACTIVO:
+                if (!isTrulyActive) {
+                    // Si el estado interno dice ACTIVO pero falta confirmación de topic o token de Firebase,
+                    // NUNCA indicar «ACTIVADAS». Mostrar «SINCRONIZANDO...» y confirmar con Firebase.
+                    mStatusBadge.setText("SINCRONIZANDO...");
+                    mStatusBadge.setTextColor(Color.WHITE);
+                    badgeBg.setColor(Color.parseColor("#1565C0"));
+                    mStatusBadge.setBackground(badgeBg);
+                    mStatusDesc.setText("Confirmando suscripción con los servidores oficiales de Firebase...");
+                    mErrorDesc.setVisibility(View.GONE);
+
+                    mBtnAction.setText("Sincronizando...");
+                    mBtnAction.setEnabled(false);
+
+                    // Reintentar confirmación de suscripción
+                    executeSubscription();
+                    break;
+                }
                 mStatusBadge.setText("ALERTAS ACTIVAS");
                 mStatusBadge.setTextColor(Color.parseColor("#E8F5E9"));
                 badgeBg.setColor(Color.parseColor("#2E7D32"));

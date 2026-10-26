@@ -2461,31 +2461,45 @@
     if (isTwa) {
       try { localStorage.setItem('sismopa_platform', 'android_twa'); } catch (e) {}
 
-      // Limpieza proactiva de Web Push residual en APK: evita que el navegador muestre notificaciones Web Push duplicadas
-      if ('serviceWorker' in navigator && 'PushManager' in window) {
-        navigator.serviceWorker.ready.then(async (reg) => {
-          try {
-            const sub = await reg.pushManager.getSubscription();
-            if (sub) {
-              console.log('[TWA] Cancelando suscripción Web Push residual en la APK para dar exclusividad al canal FCM nativo');
-              await sub.unsubscribe();
-              fetch('/api/push-unsubscribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ endpoint: sub.endpoint })
-              }).catch(() => {});
-            }
-          } catch (errClean) {
-            console.warn('[TWA] Limpieza Web Push omitida:', errClean);
-          }
-        }).catch(() => {});
-      }
-
+      // Procesar estado FCM reportado por LauncherActivity mediante URL de arranque autenticada
       if (window.location.search.includes('fcm_status=active')) {
         try { localStorage.setItem('sismopa_fcm_active', '1'); } catch (e) {}
       } else if (window.location.search.includes('fcm_status=inactive')) {
         try { localStorage.removeItem('sismopa_fcm_active'); } catch (e) {}
       }
+
+      // Transición segura Web Push -> FCM nativo:
+      // NUNCA desuscribir Web Push por el simple hecho de detectar TWA.
+      // Exigir confirmación real de suscripción FCM nativa activa antes de liberar Web Push local.
+      function safeMigrateWebPushToFcm() {
+        const isFcmConfirmedActive = localStorage.getItem('sismopa_fcm_active') === '1';
+        if (!isFcmConfirmedActive) {
+          // Si FCM no está confirmado activo, conservar cualquier suscripción existente
+          return;
+        }
+
+        if ('serviceWorker' in navigator && 'PushManager' in window) {
+          navigator.serviceWorker.ready.then(async (reg) => {
+            try {
+              const sub = await reg.pushManager.getSubscription();
+              if (sub) {
+                console.log('[TWA] FCM nativo confirmado activo; realizando transición segura y liberando Web Push local de la APK');
+                await sub.unsubscribe();
+                fetch('/api/push-unsubscribe', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ endpoint: sub.endpoint })
+                }).catch(() => {});
+              }
+            } catch (errClean) {
+              console.warn('[TWA] Transición Web Push omitida:', errClean);
+            }
+          }).catch(() => {});
+        }
+      }
+
+      // Ejecutar migración defensiva únicamente si FCM ya está confirmado activo
+      safeMigrateWebPushToFcm();
 
       // Escuchar eventos postMessage autenticados desde el canal nativo TWA
       window.addEventListener('message', (event) => {
@@ -2494,6 +2508,7 @@
           if (msg && msg.type === 'SISMO_FCM_STATUS') {
             if (msg.active) {
               localStorage.setItem('sismopa_fcm_active', '1');
+              safeMigrateWebPushToFcm();
             } else {
               localStorage.removeItem('sismopa_fcm_active');
             }
