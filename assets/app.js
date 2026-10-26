@@ -2487,7 +2487,24 @@
      BOTÓN DE ACCESO RÁPIDO A NOTIFICACIONES EN CABECERA (TOPBAR BELL)
      ========================================================================== */
   function initTopbarNotificationButton() {
-    const notifTopbarBtn = document.getElementById('notifTopbarBtn');
+    let notifTopbarBtn = document.getElementById('notifTopbarBtn');
+
+    // Recuperación defensiva: Si el HTML proviene de una caché previa que no incluía el botón,
+    // crearlo dinámicamente e insertarlo junto al selector de tema para garantizar presencia 100%
+    if (!notifTopbarBtn) {
+      const themeBtn = document.getElementById('themeToggleBtn');
+      if (themeBtn && themeBtn.parentNode) {
+        notifTopbarBtn = document.createElement('a');
+        notifTopbarBtn.id = 'notifTopbarBtn';
+        notifTopbarBtn.className = 'notif-topbar-btn';
+        notifTopbarBtn.href = '#notificaciones';
+        notifTopbarBtn.setAttribute('aria-label', 'Alertas sísmicas');
+        notifTopbarBtn.setAttribute('title', 'Alertas sísmicas');
+        notifTopbarBtn.innerHTML = '<svg class="topbar-notif-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>';
+        themeBtn.parentNode.insertBefore(notifTopbarBtn, themeBtn);
+      }
+    }
+
     if (!notifTopbarBtn) return;
 
     function applyButtonState() {
@@ -2570,25 +2587,9 @@
       function safeMigrateWebPushToFcm() {
         const isFcmConfirmedActive = localStorage.getItem('sismopa_fcm_active') === '1';
         if (!isFcmConfirmedActive) return;
-
-        if ('serviceWorker' in navigator && 'PushManager' in window) {
-          navigator.serviceWorker.ready.then(async (reg) => {
-            try {
-              const sub = await reg.pushManager.getSubscription();
-              if (sub) {
-                console.log('[TWA] FCM nativo confirmado activo; liberando Web Push local de la APK');
-                await sub.unsubscribe();
-                fetch('/api/push-unsubscribe', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ endpoint: sub.endpoint })
-                }).catch(() => {});
-              }
-            } catch (errClean) {
-              console.warn('[TWA] Transición Web Push omitida:', errClean);
-            }
-          }).catch(() => {});
-        }
+        // Preservar íntegramente las suscripciones Web Push existentes;
+        // NO desuscribir automáticamente mientras el despacho FCM automático desde Cloudflare no esté desplegado en producción.
+        return;
       }
 
       safeMigrateWebPushToFcm();

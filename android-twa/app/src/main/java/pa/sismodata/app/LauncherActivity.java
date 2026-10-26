@@ -36,9 +36,11 @@ public class LauncherActivity
     public static final String FCM_TOPIC = "sismos_panama";
     public static final String TWA_ORIGIN = "https://sismopa.pages.dev";
 
+    private static final int RC_FIRST_RUN_SETTINGS = 7001;
     private CustomTabsSession mCustomTabsSession;
     private boolean mIsRelationshipValidated = false;
     private boolean mIsMessageChannelReady = false;
+    private boolean mWaitingForFirstRunSettings = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,14 +58,33 @@ public class LauncherActivity
         // Procesar deep links nativos sismopa://
         handleIncomingIntent(getIntent());
 
-        // En la primera apertura de esta versión o nuevo arranque, si no tiene alertas activas,
-        // presentar amablemente la pantalla de alertas nativas una sola vez
-        boolean seenNotice = FcmPreferences.hasSeenUpdateNotice(this);
-        if (!FcmPreferences.isOptedIn(this) && !seenNotice) {
-            FcmPreferences.setSeenUpdateNotice(this, true);
+        // En el primer arranque, si no tiene alertas configuradas y se postergó launchTwa(),
+        // mostrar la pantalla nativa de bienvenida sin ser desplazada por la TWA
+        if (mWaitingForFirstRunSettings) {
             Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
             settingsIntent.putExtra("first_run", true);
-            startActivity(settingsIntent);
+            startActivityForResult(settingsIntent, RC_FIRST_RUN_SETTINGS);
+        }
+    }
+
+    @Override
+    protected boolean shouldLaunchImmediately() {
+        boolean seenNotice = FcmPreferences.hasSeenUpdateNotice(this);
+        if (!FcmPreferences.isOptedIn(this) && !seenNotice) {
+            mWaitingForFirstRunSettings = true;
+            return false; // NO lanzar la TWA en paralelo con la pantalla nativa
+        }
+        return super.shouldLaunchImmediately();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == RC_FIRST_RUN_SETTINGS) {
+            FcmPreferences.setSeenUpdateNotice(this, true);
+            mWaitingForFirstRunSettings = false;
+            // Lanzar la TWA únicamente cuando el usuario decida salir de la pantalla de bienvenida
+            launchTwa();
         }
     }
 

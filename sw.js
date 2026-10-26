@@ -13,8 +13,8 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261025twaidentity1`,
-  static: `${CACHE_PREFIX}static-v20261025twaidentity1`,
+  core: `${CACHE_PREFIX}core-v20261026topbar2`,
+  static: `${CACHE_PREFIX}static-v20261026topbar2`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
 
@@ -248,9 +248,9 @@ self.addEventListener('push', (event) => {
     icon: './assets/icons/icon-192.png',
     badge: './assets/icons/badge-96.png',
     data: {
-      url: data.url || (data.source_uid ? `./?sismo=${encodeURIComponent(data.source_uid)}` : './')
+      url: data.url || './'
     },
-    tag: data.tag || (data.source_uid ? `sismopa-${data.source_uid}` : 'sismopa-alert'),
+    tag: data.tag || 'sismopa-alert',
     renotify: true
   };
 
