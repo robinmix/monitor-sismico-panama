@@ -56,8 +56,11 @@ public class LauncherActivity
         // Procesar deep links nativos sismopa://
         handleIncomingIntent(getIntent());
 
-        // En el primer arranque, invitar de forma transparente a configurar las alertas nativas
-        if (!FcmPreferences.hasDecidedConsent(this)) {
+        // En la primera apertura de esta versión o nuevo arranque, si no tiene alertas activas,
+        // presentar amablemente la pantalla de alertas nativas una sola vez
+        boolean seenNotice = FcmPreferences.hasSeenUpdateNotice(this);
+        if (!FcmPreferences.isOptedIn(this) && !seenNotice) {
+            FcmPreferences.setSeenUpdateNotice(this, true);
             Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
             settingsIntent.putExtra("first_run", true);
             startActivity(settingsIntent);

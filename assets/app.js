@@ -2531,7 +2531,7 @@
         } else {
           badge.textContent = 'Desactivadas';
           badge.className = 'notif-status-badge inactive';
-          detail.textContent = 'Toca el botón para configurar o activar las notificaciones nativas de sismoPA en tu teléfono.';
+          detail.textContent = '¡Novedad! Ahora puedes recibir alertas sísmicas oficiales instantáneas con icono propio de sismoPA directamente en tu teléfono.';
           btnToggle.textContent = 'Configurar alertas sismoPA';
           btnToggle.className = 'btn-push-toggle';
           btnToggle.disabled = false;

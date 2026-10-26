@@ -25,6 +25,7 @@ public final class FcmPreferences {
     private static final String KEY_TOKEN = "fcm_token";
     private static final String KEY_TOKEN_SYNCED = "fcm_token_synced";
     private static final String KEY_LAST_ERROR = "fcm_last_error";
+    private static final String KEY_SEEN_UPDATE_NOTICE = "fcm_seen_update_notice_v106";
     private static final String PREF_PREFIX_NOTIFIED = "notif_seen_";
 
     private FcmPreferences() {}
@@ -118,6 +119,14 @@ public final class FcmPreferences {
 
     public static void setTokenSynced(Context context, boolean synced) {
         getPrefs(context).edit().putBoolean(KEY_TOKEN_SYNCED, synced).apply();
+    }
+
+    public static boolean hasSeenUpdateNotice(Context context) {
+        return getPrefs(context).getBoolean(KEY_SEEN_UPDATE_NOTICE, false);
+    }
+
+    public static void setSeenUpdateNotice(Context context, boolean seen) {
+        getPrefs(context).edit().putBoolean(KEY_SEEN_UPDATE_NOTICE, seen).apply();
     }
 
     /**

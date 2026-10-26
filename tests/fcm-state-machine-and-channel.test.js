@@ -177,17 +177,17 @@ test('FCM State Machine, Native UI & Robust Channel Suite', async (t) => {
     assert.ok(content.includes('sismopa-notificaciones'), 'Debe apuntar al proyecto oficial sismopa-notificaciones');
   });
 
-  await t.test('10. Alpha 1.0.5 y versionCode 6 configurados en build.gradle y twa-manifest.json', () => {
+  await t.test('10. Alpha 1.0.6 y versionCode 7 configurados en build.gradle y twa-manifest.json', () => {
     const gradlePath = path.join(rootDir, 'android-twa/app/build.gradle');
     const twaManifestPath = path.join(rootDir, 'android-twa/twa-manifest.json');
 
     const gradleContent = fs.readFileSync(gradlePath, 'utf8');
-    assert.ok(gradleContent.includes('versionCode 6'), 'build.gradle debe tener versionCode 6');
-    assert.ok(gradleContent.includes('versionName "1.0.5"'), 'build.gradle debe tener versionName "1.0.5"');
+    assert.ok(gradleContent.includes('versionCode 7'), 'build.gradle debe tener versionCode 7');
+    assert.ok(gradleContent.includes('versionName "1.0.6"'), 'build.gradle debe tener versionName "1.0.6"');
 
     const twaContent = JSON.parse(fs.readFileSync(twaManifestPath, 'utf8'));
-    assert.equal(twaContent.appVersionCode, 6, 'twa-manifest debe tener appVersionCode 6');
-    assert.equal(twaContent.appVersionName, '1.0.5', 'twa-manifest debe tener appVersionName 1.0.5');
+    assert.equal(twaContent.appVersionCode, 7, 'twa-manifest debe tener appVersionCode 6');
+    assert.equal(twaContent.appVersionName, '1.0.6', 'twa-manifest debe tener appVersionName 1.0.5');
   });
 
   await t.test('11. Migración defensiva desde Alpha 1.0.4 en FcmPreferences', () => {
