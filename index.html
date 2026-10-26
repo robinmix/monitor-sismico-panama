@@ -29,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261026topbar2">
+  <link rel="stylesheet" href="assets/style.css?v=20261026unify1">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261026topbar2"></script>
+  <script defer src="assets/app.js?v=20261026unify1"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -970,18 +970,20 @@
         </div>
       </section>
 
-      <!-- NOTIFICACIONES WEB PUSH DE NUEVOS SISMOS -->
+      <!-- NOTIFICACIONES Y ALERTAS SÍSMICAS -->
       <section class="panel section-notifications" id="notificaciones" aria-label="Notificaciones de nuevos sismos">
         <div class="notifications-header">
           <div class="notifications-title-row">
             <span class="notifications-icon" aria-hidden="true">🔔</span>
             <div class="notifications-header-text">
-              <h2 class="notifications-title">Notificaciones de nuevos sismos</h2>
-              <p class="notifications-subtitle">Avisos automáticos cuando el IGC-UP publique un nuevo evento sísmico en Panamá.</p>
+              <h2 class="notifications-title" id="notifPanelTitle">Notificaciones de nuevos sismos</h2>
+              <p class="notifications-subtitle" id="notifPanelSubtitle">Avisos automáticos cuando el IGC-UP publique un nuevo evento sísmico en Panamá.</p>
             </div>
           </div>
         </div>
-        <div class="notifications-body">
+
+        <!-- CONTROLES WEB PUSH (EXCLUSIVOS PARA NAVEGADORES ESTÁNDAR) -->
+        <div class="notifications-body" id="webPushControls">
           <div class="notification-status-row">
             <span class="notif-label">Estado del servicio:</span>
             <span id="pushStatusBadge" class="notif-status-badge inactive">Desactivadas</span>
@@ -993,6 +995,21 @@
             <button type="button" id="btnTestPush" class="btn-push-test" hidden>Probar en este dispositivo</button>
           </div>
           <small class="notifications-disclaimer">Servicio informativo voluntario mediante Web Push. No representa alerta sísmica temprana ni predicción de eventos.</small>
+        </div>
+
+        <!-- TARJETA DE ALERTAS SÍSMICAS NATIVAS (EXCLUSIVA PARA APK ANDROID TWA) -->
+        <div class="notifications-body native-fcm-card" id="nativeFcmCard" style="display: none;">
+          <div class="notification-status-row">
+            <span class="notif-label">Sistema de alertas:</span>
+            <span id="fcmStatusBadge" class="notif-status-badge active">FCM Nativo Android</span>
+          </div>
+          <p id="fcmStatusDetail" class="notif-detail-text">
+            Alertas oficiales instantáneas gestionadas directamente por sismoPA en tu teléfono Android mediante Firebase Cloud Messaging (FCM). Con sonido prioritario e icono propio, sin intermediación del navegador y optimizadas para no consumir batería.
+          </p>
+          <div class="notifications-actions">
+            <a href="sismopa://notifications" id="btnOpenNativeAlerts" class="btn-push-toggle active" style="text-decoration:none;" aria-label="Configurar alertas nativas sismoPA">Configurar alertas sismoPA</a>
+          </div>
+          <small class="notifications-disclaimer">Servicio nativo sismoPA en Android. Topic oficial: sismos_panama.</small>
         </div>
       </section>
       </div><!-- /#dashboardView -->

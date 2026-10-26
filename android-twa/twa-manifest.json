@@ -21,8 +21,8 @@
     "path": "C:/Users/robin/.android/sismopa-test-signing.keystore",
     "alias": "sismotest"
   },
-  "appVersionName": "1.0.6",
-  "appVersionCode": 7,
+  "appVersionName": "1.0.7",
+  "appVersionCode": 8,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://sismopa.pages.dev/manifest.webmanifest",

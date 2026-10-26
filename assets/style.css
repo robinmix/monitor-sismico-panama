@@ -5676,6 +5676,19 @@ td.align-right {
   line-height: 1.4;
 }
 
+/* TARJETA DE ALERTAS SÍSMICAS NATIVAS (ANDROID TWA) */
+.native-fcm-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.native-fcm-card .btn-push-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 #dashboardView[data-active-tab="mas"] > .section-notifications {
   display: block !important;
   margin-top: 0 !important;
@@ -6324,7 +6337,6 @@ html[data-theme="light"] .identity-name b .brand-pa {
 @media (max-width: 420px) {
   
 }
-
 
 /* Acceso visible a alertas sísmicas (Topbar) */
 .notif-topbar-btn {
