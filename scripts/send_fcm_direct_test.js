@@ -9,17 +9,16 @@
  *   node scripts/send_fcm_direct_test.js --token <DEVICE_FCM_TOKEN> [--sa <PATH_TO_SERVICE_ACCOUNT_JSON>]
  */
 
-import fs from 'fs';
-import path from 'path';
-import { sendFcmDirectMessage } from '../cloudflare/lib/fcm-dispatch.mjs';
+const fs = require('fs');
+const path = require('path');
 
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
     token: null,
     saPath: null,
-    title: 'sismoPA — Alerta Directa (Prueba)',
-    body: 'Mag. 4.8 · Golfo de Chiriquí (Mensaje Data-Only Directo)',
+    title: '[PRUEBA TÉCNICA] sismoPA',
+    body: 'Verificación de notificaciones nativas Android. NO ES UN SISMO REAL.',
     sourceUid: 'test_dev_' + Date.now()
   };
 
@@ -74,8 +73,15 @@ async function main() {
     sent_at: new Date().toISOString()
   };
 
-  console.log('Dispositivo objetivo:', opts.token.substring(0, 15) + '...' + opts.token.substring(opts.token.length - 10));
-  console.log('Proyecto FCM: sismopa-notificaciones');
+  const maskedToken = opts.token.length > 20
+    ? `${opts.token.slice(0, 10)}...${opts.token.slice(-6)}`
+    : '***';
+  console.log('Dispositivo objetivo (enmascarado):', maskedToken);
+  console.log('Proyecto FCM:', serviceAccount?.project_id || 'sismopa-notificaciones');
+  if (serviceAccount?.client_email) {
+    const maskedEmail = serviceAccount.client_email.replace(/^([^@]{3})[^@]+(@.*)$/, '$1***$2');
+    console.log('Cuenta de servicio (enmascarada):', maskedEmail);
+  }
   console.log('Payload Data-Only:', JSON.stringify(payload, null, 2));
 
   if (!serviceAccount) {
@@ -84,6 +90,7 @@ async function main() {
   }
 
   try {
+    const { sendFcmDirectMessage } = await import('../cloudflare/lib/fcm-dispatch.mjs');
     const result = await sendFcmDirectMessage({
       projectId: serviceAccount.project_id || 'sismopa-notificaciones',
       deviceToken: opts.token,

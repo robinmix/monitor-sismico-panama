@@ -6324,3 +6324,41 @@ html[data-theme="light"] .identity-name b .brand-pa {
 @media (max-width: 420px) {
   
 }
+
+
+/* Acceso visible a alertas sísmicas (Topbar) */
+.notif-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.notif-topbar-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--color-blue);
+  border-color: var(--border-highlight);
+}
+.notif-topbar-btn .topbar-notif-icon {
+  width: 18px;
+  height: 18px;
+}
+html[data-theme="light"] .notif-topbar-btn {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+html[data-theme="light"] .notif-topbar-btn:hover {
+  background: #e2e8f0;
+  color: #2563eb;
+  border-color: #94a3b8;
+}

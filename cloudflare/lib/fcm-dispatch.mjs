@@ -112,11 +112,37 @@ export function _resetOAuthCache() {
 }
 
 /**
+ * Determina si un error HTTP de FCM es de carácter transitorio y reintentable.
+ */
+export function isRetryableFcmStatus(status) {
+  return status === 429 || status >= 500;
+}
+
+/**
  * Envía una notificación masiva al topic FCM de sismoPA.
+ * Soporta firma posicional (serviceAccount, topic, sismoPayload, customFetch)
+ * o firma por objeto de opciones ({ serviceAccount, topic, payload, customFetch }).
  * Consume EXACTAMENTE 1 subrequest hacia Google FCM para todos los usuarios Android suscritos.
  */
-export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, customFetch = fetch) {
-  const projectId = serviceAccount.project_id || 'sismopa-notificaciones';
+export async function sendFcmTopicMessage(arg1, arg2, arg3, arg4) {
+  let serviceAccount, topic, sismoPayload, customFetch;
+  if (arg1 && typeof arg1 === 'object' && !arg1.client_email && (arg1.serviceAccount || arg1.topic || arg1.payload)) {
+    serviceAccount = arg1.serviceAccount;
+    topic = arg1.topic || 'sismos_panama';
+    sismoPayload = arg1.payload || arg1.sismoPayload || {};
+    customFetch = arg1.customFetch || fetch;
+  } else {
+    serviceAccount = arg1;
+    topic = arg2 || 'sismos_panama';
+    sismoPayload = arg3 || {};
+    customFetch = arg4 || fetch;
+  }
+
+  if (!serviceAccount) {
+    throw new Error('Faltan credenciales de cuenta de servicio de Firebase');
+  }
+
+  const projectId = serviceAccount.project_id || (arg1 && arg1.projectId) || 'sismopa-notificaciones';
   if (!projectId) {
     throw new Error('Falta project_id en la configuración de Firebase');
   }
@@ -164,6 +190,7 @@ export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, c
     return {
       ok: false,
       status: res.status,
+      retryable: isRetryableFcmStatus(res.status),
       error: resData.error?.message || `FCM Error HTTP ${res.status}`,
       details: resData
     };
@@ -178,9 +205,31 @@ export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, c
 
 /**
  * Envía una notificación directa a un dispositivo específico por token FCM (para pruebas individuales).
+ * Soporta firma posicional (serviceAccount, token, sismoPayload, customFetch)
+ * o firma por objeto de opciones ({ serviceAccount, deviceToken, payload, customFetch }).
  */
-export async function sendFcmDirectMessage(serviceAccount, token, sismoPayload, customFetch = fetch) {
-  const projectId = serviceAccount.project_id || 'sismopa-notificaciones';
+export async function sendFcmDirectMessage(arg1, arg2, arg3, arg4) {
+  let serviceAccount, token, sismoPayload, customFetch;
+  if (arg1 && typeof arg1 === 'object' && !arg1.client_email && (arg1.serviceAccount || arg1.deviceToken || arg1.token || arg1.payload)) {
+    serviceAccount = arg1.serviceAccount;
+    token = arg1.deviceToken || arg1.token;
+    sismoPayload = arg1.payload || arg1.sismoPayload || {};
+    customFetch = arg1.customFetch || fetch;
+  } else {
+    serviceAccount = arg1;
+    token = arg2;
+    sismoPayload = arg3 || {};
+    customFetch = arg4 || fetch;
+  }
+
+  if (!serviceAccount) {
+    throw new Error('Faltan credenciales de cuenta de servicio de Firebase');
+  }
+  if (!token) {
+    throw new Error('Falta el token de registro del dispositivo objetivo');
+  }
+
+  const projectId = serviceAccount.project_id || (arg1 && arg1.projectId) || 'sismopa-notificaciones';
   if (!projectId) {
     throw new Error('Falta project_id en la configuración de Firebase');
   }
@@ -220,6 +269,7 @@ export async function sendFcmDirectMessage(serviceAccount, token, sismoPayload, 
     return {
       ok: false,
       status: res.status,
+      retryable: isRetryableFcmStatus(res.status),
       error: resData.error?.message || `FCM Error HTTP ${res.status}`,
       details: resData
     };

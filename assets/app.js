@@ -2446,6 +2446,8 @@
     const detail = document.getElementById('pushStatusDetail');
     const btnToggle = document.getElementById('btnTogglePush');
     const btnTest = document.getElementById('btnTestPush');
+    const notifTopbarBtn = document.getElementById('notifTopbarBtn');
+    const nativeDeepLink = document.getElementById('btnNativeSettingsDeepLink');
     if (!badge || !btnToggle) return;
 
     // Estrategia de canal preferido: Si se ejecuta dentro de la APK TWA oficial de sismoPA,
@@ -2535,6 +2537,15 @@
           btnToggle.disabled = false;
         }
         if (btnTest) btnTest.hidden = true;
+        if (nativeDeepLink) nativeDeepLink.style.display = 'inline-flex';
+        if (notifTopbarBtn) {
+          notifTopbarBtn.href = 'sismopa://notifications';
+          notifTopbarBtn.onclick = (e) => {
+            e.preventDefault();
+            try { window.postMessage({ type: 'OPEN_SETTINGS' }, '*'); } catch (_) {}
+            window.location.href = 'sismopa://notifications';
+          };
+        }
       }
 
       renderTwaFcmState();

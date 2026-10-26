@@ -516,18 +516,13 @@ async function sha256Hex(str) {
  * Protegido contra ráfagas (lote masivo > 3) y duplicados mediante notificaciones_enviadas.
  * Requiere explícitamente AUTO_PUSH_ENABLED=true para enviar notificaciones reales.
  */
-async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date()) {
-  const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
-  if (!autoPushEnabled) {
-    return { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
-  }
-
-  if (!supabase || !Array.isArray(nuevosRecords) || nuevosRecords.length === 0) {
-    return { enviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
+function filterEligibleSeismicEvents(nuevosRecords, now = new Date()) {
+  if (!Array.isArray(nuevosRecords) || nuevosRecords.length === 0) {
+    return { eligible: [], motivo: 'SIN_EVENTOS_NUEVOS' };
   }
 
   const MAX_AGE_MS = 45 * 60 * 1000; // 45 minutos (tolera demoras de revisión del IGC)
-  const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+  const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutos de tolerancia hacia el futuro
   const nowTime = now.getTime();
 
   // 1. Filtrar eventos por antigüedad real primero
@@ -539,20 +534,35 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
   });
 
   if (!recentEvents.length) {
-    return { enviados: 0, omitidosPorAntiguedad: nuevosRecords.length };
+    return { eligible: [], omitidosPorAntiguedad: nuevosRecords.length };
   }
 
   // 2. Protección contra ráfagas anómalas / cold start / backfill masivo:
   // Si en la ventana reciente aparecen más de 6 eventos, se considera importación masiva y se omite.
   if (recentEvents.length > 6) {
-    console.warn(`[Push] Despacho omitido por lote masivo (${recentEvents.length} eventos recientes). Protección contra ráfagas activa.`);
-    return { enviados: 0, omitidosPorLoteMasivo: recentEvents.length };
+    console.warn(`[Alertas] Despacho omitido por lote masivo (${recentEvents.length} eventos recientes). Protección contra ráfagas activa.`);
+    return { eligible: [], omitidosPorLoteMasivo: recentEvents.length };
   }
 
   // 3. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
   // Ordenar por magnitud descendente y notificar los 3 más significativos para no saturar al usuario
   const sortedEvents = [...recentEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
   const eligibleEvents = sortedEvents.slice(0, 3);
+  return { eligible: eligibleEvents };
+}
+
+/**
+ * Despacha notificaciones Web Push a suscriptores web elegibles.
+ */
+async function dispatchWebPushNotifications(eligibleEvents, supabase, env = {}, now = new Date()) {
+  const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
+  if (!autoPushEnabled) {
+    return { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
+  }
+
+  if (!supabase || !Array.isArray(eligibleEvents) || eligibleEvents.length === 0) {
+    return { enviados: 0, motivo: 'SIN_EVENTOS_ELEGIBLES' };
+  }
 
   // Obtener suscripciones activas
   const { data: subs, error: subsErr } = await supabase
@@ -679,8 +689,30 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     }
   }
 
-  // Despacho a Topic FCM oficial para usuarios de la app nativa Android sismoPA
-  let fcmEnviados = 0;
+  return { enviados: totalEnviados, sismosNotificados: eligibleEvents.length };
+}
+
+/**
+ * Despacha alertas sísmicas automáticas al topic oficial de Firebase FCM ('sismos_panama')
+ * para usuarios de la APK nativa sismoPA.
+ * Incluye reserva atómica distribuida en fcm_notificaciones_enviadas para evitar duplicados concurrentes.
+ */
+async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {}, now = new Date()) {
+  const killSwitch = Boolean(env && (env.FCM_KILL_SWITCH === 'true' || env.FCM_KILL_SWITCH === true));
+  if (killSwitch) {
+    console.warn('[FCM] Despacho detenido por corte de emergencia (FCM_KILL_SWITCH activo)');
+    return { fcmEnviados: 0, omitidos: 'FCM_KILL_SWITCH_ACTIVE' };
+  }
+
+  const autoFcmEnabled = Boolean(env && (env.AUTO_FCM_ENABLED === 'true' || env.AUTO_FCM_ENABLED === true));
+  if (!autoFcmEnabled) {
+    return { fcmEnviados: 0, omitidos: 'AUTO_FCM_DISABLED' };
+  }
+
+  if (!supabase || !Array.isArray(eligibleEvents) || eligibleEvents.length === 0) {
+    return { fcmEnviados: 0, motivo: 'SIN_EVENTOS_ELEGIBLES' };
+  }
+
   let fcmServiceAccount = null;
   try {
     if (env.FIREBASE_SERVICE_ACCOUNT) {
@@ -695,45 +727,236 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       };
     }
   } catch (parseErr) {
-    console.warn('[FCM] Error al parsear credenciales de Firebase en env:', parseErr.message);
+    console.warn('[FCM] Error parseando credenciales de Firebase en env:', parseErr.message);
   }
 
-  if (fcmServiceAccount) {
-    for (const ev of eligibleEvents) {
-      try {
-        const { data: yaEnviado } = await supabase
-          .from('fcm_notificaciones_enviadas')
-          .select('id')
-          .eq('source_uid', ev.source_uid)
-          .eq('target', 'topic:sismos_panama')
-          .limit(1);
+  if (!fcmServiceAccount || !fcmServiceAccount.client_email || !fcmServiceAccount.private_key) {
+    console.warn('[FCM] Despacho omitido: Faltan credenciales válidas de Firebase Service Account');
+    return { fcmEnviados: 0, omitidos: 'SIN_CREDENCIALES_FCM' };
+  }
 
-        if (!yaEnviado || yaEnviado.length === 0) {
-          const fcmRes = await sendFcmTopicMessage(fcmServiceAccount, 'sismos_panama', {
-            source_uid: ev.source_uid,
-            magnitud: ev.magnitud,
-            lugar: ev.lugar,
-            profundidad: ev.profundidad,
-            hora_local: ev.fecha_hora_texto || ev.fecha_hora,
-            url: `https://sismopa.pages.dev/?sismo=${encodeURIComponent(ev.source_uid)}`
-          }, env.fetch || fetch);
+  const target = 'topic:sismos_panama';
+  let fcmEnviados = 0;
+  const LEASE_MS = 60 * 1000; // 60s lease de protección para ejecución concurrente
+  const leaseExpiryISO = new Date(now.getTime() + LEASE_MS).toISOString();
 
-          if (fcmRes && fcmRes.ok) {
-            fcmEnviados++;
-            await supabase.from('fcm_notificaciones_enviadas').upsert({
-              source_uid: ev.source_uid,
-              target: 'topic:sismos_panama',
-              estado: 'CONFIRMADA'
-            }, { onConflict: 'source_uid,target' });
-          }
-        }
-      } catch (fcmErr) {
-        console.warn(`[FCM] Error despachando a topic para ${ev.source_uid}:`, fcmErr.message);
+  for (const ev of eligibleEvents) {
+    // 1. Verificar registros existentes en fcm_notificaciones_enviadas
+    const { data: existingRows } = await supabase
+      .from('fcm_notificaciones_enviadas')
+      .select('id, estado, lease_expires_at, intentos')
+      .eq('source_uid', ev.source_uid)
+      .eq('target', target)
+      .limit(1);
+
+    const existing = existingRows && existingRows[0];
+    let leaseAcquired = false;
+
+    if (existing) {
+      if (existing.estado === 'CONFIRMADA') {
+        // Notificación ya entregada previamente con éxito al topic
+        continue;
       }
+      if (existing.estado === 'RESERVADA') {
+        const leaseEnd = existing.lease_expires_at ? new Date(existing.lease_expires_at).getTime() : 0;
+        if (leaseEnd > now.getTime()) {
+          // Otra instancia de Cloudflare Worker mantiene el lease activo
+          continue;
+        }
+        // Lease expirado (worker colapsó o timeout). Intentar reclamar
+        const { error: claimErr } = await supabase
+          .from('fcm_notificaciones_enviadas')
+          .update({
+            estado: 'RESERVADA',
+            lease_expires_at: leaseExpiryISO,
+            intentos: (existing.intentos || 1) + 1
+          })
+          .eq('id', existing.id)
+          .eq('estado', 'RESERVADA');
+
+        if (!claimErr) {
+          leaseAcquired = true;
+        }
+      } else if (existing.estado === 'FALLIDA') {
+        if ((existing.intentos || 1) >= 3) {
+          // Límite de reintentos alcanzado
+          continue;
+        }
+        const { error: retryErr } = await supabase
+          .from('fcm_notificaciones_enviadas')
+          .update({
+            estado: 'RESERVADA',
+            lease_expires_at: leaseExpiryISO,
+            intentos: (existing.intentos || 1) + 1
+          })
+          .eq('id', existing.id)
+          .eq('estado', 'FALLIDA');
+
+        if (!retryErr) {
+          leaseAcquired = true;
+        }
+      }
+    } else {
+      // 2. Intentar reserva atómica con INSERT
+      const { error: insertErr } = await supabase
+        .from('fcm_notificaciones_enviadas')
+        .insert({
+          source_uid: ev.source_uid,
+          target,
+          enviado_en: now.toISOString(),
+          estado: 'RESERVADA',
+          lease_expires_at: leaseExpiryISO,
+          intentos: 1
+        });
+
+      if (!insertErr) {
+        leaseAcquired = true;
+      }
+    }
+
+    if (!leaseAcquired) {
+      continue;
+    }
+
+    // 3. Formatear payload FCM Data-Only oficial
+    const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
+    const geoTexto = geo?.ubicacion_texto || ev.ubicacion || ev.region || 'Panamá';
+    const magStr = Number(ev.magnitud).toFixed(1);
+    const estadoStr = ev.estado && String(ev.estado).toUpperCase() === 'REVISADO' ? 'Revisado' : 'Preliminar';
+
+    let horaPanama = '';
+    try {
+      const d = new Date(ev.fecha_hora);
+      if (Number.isFinite(d.getTime())) {
+        horaPanama = d.toLocaleTimeString('es-PA', {
+          timeZone: 'America/Panama',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    } catch {}
+
+    const bodyParts = [geoTexto];
+    if (Number.isFinite(Number(ev.profundidad_km))) {
+      bodyParts.push(`Prof. ${Math.round(Number(ev.profundidad_km))} km`);
+    }
+    if (horaPanama) {
+      bodyParts.push(horaPanama);
+    }
+    if (estadoStr) {
+      bodyParts.push(estadoStr);
+    }
+
+    const fcmPayload = {
+      source_uid: ev.source_uid,
+      magnitud: magStr,
+      lugar: geoTexto,
+      profundidad: Number.isFinite(Number(ev.profundidad_km)) ? String(Math.round(Number(ev.profundidad_km))) : '',
+      hora_local: horaPanama || ev.fecha_hora_texto || ev.fecha_hora,
+      title: `sismoPA · Nuevo sismo M${magStr}`,
+      body: bodyParts.join(' · '),
+      url: `https://sismopa.pages.dev/?sismo=${encodeURIComponent(ev.source_uid)}`
+    };
+
+    try {
+      const fcmRes = await sendFcmTopicMessage(
+        fcmServiceAccount,
+        'sismos_panama',
+        fcmPayload,
+        env.fetch || fetch
+      );
+
+      if (fcmRes && fcmRes.ok) {
+        fcmEnviados++;
+        await supabase
+          .from('fcm_notificaciones_enviadas')
+          .update({
+            estado: 'CONFIRMADA',
+            enviado_en: now.toISOString(),
+            lease_expires_at: null
+          })
+          .eq('source_uid', ev.source_uid)
+          .eq('target', target);
+      } else {
+        const isRetryable = fcmRes?.retryable !== false;
+        await supabase
+          .from('fcm_notificaciones_enviadas')
+          .update({
+            estado: 'FALLIDA',
+            lease_expires_at: null,
+            intentos: isRetryable ? (existing?.intentos || 1) : 99
+          })
+          .eq('source_uid', ev.source_uid)
+          .eq('target', target);
+        console.warn(`[FCM] Despacho fallido para ${ev.source_uid}: ${fcmRes?.error || 'Error desconocido'}`);
+      }
+    } catch (sendErr) {
+      await supabase
+        .from('fcm_notificaciones_enviadas')
+        .update({
+          estado: 'FALLIDA',
+          lease_expires_at: null
+        })
+        .eq('source_uid', ev.source_uid)
+        .eq('target', target);
+      console.warn(`[FCM] Error de red despachando a topic para ${ev.source_uid}:`, sendErr.message);
     }
   }
 
-  return { enviados: totalEnviados, fcmEnviados, sismosNotificados: eligibleEvents.length };
+  return { fcmEnviados, sismosNotificados: eligibleEvents.length };
+}
+
+/**
+ * Orquestador principal de despacho de notificaciones automáticas (Web Push + Android FCM).
+ * Preserva compatibilidad con la firma existente (nuevosRecords, supabase, env, now).
+ */
+async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date()) {
+  const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
+  const autoFcmEnabled = Boolean(env && (env.AUTO_FCM_ENABLED === 'true' || env.AUTO_FCM_ENABLED === true));
+
+  if (!autoPushEnabled && !autoFcmEnabled) {
+    return { enviados: 0, fcmEnviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
+  }
+
+  if (!supabase || !Array.isArray(nuevosRecords) || nuevosRecords.length === 0) {
+    return { enviados: 0, fcmEnviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
+  }
+
+  const filterResult = filterEligibleSeismicEvents(nuevosRecords, now);
+  if (filterResult.omitidosPorAntiguedad) {
+    return { enviados: 0, fcmEnviados: 0, omitidosPorAntiguedad: filterResult.omitidosPorAntiguedad };
+  }
+  if (filterResult.omitidosPorLoteMasivo) {
+    return { enviados: 0, fcmEnviados: 0, omitidosPorLoteMasivo: filterResult.omitidosPorLoteMasivo };
+  }
+
+  const eligibleEvents = filterResult.eligible || [];
+  if (!eligibleEvents.length) {
+    return { enviados: 0, fcmEnviados: 0, motivo: 'SIN_EVENTOS_ELEGIBLES' };
+  }
+
+  let webPushResult = { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
+  if (autoPushEnabled) {
+    webPushResult = await dispatchWebPushNotifications(eligibleEvents, supabase, env, now);
+  }
+
+  let fcmResult = { fcmEnviados: 0, omitidos: 'AUTO_FCM_DISABLED' };
+  if (autoFcmEnabled) {
+    fcmResult = await dispatchFcmTopicNotifications(eligibleEvents, supabase, env, now);
+  }
+
+  const res = {
+    enviados: webPushResult.enviados || 0,
+    fcmEnviados: fcmResult.fcmEnviados || 0,
+    sismosNotificados: eligibleEvents.length,
+    webPush: webPushResult,
+    fcm: fcmResult
+  };
+  if (webPushResult.motivo && !res.enviados && !res.fcmEnviados) {
+    res.motivo = webPushResult.motivo;
+  }
+  return res;
 }
 
 export {
@@ -744,6 +967,9 @@ export {
   buildNormalizedRecord,
   generateSourceUid,
   syncEventsToSupabase,
+  filterEligibleSeismicEvents,
+  dispatchWebPushNotifications,
+  dispatchFcmTopicNotifications,
   dispatchPushNotifications,
   sha256Hex,
   geoDistanceKm,
