@@ -2597,7 +2597,7 @@
     function renderTwaFcmState() {
       const isFcmActive = localStorage.getItem('sismopa_fcm_active') === '1';
       if (fcmBadge) {
-        fcmBadge.textContent = isFcmActive ? 'Activas (FCM Nativo)' : 'Configuración disponible';
+        fcmBadge.textContent = isFcmActive ? 'Activas (App sismoPA)' : 'Configuración disponible';
         fcmBadge.className = 'notif-status-badge ' + (isFcmActive ? 'active' : 'inactive');
       }
       if (fcmDetail) {
