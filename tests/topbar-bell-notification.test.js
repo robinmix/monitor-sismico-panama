@@ -9,6 +9,7 @@ test('Topbar Bell Notification & Navigation Suite', async (t) => {
   const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
   const styleCss = fs.readFileSync(path.join(rootDir, 'assets/style.css'), 'utf8');
   const appJs = fs.readFileSync(path.join(rootDir, 'assets/app.js'), 'utf8');
+  const swJs = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
 
   await t.test('1. index.html contiene el botón de campana #notifTopbarBtn junto al tema', () => {
     assert.ok(indexHtml.includes('id="notifTopbarBtn"'), 'Debe contener el elemento #notifTopbarBtn');
@@ -31,31 +32,47 @@ test('Topbar Bell Notification & Navigation Suite', async (t) => {
     assert.ok(styleCss.includes('#EAF1F8') && styleCss.includes('#172338'), 'Debe usar la paleta institucional en tema claro');
   });
 
-  await t.test('3. app.js contiene detección TWA resiliente sin depender exclusivamente de referrer', () => {
+  await t.test('3. app.js contiene fallback dinámico de creación si index.html proviniese de caché antigua', () => {
+    assert.ok(appJs.includes("notifTopbarBtn = document.createElement('a')"), 'Debe crear dinámicamente el botón si no existe');
+    assert.ok(appJs.includes("themeBtn.parentNode.insertBefore(notifTopbarBtn, themeBtn)"), 'Debe insertarlo antes de themeToggleBtn');
+  });
+
+  await t.test('4. app.js contiene detección TWA resiliente sin depender exclusivamente de referrer', () => {
     assert.ok(appJs.includes('function checkIsTwa()'), 'Debe implementar checkIsTwa()');
     assert.ok(appJs.includes('window.__sismoTwaConfirmed === true'), 'Debe contemplar confirmación por postMessage');
     assert.ok(appJs.includes('display-mode: standalone'), 'Debe contemplar modo standalone en Android');
     assert.ok(appJs.includes('sismopa.pages.dev'), 'Debe contemplar el origen oficial de la TWA en modo standalone');
   });
 
-  await t.test('4. app.js abre sismopa://notifications mediante navegación limpia sin doble disparo', () => {
+  await t.test('5. app.js abre sismopa://notifications mediante navegación limpia sin doble disparo', () => {
     assert.ok(appJs.includes("window.location.href = 'sismopa://notifications'"), 'Debe navegar directamente a sismopa://notifications');
-    // Verificar que en el click handler de notifTopbarBtn NO se combine postMessage con window.location.href simultáneo
     const clickHandlerSnippet = appJs.slice(appJs.indexOf('notifTopbarBtn.onclick = (e) => {'), appJs.indexOf('notifTopbarBtn.onclick = (e) => {') + 300);
     assert.equal(clickHandlerSnippet.includes("postMessage({ type: 'OPEN_SETTINGS' }"), false, 'NO debe mezclar postMessage en el click para no lanzar la actividad dos veces');
   });
 
-  await t.test('5. app.js en navegadores normales activa la pestaña "mas" y desplaza a #notificaciones', () => {
+  await t.test('6. app.js preserva Web Push y no desuscribe automáticamente', () => {
+    assert.ok(appJs.includes('Preservar íntegramente las suscripciones Web Push existentes'), 'Debe preservar Web Push');
+    const twaBlock = appJs.slice(appJs.indexOf('if (isTwa) {'), appJs.indexOf('const isSupported ='));
+    assert.equal(twaBlock.includes('sub.unsubscribe()'), false, 'NO debe llamar a sub.unsubscribe() en TWA');
+  });
+
+  await t.test('7. sw.js y index.html sincronizan versiones de caché renovadas para invalidar cachés viejas', () => {
+    assert.ok(swJs.includes('core-v20261026topbar2'), 'sw.js debe tener la clave de caché core-v20261026topbar2');
+    assert.ok(indexHtml.includes('assets/style.css?v=20261026topbar2'), 'index.html debe solicitar style.css con v20261026topbar2');
+    assert.ok(indexHtml.includes('assets/app.js?v=20261026topbar2'), 'index.html debe solicitar app.js con v20261026topbar2');
+  });
+
+  await t.test('8. app.js en navegadores normales activa la pestaña "mas" y desplaza a #notificaciones', () => {
     assert.ok(appJs.includes("setMobileTab('mas', true)"), 'Debe cambiar la pestaña a "mas" en vista móvil');
     assert.ok(appJs.includes("target.scrollIntoView({ behavior: 'smooth' })"), 'Debe realizar scroll suave');
     assert.ok(appJs.includes("'#notificaciones': 'mas'"), 'tabMap debe mapear #notificaciones a mas');
   });
 
-  await t.test('6. app.js inicializa initTopbarNotificationButton en DOMContentLoaded', () => {
+  await t.test('9. app.js inicializa initTopbarNotificationButton en DOMContentLoaded', () => {
     assert.ok(appJs.includes('initTopbarNotificationButton();'), 'Debe invocar initTopbarNotificationButton() en DOMContentLoaded');
   });
 
-  await t.test('7. Verificación de cero cambios en Cloudflare Workers o secretos', () => {
+  await t.test('10. Verificación de cero cambios en Cloudflare Workers o secretos', () => {
     const gitStatus = fs.existsSync(path.join(rootDir, 'cloudflare/archivador/wrangler.toml'));
     assert.ok(gitStatus, 'wrangler.toml existe intacto');
   });
