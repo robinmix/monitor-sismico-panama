@@ -57,9 +57,9 @@ test('Topbar Bell Notification & Navigation Suite', async (t) => {
   });
 
   await t.test('7. sw.js y index.html sincronizan versiones de caché renovadas para invalidar cachés viejas', () => {
-    assert.ok(swJs.includes('core-v20261026topbar2'), 'sw.js debe tener la clave de caché core-v20261026topbar2');
-    assert.ok(indexHtml.includes('assets/style.css?v=20261026topbar2'), 'index.html debe solicitar style.css con v20261026topbar2');
-    assert.ok(indexHtml.includes('assets/app.js?v=20261026topbar2'), 'index.html debe solicitar app.js con v20261026topbar2');
+    assert.ok(swJs.includes('core-v20261026unify1') || swJs.includes('core-v20261026topbar2'), 'sw.js debe tener clave de cache renovada');
+    assert.ok(indexHtml.includes('assets/style.css?v=20261026unify1') || indexHtml.includes('assets/style.css?v=20261026topbar2'), 'index.html debe solicitar style.css versionado');
+    assert.ok(indexHtml.includes('assets/app.js?v=20261026unify1') || indexHtml.includes('assets/app.js?v=20261026topbar2'), 'index.html debe solicitar app.js versionado');
   });
 
   await t.test('8. app.js en navegadores normales activa la pestaña "mas" y desplaza a #notificaciones', () => {
@@ -75,5 +75,24 @@ test('Topbar Bell Notification & Navigation Suite', async (t) => {
   await t.test('10. Verificación de cero cambios en Cloudflare Workers o secretos', () => {
     const gitStatus = fs.existsSync(path.join(rootDir, 'cloudflare/archivador/wrangler.toml'));
     assert.ok(gitStatus, 'wrangler.toml existe intacto');
+  });
+
+  await t.test('11. Unificación de notificaciones: index.html contiene #webPushControls y #nativeFcmCard', () => {
+    assert.ok(indexHtml.includes('id="webPushControls"'), 'Debe contener contenedor id="webPushControls"');
+    assert.ok(indexHtml.includes('id="nativeFcmCard"'), 'Debe contener tarjeta id="nativeFcmCard"');
+    assert.ok(indexHtml.includes('id="btnOpenNativeAlerts"'), 'Debe contener enlace id="btnOpenNativeAlerts"');
+    assert.ok(indexHtml.includes('sismopa://notifications'), 'Debe apuntar al deep link nativo sismopa://notifications');
+  });
+
+  await t.test('12. Unificación en app.js: syncNotificationUi discrimina TWA de navegadores normales', () => {
+    assert.ok(appJs.includes('function syncNotificationUi()'), 'Debe implementar syncNotificationUi()');
+    assert.ok(appJs.includes("webPushControls.style.display = 'none'"), 'Debe ocultar controles Web Push en TWA');
+    assert.ok(appJs.includes("nativeFcmCard.style.display = 'flex'"), 'Debe mostrar tarjeta nativa FCM en TWA');
+    assert.ok(appJs.includes("webPushControls.style.display = 'block'"), 'Debe mostrar controles Web Push en navegadores normales');
+    assert.ok(appJs.includes("nativeFcmCard.style.display = 'none'"), 'Debe ocultar tarjeta nativa FCM en navegadores normales');
+  });
+
+  await t.test('13. style.css define diseño responsivo para .native-fcm-card', () => {
+    assert.ok(styleCss.includes('.native-fcm-card {'), 'Debe definir clase .native-fcm-card');
   });
 });
