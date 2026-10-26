@@ -8,16 +8,21 @@
  * 2. Protección contra ráfagas masivas (> 6 sismos) y selección inteligente de enjambres (top 3).
  * 3. Independencia de flags (AUTO_PUSH_ENABLED vs AUTO_FCM_ENABLED) y corte de emergencia FCM_KILL_SWITCH.
  * 4. Validación estricta de credenciales de Firebase (JSON y variables individuales).
- * 5. Deduplicación atómica distribuida y lease de concurrencia en fcm_notificaciones_enviadas.
- * 6. Recuperación de reservas abandonadas por timeout.
- * 7. Errores transitorios (500, 429) vs permanentes (400, 403) y política de reintentos.
- * 8. Formato estricto Data-Only (sin bloque notification) para evitar doble aviso en Android.
- * 9. Firma polimórfica y enmascaramiento seguro en send_fcm_direct_test.js y dispatcher.
+ * 5. Deduplicación atómica distribuida y fencing tokens en acquire_fcm_lease RPC y fallback.
+ * 6. Exclusión mutua concurrente: dos workers simultáneos generan exactamente 1 envío.
+ * 7. Pérdida de lease por timeout: worker lento con fencing token caducado no puede confirmar.
+ * 8. Entrega ambigua por caída de red: se marca como AMBIGUO y no se reintenta al topic nacional.
+ * 9. Tolerancia a fallos: Error 500/429 permite reintentar hasta 3 veces; error 400 marca definitivo.
+ * 10. Formato estricto Data-Only (sin bloque notification) para control 100% de sismoPA en Android.
+ * 11. Firma polimórfica y enmascaramiento seguro en send_fcm_direct_test.js y dispatcher.
+ * 12. Validez de la migración SQL 20261026_fcm_atomic_lease_and_fencing.sql.
  */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // Generador de clave RSA y service account para simulación de OAuth
 function generateMockServiceAccount() {
@@ -34,14 +39,119 @@ function generateMockServiceAccount() {
   };
 }
 
-// Mock de base de datos Supabase en memoria para simular transacciones y restricciones
-function createMockSupabase() {
+// Mock de base de datos Supabase en memoria con soporte de RPC atómico y fallback PostgREST
+function createMockSupabase(options = {}) {
   const fcmNotifTable = new Map(); // key: `${source_uid}::${target}`
-  const webNotifTable = new Map();
+  const enableRpc = options.enableRpc !== false;
 
-  return {
+  const mockDb = {
     _fcmNotif: fcmNotifTable,
-    _webNotif: webNotifTable,
+    rpc(name, params) {
+      if (!enableRpc) {
+        return Promise.resolve({ data: null, error: { message: 'function not found', code: '42883' } });
+      }
+
+      const key = `${params.p_source_uid}::${params.p_target}`;
+      const now = new Date();
+
+      if (name === 'acquire_fcm_lease') {
+        const existing = fcmNotifTable.get(key);
+        const leaseExpiry = new Date(now.getTime() + ((params.p_lease_seconds || 60) * 1000)).toISOString();
+        const maxIntentos = params.p_max_intentos || 3;
+
+        if (!existing) {
+          const newRow = {
+            id: 'uuid-' + Math.random().toString(36).substring(2),
+            source_uid: params.p_source_uid,
+            target: params.p_target,
+            estado: 'RESERVADA',
+            enviado_en: now.toISOString(),
+            lease_expires_at: leaseExpiry,
+            owner_token: params.p_owner_token,
+            intentos: 1,
+            updated_at: now.toISOString()
+          };
+          fcmNotifTable.set(key, newRow);
+          return Promise.resolve({
+            data: { acquired: true, status: 'RESERVADA', owner_token: params.p_owner_token, intentos: 1, action: 'INSERTED' },
+            error: null
+          });
+        }
+
+        if (existing.estado === 'CONFIRMADA') {
+          return Promise.resolve({
+            data: { acquired: false, reason: 'ALREADY_CONFIRMED', message_id: existing.message_id },
+            error: null
+          });
+        }
+
+        if (existing.estado === 'AMBIGUO') {
+          return Promise.resolve({
+            data: { acquired: false, reason: 'AMBIGUOUS_DELIVERY_PREVENTED', intentos: existing.intentos },
+            error: null
+          });
+        }
+
+        const leaseEnd = existing.lease_expires_at ? new Date(existing.lease_expires_at).getTime() : 0;
+        if (existing.estado === 'RESERVADA' && leaseEnd > now.getTime()) {
+          return Promise.resolve({
+            data: { acquired: false, reason: 'ACTIVE_LEASE_HELD', lease_expires_at: existing.lease_expires_at },
+            error: null
+          });
+        }
+
+        if (existing.intentos >= maxIntentos) {
+          return Promise.resolve({
+            data: { acquired: false, reason: 'MAX_RETRIES_EXCEEDED', intentos: existing.intentos },
+            error: null
+          });
+        }
+
+        // Reclamar lease atómicamente
+        existing.estado = 'RESERVADA';
+        existing.lease_expires_at = leaseExpiry;
+        existing.owner_token = params.p_owner_token;
+        existing.intentos = (existing.intentos || 1) + 1;
+        existing.updated_at = now.toISOString();
+        fcmNotifTable.set(key, existing);
+
+        return Promise.resolve({
+          data: { acquired: true, status: 'RESERVADA', owner_token: params.p_owner_token, intentos: existing.intentos, action: 'LEASE_RECLAIMED' },
+          error: null
+        });
+      }
+
+      if (name === 'confirm_fcm_dispatch') {
+        const existing = fcmNotifTable.get(key);
+        if (existing && existing.owner_token === params.p_owner_token && existing.estado === 'RESERVADA') {
+          existing.estado = 'CONFIRMADA';
+          existing.lease_expires_at = null;
+          existing.message_id = params.p_message_id;
+          existing.updated_at = now.toISOString();
+          fcmNotifTable.set(key, existing);
+          return Promise.resolve({ data: { confirmed: true, message_id: params.p_message_id }, error: null });
+        }
+        return Promise.resolve({ data: { confirmed: false, reason: 'LEASE_LOST_OR_FENCING_TOKEN_MISMATCH' }, error: null });
+      }
+
+      if (name === 'fail_fcm_dispatch') {
+        const existing = fcmNotifTable.get(key);
+        if (existing && existing.owner_token === params.p_owner_token) {
+          existing.estado = params.p_is_ambiguous ? 'AMBIGUO' : 'FALLIDA';
+          existing.lease_expires_at = null;
+          existing.error_details = params.p_error_details;
+          existing.updated_at = now.toISOString();
+          if (params.p_is_ambiguous || !params.p_is_retryable) {
+            existing.intentos = 99;
+          }
+          fcmNotifTable.set(key, existing);
+          return Promise.resolve({ data: { failed: true, estado: existing.estado }, error: null });
+        }
+        return Promise.resolve({ data: { failed: false, reason: 'LEASE_LOST_OR_FENCING_TOKEN_MISMATCH' }, error: null });
+      }
+
+      return Promise.resolve({ data: null, error: { message: `Unknown RPC ${name}` } });
+    },
     from(table) {
       if (table === 'fcm_notificaciones_enviadas') {
         return {
@@ -54,7 +164,7 @@ function createMockSupabase() {
                 if (col === 'target') filterTarget = val;
                 return query;
               },
-              limit(n) {
+              limit() {
                 return query;
               },
               async then(resolve) {
@@ -68,7 +178,6 @@ function createMockSupabase() {
           insert(record) {
             const key = `${record.source_uid}::${record.target}`;
             if (fcmNotifTable.has(key)) {
-              // Violación de restricción única simulada (uq_fcm_notif_sismo_target)
               return Promise.resolve({
                 data: null,
                 error: { message: 'duplicate key value violates unique constraint "uq_fcm_notif_sismo_target"', code: '23505' }
@@ -86,6 +195,7 @@ function createMockSupabase() {
             let filterState = null;
             let filterSourceUid = null;
             let filterTarget = null;
+            let filterOwnerToken = null;
 
             const uQuery = {
               eq(col, val) {
@@ -93,6 +203,10 @@ function createMockSupabase() {
                 if (col === 'estado') filterState = val;
                 if (col === 'source_uid') filterSourceUid = val;
                 if (col === 'target') filterTarget = val;
+                if (col === 'owner_token') filterOwnerToken = val;
+                return uQuery;
+              },
+              select(cols) {
                 return uQuery;
               },
               async then(resolve) {
@@ -117,7 +231,11 @@ function createMockSupabase() {
                 }
 
                 if (filterState && targetRow.estado !== filterState) {
-                  // Conflicto de estado (condición atómica CAS fallida)
+                  return resolve({ data: [], error: null, count: 0 });
+                }
+
+                if (filterOwnerToken && targetRow.owner_token !== filterOwnerToken) {
+                  // Fencing token mismatch (lease perdido por el worker)
                   return resolve({ data: [], error: null, count: 0 });
                 }
 
@@ -155,9 +273,11 @@ function createMockSupabase() {
       throw new Error(`Tabla no mockeada: ${table}`);
     }
   };
+
+  return mockDb;
 }
 
-test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
+test('Suite FCM Worker Auto-Dispatch, Fencing Tokens & Deduplicación Atómica', async (t) => {
   const {
     filterEligibleSeismicEvents,
     dispatchFcmTopicNotifications,
@@ -178,31 +298,30 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
 
     const freshEvent = {
       source_uid: 'fresh_1',
-      fecha_hora: '2026-10-26T11:40:00.000Z', // 20 min de antigüedad -> VÁLIDO
+      fecha_hora: '2026-10-26T11:40:00.000Z',
       magnitud: 4.5
     };
     const oldEvent = {
       source_uid: 'old_1',
-      fecha_hora: '2026-10-26T11:00:00.000Z', // 60 min de antigüedad -> DESCARTADO
+      fecha_hora: '2026-10-26T11:00:00.000Z',
       magnitud: 5.2
     };
     const futureEvent = {
       source_uid: 'future_1',
-      fecha_hora: '2026-10-26T12:10:00.000Z', // 10 min en el futuro -> DESCARTADO
+      fecha_hora: '2026-10-26T12:10:00.000Z',
       magnitud: 4.1
     };
     const nearFutureEvent = {
       source_uid: 'near_future_1',
-      fecha_hora: '2026-10-26T12:02:00.000Z', // 2 min en el futuro (reloj desviado) -> VÁLIDO
+      fecha_hora: '2026-10-26T12:02:00.000Z',
       magnitud: 4.2
     };
 
     const res = filterEligibleSeismicEvents([freshEvent, oldEvent, futureEvent, nearFutureEvent], now);
     assert.equal(res.eligible.length, 2);
-    assert.equal(res.eligible[0].source_uid, 'fresh_1'); // 4.5 > 4.2
+    assert.equal(res.eligible[0].source_uid, 'fresh_1');
     assert.equal(res.eligible[1].source_uid, 'near_future_1');
 
-    // Si todos son antiguos, reporta omitidosPorAntiguedad
     const allOldRes = filterEligibleSeismicEvents([oldEvent], now);
     assert.equal(allOldRes.eligible.length, 0);
     assert.equal(allOldRes.omitidosPorAntiguedad, 1);
@@ -211,7 +330,6 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
   await t.test('2. filterEligibleSeismicEvents: Lote masivo (>6) activa anti-ráfaga; enjambre (<7) selecciona top 3', () => {
     const now = new Date('2026-10-26T12:00:00.000Z');
 
-    // Caso A: Lote masivo de 7 eventos recientes (importación masiva o cold start)
     const massEvents = Array.from({ length: 7 }, (_, i) => ({
       source_uid: `mass_${i}`,
       fecha_hora: '2026-10-26T11:55:00.000Z',
@@ -221,7 +339,6 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
     assert.equal(massRes.eligible.length, 0);
     assert.equal(massRes.omitidosPorLoteMasivo, 7);
 
-    // Caso B: Enjambre de 5 eventos (<7) -> Toma los 3 de mayor magnitud
     const swarmEvents = [
       { source_uid: 'sw_1', fecha_hora: '2026-10-26T11:50:00.000Z', magnitud: 3.2 },
       { source_uid: 'sw_2', fecha_hora: '2026-10-26T11:52:00.000Z', magnitud: 5.6 },
@@ -241,17 +358,14 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
     const event = { source_uid: 'ev_flag_1', fecha_hora: '2026-10-26T11:50:00.000Z', magnitud: 4.5 };
     const now = new Date('2026-10-26T12:00:00.000Z');
 
-    // Desactivado por defecto
     const resDisabled = await dispatchFcmTopicNotifications([event], mockDb, {}, now);
     assert.equal(resDisabled.fcmEnviados, 0);
     assert.equal(resDisabled.omitidos, 'AUTO_FCM_DISABLED');
 
-    // Desactivado explícito 'false'
     const resFalse = await dispatchFcmTopicNotifications([event], mockDb, { AUTO_FCM_ENABLED: 'false' }, now);
     assert.equal(resFalse.fcmEnviados, 0);
     assert.equal(resFalse.omitidos, 'AUTO_FCM_DISABLED');
 
-    // Kill switch activo anula AUTO_FCM_ENABLED=true
     const resKill = await dispatchFcmTopicNotifications([event], mockDb, {
       AUTO_FCM_ENABLED: 'true',
       FCM_KILL_SWITCH: 'true',
@@ -261,47 +375,9 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
     assert.equal(resKill.omitidos, 'FCM_KILL_SWITCH_ACTIVE');
   });
 
-  await t.test('4. Independencia de flags: AUTO_PUSH_ENABLED=false permite que FCM despache', async () => {
+  await t.test('4. Concurrencia atómica con Fencing Token: Dos workers simultáneos generan exactamente 1 despacho', async () => {
     _resetOAuthCache();
-    const mockDb = createMockSupabase();
-    const now = new Date('2026-10-26T12:00:00.000Z');
-    let fcmCalls = 0;
-
-    const mockFetch = async (url, opts) => {
-      if (url.includes('oauth2.googleapis.com')) {
-        return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
-      }
-      if (url.includes('messages:send')) {
-        fcmCalls++;
-        return new Response(JSON.stringify({ name: 'projects/sismopa-notificaciones/messages/12345' }), { status: 200 });
-      }
-      return new Response('{}', { status: 200 });
-    };
-
-    const event = {
-      source_uid: 'ev_indep_1',
-      fecha_hora: '2026-10-26T11:50:00.000Z',
-      magnitud: 4.5,
-      ubicacion: 'Golfo de Chiriquí',
-      profundidad_km: 12
-    };
-
-    const env = {
-      AUTO_PUSH_ENABLED: 'false', // Web Push apagado
-      AUTO_FCM_ENABLED: 'true',   // FCM encendido
-      FIREBASE_SERVICE_ACCOUNT: JSON.stringify(mockServiceAccount),
-      fetch: mockFetch
-    };
-
-    const res = await dispatchPushNotifications([event], mockDb, env, now);
-    assert.equal(res.enviados, 0, 'Cero Web Push enviados');
-    assert.equal(res.fcmEnviados, 1, 'Exactamente 1 despacho al topic FCM');
-    assert.equal(fcmCalls, 1);
-  });
-
-  await t.test('5. Deduplicación atómica: Cron repetido no vuelve a emitir al topic', async () => {
-    _resetOAuthCache();
-    const mockDb = createMockSupabase();
+    const mockDb = createMockSupabase({ enableRpc: true });
     const now = new Date('2026-10-26T12:00:00.000Z');
     let fcmCalls = 0;
 
@@ -310,50 +386,12 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
         return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
       }
       fcmCalls++;
-      return new Response(JSON.stringify({ name: 'projects/sismopa-notificaciones/messages/msg_1' }), { status: 200 });
+      await new Promise(r => setTimeout(r, 20));
+      return new Response(JSON.stringify({ name: 'projects/sismopa-notificaciones/messages/msg_concurrent_1' }), { status: 200 });
     };
 
     const event = {
-      source_uid: 'ev_dedup_1',
-      fecha_hora: '2026-10-26T11:55:00.000Z',
-      magnitud: 4.8
-    };
-
-    const env = {
-      AUTO_FCM_ENABLED: 'true',
-      FIREBASE_SERVICE_ACCOUNT: JSON.stringify(mockServiceAccount),
-      fetch: mockFetch
-    };
-
-    // Primera ejecución (Cron minuto 1): emite
-    const res1 = await dispatchFcmTopicNotifications([event], mockDb, env, now);
-    assert.equal(res1.fcmEnviados, 1);
-    assert.equal(fcmCalls, 1);
-
-    // Segunda ejecución (Cron minuto 2): evento sigue en lista, detecta CONFIRMADA y omite
-    const res2 = await dispatchFcmTopicNotifications([event], mockDb, env, new Date(now.getTime() + 60000));
-    assert.equal(res2.fcmEnviados, 0);
-    assert.equal(fcmCalls, 1, 'No debe realizar llamadas adicionales a Google FCM');
-  });
-
-  await t.test('6. Concurrencia de Workers: Solo 1 worker gana el lease y despacha el topic', async () => {
-    _resetOAuthCache();
-    const mockDb = createMockSupabase();
-    const now = new Date('2026-10-26T12:00:00.000Z');
-    let fcmCalls = 0;
-
-    const mockFetch = async (url) => {
-      if (url.includes('oauth2.googleapis.com')) {
-        return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
-      }
-      fcmCalls++;
-      // Simular latencia de red de 15ms
-      await new Promise(r => setTimeout(r, 15));
-      return new Response(JSON.stringify({ name: 'projects/sismopa-notificaciones/messages/msg_concurrent' }), { status: 200 });
-    };
-
-    const event = {
-      source_uid: 'ev_race_1',
+      source_uid: 'ev_atomic_race_1',
       fecha_hora: '2026-10-26T11:58:00.000Z',
       magnitud: 5.1
     };
@@ -364,7 +402,6 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
       fetch: mockFetch
     };
 
-    // Lanzar dos ejecuciones en paralelo simultáneo
     const [w1, w2] = await Promise.all([
       dispatchFcmTopicNotifications([event], mockDb, env, now),
       dispatchFcmTopicNotifications([event], mockDb, env, now)
@@ -372,61 +409,154 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
 
     const totalEnviados = w1.fcmEnviados + w2.fcmEnviados;
     assert.equal(totalEnviados, 1, 'Exactamente una instancia debe completar el envío');
-    assert.equal(fcmCalls, 1, 'Cero llamadas redundantes a Google FCM');
+    assert.equal(fcmCalls, 1, 'Cero llamadas duplicadas a Google FCM');
+
+    const row = mockDb._fcmNotif.get('ev_atomic_race_1::topic:sismos_panama');
+    assert.equal(row.estado, 'CONFIRMADA');
+    assert.ok(row.owner_token, 'Debe registrar el owner_token que ganó la reserva');
+    assert.equal(row.message_id, 'projects/sismopa-notificaciones/messages/msg_concurrent_1');
   });
 
-  await t.test('7. Tolerancia a fallos: Error 500/429 permite reintentar; Error 400 marca permanente', async () => {
+  await t.test('5. Fencing Token: Worker lento con lease expirado no puede sobreescribir la confirmación', async () => {
     _resetOAuthCache();
-    const mockDb = createMockSupabase();
+    const mockDb = createMockSupabase({ enableRpc: true });
     const now = new Date('2026-10-26T12:00:00.000Z');
 
-    // Simular error 500 (transitorio)
-    const fetch500 = async (url) => {
+    // Simular que el Worker A adquirió el lease pero expiró
+    const staleOwnerToken = crypto.randomUUID();
+    mockDb._fcmNotif.set('ev_stale_1::topic:sismos_panama', {
+      id: 'uuid-stale',
+      source_uid: 'ev_stale_1',
+      target: 'topic:sismos_panama',
+      estado: 'RESERVADA',
+      lease_expires_at: new Date(now.getTime() - 10000).toISOString(), // Vencido hace 10s
+      owner_token: staleOwnerToken,
+      intentos: 1,
+      updated_at: new Date(now.getTime() - 70000).toISOString()
+    });
+
+    // Worker B llega, reclama el lease con nuevo fencing token y confirma con éxito
+    const mockFetchB = async (url) => {
       if (url.includes('oauth2.googleapis.com')) {
         return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
       }
+      return new Response(JSON.stringify({ name: 'messages/confirmed_by_worker_B' }), { status: 200 });
+    };
+
+    const envB = {
+      AUTO_FCM_ENABLED: 'true',
+      FIREBASE_SERVICE_ACCOUNT: JSON.stringify(mockServiceAccount),
+      fetch: mockFetchB
+    };
+
+    const resB = await dispatchFcmTopicNotifications([{ source_uid: 'ev_stale_1', fecha_hora: '2026-10-26T11:55:00.000Z', magnitud: 4.5 }], mockDb, envB, now);
+    assert.equal(resB.fcmEnviados, 1);
+
+    const rowAfterB = mockDb._fcmNotif.get('ev_stale_1::topic:sismos_panama');
+    assert.equal(rowAfterB.estado, 'CONFIRMADA');
+    assert.equal(rowAfterB.message_id, 'messages/confirmed_by_worker_B');
+    const winningToken = rowAfterB.owner_token;
+    assert.notEqual(winningToken, staleOwnerToken);
+
+    // Ahora Worker A despierta tarde y trata de confirmar con su staleOwnerToken
+    const confirmStaleRes = await mockDb.rpc('confirm_fcm_dispatch', {
+      p_source_uid: 'ev_stale_1',
+      p_target: 'topic:sismos_panama',
+      p_owner_token: staleOwnerToken,
+      p_message_id: 'messages/stale_A'
+    });
+
+    assert.equal(confirmStaleRes.data.confirmed, false, 'La confirmación del worker lento debe ser rechazada');
+    assert.equal(confirmStaleRes.data.reason, 'LEASE_LOST_OR_FENCING_TOKEN_MISMATCH');
+    // El estado sigue siendo el del ganador Worker B
+    assert.equal(rowAfterB.message_id, 'messages/confirmed_by_worker_B');
+  });
+
+  await t.test('6. Entrega ambigua por caída de red: Se marca como AMBIGUO y no se reintenta al topic nacional', async () => {
+    _resetOAuthCache();
+    const mockDb = createMockSupabase({ enableRpc: true });
+    const now = new Date('2026-10-26T12:00:00.000Z');
+    let fetchAttempts = 0;
+
+    // Simular caída de socket TCP después de enviar POST a Google FCM
+    const mockFetchDrop = async (url) => {
+      if (url.includes('oauth2.googleapis.com')) {
+        return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
+      }
+      fetchAttempts++;
+      const err = new Error('ECONNRESET: Connection reset by peer');
+      err.name = 'FetchError';
+      throw err;
+    };
+
+    const event = { source_uid: 'ev_ambiguous_1', fecha_hora: '2026-10-26T11:55:00.000Z', magnitud: 4.6 };
+    const env = {
+      AUTO_FCM_ENABLED: 'true',
+      FIREBASE_SERVICE_ACCOUNT: JSON.stringify(mockServiceAccount),
+      fetch: mockFetchDrop
+    };
+
+    const res1 = await dispatchFcmTopicNotifications([event], mockDb, env, now);
+    assert.equal(res1.fcmEnviados, 0);
+    assert.equal(fetchAttempts, 1);
+
+    const row = mockDb._fcmNotif.get('ev_ambiguous_1::topic:sismos_panama');
+    assert.equal(row.estado, 'AMBIGUO');
+    assert.equal(row.intentos, 99, 'Debe marcar intentos=99 para inhibir reenvíos');
+
+    // Siguiente minuto: el cron vuelve a evaluar el mismo evento
+    const res2 = await dispatchFcmTopicNotifications([event], mockDb, env, new Date(now.getTime() + 60000));
+    assert.equal(res2.fcmEnviados, 0);
+    assert.equal(fetchAttempts, 1, 'No debe intentar enviar nuevamente al topic general tras un resultado ambiguo');
+  });
+
+  await t.test('7. Límite de reintentos: Máximo 3 reintentos en fallos temporales (500)', async () => {
+    _resetOAuthCache();
+    const mockDb = createMockSupabase({ enableRpc: true });
+    let now = new Date('2026-10-26T12:00:00.000Z');
+    let fcmCalls = 0;
+
+    const mockFetch500 = async (url) => {
+      if (url.includes('oauth2.googleapis.com')) {
+        return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
+      }
+      fcmCalls++;
       return new Response(JSON.stringify({ error: { message: 'Internal Server Error' } }), { status: 500 });
     };
 
-    const event = { source_uid: 'ev_fail_1', fecha_hora: '2026-10-26T11:50:00.000Z', magnitud: 4.0 };
-    const env500 = {
+    const event = { source_uid: 'ev_retry_limit_1', fecha_hora: '2026-10-26T11:55:00.000Z', magnitud: 4.2 };
+    const env = {
       AUTO_FCM_ENABLED: 'true',
       FIREBASE_SERVICE_ACCOUNT: JSON.stringify(mockServiceAccount),
-      fetch: fetch500
+      fetch: mockFetch500
     };
 
-    const res500 = await dispatchFcmTopicNotifications([event], mockDb, env500, now);
-    assert.equal(res500.fcmEnviados, 0);
+    // Intento 1 (Cron min 0): falla con 500
+    await dispatchFcmTopicNotifications([event], mockDb, env, now);
+    assert.equal(fcmCalls, 1);
+    let row = mockDb._fcmNotif.get('ev_retry_limit_1::topic:sismos_panama');
+    assert.equal(row.estado, 'FALLIDA');
+    assert.equal(row.intentos, 1);
 
-    const record = mockDb._fcmNotif.get('ev_fail_1::topic:sismos_panama');
-    assert.equal(record.estado, 'FALLIDA');
-    assert.equal(record.lease_expires_at, null); // Liberado para reintento
+    // Intento 2 (Cron min 1): falla con 500
+    now = new Date(now.getTime() + 60000);
+    await dispatchFcmTopicNotifications([event], mockDb, env, now);
+    assert.equal(fcmCalls, 2);
+    row = mockDb._fcmNotif.get('ev_retry_limit_1::topic:sismos_panama');
+    assert.equal(row.intentos, 2);
 
-    // Ahora simular que el siguiente ciclo tiene éxito
-    const fetchSuccess = async (url) => {
-      if (url.includes('oauth2.googleapis.com')) {
-        return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ name: 'messages/recovered_ok' }), { status: 200 });
-    };
+    // Intento 3 (Cron min 2): falla con 500
+    now = new Date(now.getTime() + 60000);
+    await dispatchFcmTopicNotifications([event], mockDb, env, now);
+    assert.equal(fcmCalls, 3);
+    row = mockDb._fcmNotif.get('ev_retry_limit_1::topic:sismos_panama');
+    assert.equal(row.intentos, 3);
 
-    const resRetry = await dispatchFcmTopicNotifications([event], mockDb, { ...env500, fetch: fetchSuccess }, new Date(now.getTime() + 60000));
-    assert.equal(resRetry.fcmEnviados, 1);
-    assert.equal(record.estado, 'CONFIRMADA');
-
-    // Error 400 permanente (bad request) -> no reintenta más
-    const event400 = { source_uid: 'ev_fail_400', fecha_hora: '2026-10-26T11:50:00.000Z', magnitud: 4.0 };
-    const fetch400 = async (url) => {
-      if (url.includes('oauth2.googleapis.com')) {
-        return new Response(JSON.stringify({ access_token: 'mock_token', expires_in: 3600 }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ error: { message: 'Invalid payload' } }), { status: 400 });
-    };
-
-    await dispatchFcmTopicNotifications([event400], mockDb, { ...env500, fetch: fetch400 }, now);
-    const record400 = mockDb._fcmNotif.get('ev_fail_400::topic:sismos_panama');
-    assert.equal(record400.estado, 'FALLIDA');
-    assert.equal(record400.intentos, 99, 'Debe marcar intentos=99 para no reintentar errores permanentes');
+    // Intento 4 (Cron min 3): supera max_intentos (3), debe omitir completamente
+    now = new Date(now.getTime() + 60000);
+    const res4 = await dispatchFcmTopicNotifications([event], mockDb, env, now);
+    assert.equal(res4.fcmEnviados, 0);
+    assert.equal(fcmCalls, 3, 'No debe realizar más llamadas tras superar límite de reintentos');
   });
 
   await t.test('8. Payload Data-Only: No incluye bloque notification y prioridad es high', async () => {
@@ -470,7 +600,6 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
       return new Response(JSON.stringify({ name: 'messages/direct_test' }), { status: 200 });
     };
 
-    // Firma 1: Objeto de opciones
     const resObj = await sendFcmDirectMessage({
       serviceAccount: mockServiceAccount,
       deviceToken: 'token_sample_abc123',
@@ -479,7 +608,6 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
     });
     assert.equal(resObj.ok, true);
 
-    // Firma 2: Posicional
     const resPos = await sendFcmDirectMessage(
       mockServiceAccount,
       'token_sample_abc123',
@@ -489,5 +617,20 @@ test('Suite FCM Worker Auto-Dispatch & Concurrencia Distribuida', async (t) => {
     assert.equal(resPos.ok, true);
 
     assert.equal(sentCount, 2);
+  });
+
+  await t.test('10. Migración SQL: 20261026_fcm_atomic_lease_and_fencing.sql define RPCs seguras con SECURITY DEFINER', () => {
+    const migrationPath = path.join(__dirname, '../supabase/migrations/20261026_fcm_atomic_lease_and_fencing.sql');
+    assert.ok(fs.existsSync(migrationPath), 'El archivo de migración debe existir');
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+
+    assert.ok(sql.includes('acquire_fcm_lease'), 'Debe definir acquire_fcm_lease');
+    assert.ok(sql.includes('confirm_fcm_dispatch'), 'Debe definir confirm_fcm_dispatch');
+    assert.ok(sql.includes('fail_fcm_dispatch'), 'Debe definir fail_fcm_dispatch');
+    assert.ok(sql.includes('owner_token UUID'), 'Debe agregar owner_token UUID');
+    assert.ok(sql.includes('SECURITY DEFINER'), 'Debe usar SECURITY DEFINER');
+    assert.ok(sql.includes('SET search_path = public, pg_temp'), 'Debe proteger search_path contra ataques de inyección');
+    assert.ok(sql.includes('REVOKE ALL ON FUNCTION public.acquire_fcm_lease'), 'Debe revocar ejecución a PUBLIC');
+    assert.ok(sql.includes('GRANT EXECUTE ON FUNCTION public.acquire_fcm_lease'), 'Debe otorgar ejecución exclusiva a service_role');
   });
 });

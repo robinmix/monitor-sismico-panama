@@ -13,19 +13,25 @@ crons = ["* * * * *"]
 VAPID_PUBLIC_KEY = "BMMtfOw_OoVIt6bjp70GMXMn-oMACjTCn870_Gn4QCQbhiM43kHuP2oto_Uu6d7Az2TOkDvp7V1RJBd-oQfSijM"
 VAPID_SUBJECT = "mailto:rbtservices507@gmail.com"
 AUTO_PUSH_ENABLED = "false"
+AUTO_FCM_ENABLED = "false"
+FCM_KILL_SWITCH = "false"
 
 # INSTRUCCIONES DE ACTIVACIÓN FUTURA DE NOTIFICACIONES AUTOMÁTICAS:
-# Para activar el despacho automático masivo de nuevos sismos en producción:
-# 1. Modificar en este archivo: AUTO_PUSH_ENABLED = "true"
-# 2. Desplegar mediante: npx wrangler deploy
-# IMPORTANTE: NO utilizar `wrangler secret put AUTO_PUSH_ENABLED` porque entrará en
-# conflicto o será sobrescrito por la variable declarada en la sección [vars].
+# Para activar el despacho automático de nuevos sismos en producción:
+# 1. Web Push (navegadores): AUTO_PUSH_ENABLED = "true"
+# 2. FCM Nativo (Android TWA): AUTO_FCM_ENABLED = "true"
+# 3. Corte de emergencia (Kill Switch): FCM_KILL_SWITCH = "true" detiene todo envío FCM de inmediato.
+#
+# Desplegar mediante: npx wrangler deploy
+# IMPORTANTE: NO utilizar `wrangler secret put AUTO_PUSH_ENABLED` ni `AUTO_FCM_ENABLED` porque entrarán
+# en conflicto o serán sobrescritos por las variables declaradas en la sección [vars].
 
 # NOTA DE SEGURIDAD PARA SECRETOS:
 # Las siguientes variables son SECRETOS y NO deben incluirse en este archivo:
 # - SUPABASE_URL
 # - SUPABASE_SECRET_KEY
 # - VAPID_PRIVATE_KEY_JWK
+# - FIREBASE_SERVICE_ACCOUNT (JSON de cuenta de servicio oficial sismopa-fcm-sender)
 #
 # Cloudflare Workers conserva automáticamente los secretos cifrados configurados
 # desde el Dashboard o mediante `wrangler secret put`, siempre que no se definan

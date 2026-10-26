@@ -147,7 +147,21 @@ export async function sendFcmTopicMessage(arg1, arg2, arg3, arg4) {
     throw new Error('Falta project_id en la configuración de Firebase');
   }
 
-  const accessToken = await getGoogleOAuthToken(serviceAccount, customFetch);
+  let accessToken;
+  try {
+    accessToken = await getGoogleOAuthToken(serviceAccount, customFetch);
+  } catch (oauthErr) {
+    return {
+      ok: false,
+      status: 401,
+      oauthError: true,
+      retryable: false,
+      ambiguous: false,
+      error: `Error de autenticación OAuth 2.0: ${oauthErr.message}`,
+      details: { name: oauthErr.name, message: oauthErr.message }
+    };
+  }
+
   const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
   const title = sismoPayload.title || `Sismo M ${sismoPayload.magnitud || '?'} - ${sismoPayload.lugar || 'Panamá'}`;
@@ -175,22 +189,40 @@ export async function sendFcmTopicMessage(arg1, arg2, arg3, arg4) {
     }
   };
 
-  const res = await customFetch(fcmUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`
-    },
-    body: JSON.stringify(message)
-  });
+  let res;
+  try {
+    res = await customFetch(fcmUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(message)
+    });
+  } catch (netErr) {
+    // Error de red, caída de socket o timeout mientras se esperaba la respuesta de Google FCM.
+    // Esto es un resultado de entrega AMBIGUO: Google pudo haber recibido el mensaje y
+    // comenzado la distribución masiva al topic. Reintentar podría duplicar el aviso nacional.
+    return {
+      ok: false,
+      status: 0,
+      ambiguous: true,
+      retryable: false,
+      error: `Error de red con Google FCM (entrega ambigua): ${netErr.message}`,
+      details: { name: netErr.name, message: netErr.message }
+    };
+  }
 
   const resData = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    const retryAfterHeader = res.headers && typeof res.headers.get === 'function' ? res.headers.get('retry-after') : null;
     return {
       ok: false,
       status: res.status,
       retryable: isRetryableFcmStatus(res.status),
+      ambiguous: false,
+      retryAfter: retryAfterHeader,
       error: resData.error?.message || `FCM Error HTTP ${res.status}`,
       details: resData
     };
@@ -199,6 +231,7 @@ export async function sendFcmTopicMessage(arg1, arg2, arg3, arg4) {
   return {
     ok: true,
     status: 200,
+    ambiguous: false,
     messageId: resData.name
   };
 }
@@ -234,7 +267,21 @@ export async function sendFcmDirectMessage(arg1, arg2, arg3, arg4) {
     throw new Error('Falta project_id en la configuración de Firebase');
   }
 
-  const accessToken = await getGoogleOAuthToken(serviceAccount, customFetch);
+  let accessToken;
+  try {
+    accessToken = await getGoogleOAuthToken(serviceAccount, customFetch);
+  } catch (oauthErr) {
+    return {
+      ok: false,
+      status: 401,
+      oauthError: true,
+      retryable: false,
+      ambiguous: false,
+      error: `Error de autenticación OAuth 2.0: ${oauthErr.message}`,
+      details: { name: oauthErr.name, message: oauthErr.message }
+    };
+  }
+
   const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
   const title = sismoPayload.title || `[PRUEBA] sismoPA — Notificación nativa`;
@@ -255,21 +302,36 @@ export async function sendFcmDirectMessage(arg1, arg2, arg3, arg4) {
     }
   };
 
-  const res = await customFetch(fcmUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`
-    },
-    body: JSON.stringify(message)
-  });
+  let res;
+  try {
+    res = await customFetch(fcmUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(message)
+    });
+  } catch (netErr) {
+    return {
+      ok: false,
+      status: 0,
+      ambiguous: true,
+      retryable: false,
+      error: `Error de red con Google FCM (entrega ambigua): ${netErr.message}`,
+      details: { name: netErr.name, message: netErr.message }
+    };
+  }
 
   const resData = await res.json().catch(() => ({}));
   if (!res.ok) {
+    const retryAfterHeader = res.headers && typeof res.headers.get === 'function' ? res.headers.get('retry-after') : null;
     return {
       ok: false,
       status: res.status,
       retryable: isRetryableFcmStatus(res.status),
+      ambiguous: false,
+      retryAfter: retryAfterHeader,
       error: resData.error?.message || `FCM Error HTTP ${res.status}`,
       details: resData
     };
@@ -278,6 +340,7 @@ export async function sendFcmDirectMessage(arg1, arg2, arg3, arg4) {
   return {
     ok: true,
     status: 200,
+    ambiguous: false,
     messageId: resData.name
   };
 }
