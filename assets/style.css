@@ -6353,12 +6353,22 @@ html[data-theme="light"] .identity-name b .brand-pa {
   height: 18px;
 }
 html[data-theme="light"] .notif-topbar-btn {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #475569;
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
 }
 html[data-theme="light"] .notif-topbar-btn:hover {
-  background: #e2e8f0;
-  color: #2563eb;
-  border-color: #94a3b8;
+  background: #DFE8F2 !important;
+  border-color: #1678D3 !important;
+  color: #1678D3 !important;
+}
+
+/* Ocultar sección notificaciones en pestañas móviles distintas a Más */
+@media (max-width: 640px) {
+  #dashboardView[data-active-tab="sismos"] > .section-notifications,
+  #dashboardView[data-active-tab="mapa"] > .section-notifications,
+  #dashboardView[data-active-tab="cerca"] > .section-notifications,
+  #dashboardView[data-active-tab="historial"] > .section-notifications {
+    display: none !important;
+  }
 }

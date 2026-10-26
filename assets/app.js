@@ -2194,7 +2194,8 @@
         '#historial': 'historial',
         '#historico': 'historial',
         '#mas': 'mas',
-        '#filtros': 'mas'
+        '#filtros': 'mas',
+        '#notificaciones': 'mas'
       };
       const targetTab = tabMap[hash] || 'sismos';
       setMobileTab(targetTab, false);
@@ -2202,6 +2203,11 @@
       if (hash === '#registros') {
         setTimeout(() => {
           const target = document.getElementById('registros');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        }, 80);
+      } else if (hash === '#notificaciones') {
+        setTimeout(() => {
+          const target = document.getElementById('notificaciones');
           if (target) target.scrollIntoView({ behavior: 'smooth' });
         }, 80);
       }
@@ -2439,6 +2445,70 @@
     let hash = 0;
     for (let i = 0; i < endpoint.length; i++) hash = ((hash << 5) - hash + endpoint.charCodeAt(i)) | 0;
     return 'sismopa_push_tok_' + Math.abs(hash);
+  }
+
+  /* ==========================================================================
+     DETECCIÓN DE ENTORNO ANDROID TWA
+     ========================================================================== */
+  function checkIsTwa() {
+    const isAndroidDevice = /Android/i.test(navigator.userAgent);
+    const hasAndroidAppReferrer = Boolean(document.referrer && document.referrer.startsWith('android-app://pa.sismodata.app'));
+    const hasTwaQuery = window.location.search.includes('platform=android_twa');
+    if (isAndroidDevice && (hasAndroidAppReferrer || hasTwaQuery)) {
+      try { localStorage.setItem('sismopa_twa_verified', '1'); } catch (e) {}
+    }
+    return isAndroidDevice && (
+      hasAndroidAppReferrer ||
+      hasTwaQuery ||
+      (window.matchMedia('(display-mode: standalone)').matches && localStorage.getItem('sismopa_twa_verified') === '1')
+    );
+  }
+
+  /* ==========================================================================
+     BOTÓN DE ACCESO RÁPIDO A NOTIFICACIONES EN CABECERA (TOPBAR BELL)
+     ========================================================================== */
+  function initTopbarNotificationButton() {
+    const notifTopbarBtn = document.getElementById('notifTopbarBtn');
+    if (!notifTopbarBtn) return;
+
+    const isTwa = checkIsTwa();
+
+    if (isTwa) {
+      notifTopbarBtn.href = 'sismopa://notifications';
+      notifTopbarBtn.setAttribute('aria-label', 'Abrir alertas sísmicas sismoPA');
+      notifTopbarBtn.setAttribute('title', 'Alertas sísmicas sismoPA');
+
+      notifTopbarBtn.addEventListener('click', (e) => {
+        try {
+          window.postMessage({ type: 'OPEN_SETTINGS' }, '*');
+        } catch (_) {}
+        window.location.href = 'sismopa://notifications';
+      });
+    } else {
+      notifTopbarBtn.href = '#notificaciones';
+      notifTopbarBtn.setAttribute('aria-label', 'Configurar alertas sísmicas');
+      notifTopbarBtn.setAttribute('title', 'Alertas sísmicas');
+
+      notifTopbarBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (typeof setMobileTab === 'function') {
+          setMobileTab('mas', true);
+        }
+        const notifSection = document.getElementById('notificaciones');
+        if (notifSection) {
+          setTimeout(() => {
+            notifSection.scrollIntoView({ behavior: 'smooth' });
+          }, 60);
+        }
+        if (window.location.hash !== '#notificaciones') {
+          try {
+            history.pushState(null, '', '#notificaciones');
+          } catch (_) {
+            window.location.hash = '#notificaciones';
+          }
+        }
+      });
+    }
   }
 
   async function initPushNotifications() {
@@ -2798,6 +2868,7 @@
   // Inicializar funciones nuevas al cargar
   window.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
+    initTopbarNotificationButton();
     initPushNotifications();
   });
 
