@@ -1,0 +1,250 @@
+/**
+ * sismoPA — Despacho oficial FCM HTTP v1 para Cloudflare Workers Free.
+ *
+ * Implementa autenticación OAuth 2.0 mediante RS256 usando Web Crypto API nativo
+ * sin dependencias externas pesadas, respetando el presupuesto de subrequests y CPU.
+ */
+
+let _cachedOAuthToken = null;
+let _cachedTokenExpiry = 0;
+
+/**
+ * Convierte una clave PEM PKCS#8 en un ArrayBuffer binario.
+ */
+function pemToArrayBuffer(pem) {
+  const b64 = pem
+    .replace(/-----BEGIN [A-Z ]+-----/g, '')
+    .replace(/-----END [A-Z ]+-----/g, '')
+    .replace(/[\r\n\s]/g, '');
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function base64UrlEncode(strOrBuffer) {
+  let b64;
+  if (typeof strOrBuffer === 'string') {
+    b64 = btoa(unescape(encodeURIComponent(strOrBuffer)));
+  } else {
+    const bytes = new Uint8Array(strOrBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    b64 = btoa(binary);
+  }
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Obtiene un Access Token de Google OAuth 2.0 válido por 1 hora.
+ * Utiliza caché en memoria para consumir a lo sumo 1 subrequest por hora.
+ */
+export async function getGoogleOAuthToken(serviceAccount, customFetch = fetch) {
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // Reutilizar token si le quedan más de 5 minutos de vigencia
+  if (_cachedOAuthToken && _cachedTokenExpiry > nowSec + 300) {
+    return _cachedOAuthToken;
+  }
+
+  const { client_email, private_key, token_uri = 'https://oauth2.googleapis.com/token' } = serviceAccount;
+  if (!client_email || !private_key) {
+    throw new Error('Credenciales de cuenta de servicio de Firebase incompletas (falta client_email o private_key)');
+  }
+
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claims = {
+    iss: client_email,
+    sub: client_email,
+    aud: token_uri,
+    iat: nowSec,
+    exp: nowSec + 3600,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging'
+  };
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedClaims = base64UrlEncode(JSON.stringify(claims));
+  const unsignedToken = `${encodedHeader}.${encodedClaims}`;
+
+  const binaryKey = pemToArrayBuffer(private_key);
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryKey,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(unsignedToken)
+  );
+
+  const signedJwt = `${unsignedToken}.${base64UrlEncode(signature)}`;
+
+  const res = await customFetch(token_uri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJwt}`
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    throw new Error(`Error obteniendo OAuth Token de Google: ${res.status} ${JSON.stringify(data)}`);
+  }
+
+  _cachedOAuthToken = data.access_token;
+  _cachedTokenExpiry = nowSec + (data.expires_in || 3600);
+  return _cachedOAuthToken;
+}
+
+/**
+ * Resetea el caché de OAuth (para pruebas unitarias).
+ */
+export function _resetOAuthCache() {
+  _cachedOAuthToken = null;
+  _cachedTokenExpiry = 0;
+}
+
+/**
+ * Envía una notificación masiva al topic FCM de sismoPA.
+ * Consume EXACTAMENTE 1 subrequest hacia Google FCM para todos los usuarios Android suscritos.
+ */
+export async function sendFcmTopicMessage(serviceAccount, topic, sismoPayload, customFetch = fetch) {
+  const projectId = serviceAccount.project_id;
+  if (!projectId) {
+    throw new Error('Falta project_id en la configuración de Firebase');
+  }
+
+  const accessToken = await getGoogleOAuthToken(serviceAccount, customFetch);
+  const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+
+  const title = sismoPayload.title || `Sismo M ${sismoPayload.magnitud || '?'} - ${sismoPayload.lugar || 'Panamá'}`;
+  const body = sismoPayload.body || `Prof: ${sismoPayload.profundidad || '?'} km | ${sismoPayload.hora_local || ''}. Toque para ver detalles.`;
+
+  const message = {
+    message: {
+      topic: topic.replace(/^\/topics\//, ''),
+      notification: {
+        title,
+        body
+      },
+      data: {
+        source_uid: String(sismoPayload.source_uid || ''),
+        magnitud: String(sismoPayload.magnitud || ''),
+        lugar: String(sismoPayload.lugar || ''),
+        profundidad: String(sismoPayload.profundidad || ''),
+        hora_local: String(sismoPayload.hora_local || ''),
+        url: String(sismoPayload.url || `https://sismopa.pages.dev/?sismo=${sismoPayload.source_uid || ''}`),
+        title,
+        body
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channel_id: 'sismo_alertas_channel',
+          icon: 'ic_notification_icon',
+          color: '#D32F2F',
+          default_vibrate_timings: true,
+          notification_priority: 'PRIORITY_MAX'
+        }
+      }
+    }
+  };
+
+  const res = await customFetch(fcmUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(message)
+  });
+
+  const resData = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      error: resData.error?.message || `FCM Error HTTP ${res.status}`,
+      details: resData
+    };
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    messageId: resData.name
+  };
+}
+
+/**
+ * Envía una notificación directa a un dispositivo específico por token FCM (para pruebas individuales).
+ */
+export async function sendFcmDirectMessage(serviceAccount, token, sismoPayload, customFetch = fetch) {
+  const projectId = serviceAccount.project_id;
+  if (!projectId) {
+    throw new Error('Falta project_id en la configuración de Firebase');
+  }
+
+  const accessToken = await getGoogleOAuthToken(serviceAccount, customFetch);
+  const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+
+  const title = sismoPayload.title || `[PRUEBA] sismoPA — Notificación nativa`;
+  const body = sismoPayload.body || `Prueba de recepción de alertas sísmicas en Android sin intermediación de navegador.`;
+
+  const message = {
+    message: {
+      token: token.trim(),
+      notification: {
+        title,
+        body
+      },
+      data: {
+        source_uid: String(sismoPayload.source_uid || 'TEST_FCM'),
+        url: String(sismoPayload.url || 'https://sismopa.pages.dev/'),
+        title,
+        body
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channel_id: 'sismo_alertas_channel',
+          icon: 'ic_notification_icon',
+          color: '#D32F2F'
+        }
+      }
+    }
+  };
+
+  const res = await customFetch(fcmUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(message)
+  });
+
+  const resData = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      error: resData.error?.message || `FCM Error HTTP ${res.status}`,
+      details: resData
+    };
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    messageId: resData.name
+  };
+}

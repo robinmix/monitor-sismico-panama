@@ -15,15 +15,22 @@
  */
 package pa.sismodata.app;
 
-
+import com.google.firebase.FirebaseApp;
 
 public class Application extends android.app.Application {
-
-  
 
   @Override
   public void onCreate() {
       super.onCreate();
       
+      // Inicializar canal de notificaciones nativas sismoPA
+      SismoNotificationHelper.createNotificationChannel(this);
+
+      // Inicializar FirebaseApp si está disponible la configuración
+      try {
+          FirebaseApp.initializeApp(this);
+      } catch (Exception ignored) {
+          // Si google-services.json es temporal o falta inicialización automática
+      }
   }
 }

@@ -2448,6 +2448,53 @@
     const btnTest = document.getElementById('btnTestPush');
     if (!badge || !btnToggle) return;
 
+    // Estrategia de canal preferido: Si se ejecuta dentro de la APK TWA oficial de sismoPA,
+    // utilizar el canal nativo FCM con identidad y permisos nativos de Android
+    const isTwa = /platform=android_twa/.test(window.location.search) ||
+                  (document.referrer && document.referrer.includes('android-app://pa.sismodata.app')) ||
+                  localStorage.getItem('sismopa_platform') === 'android_twa';
+
+    if (isTwa) {
+      try { localStorage.setItem('sismopa_platform', 'android_twa'); } catch (e) {}
+
+      if (window.location.search.includes('fcm_status=active')) {
+        try { localStorage.setItem('sismopa_fcm_active', '1'); } catch (e) {}
+      } else if (window.location.search.includes('fcm_status=inactive')) {
+        try { localStorage.removeItem('sismopa_fcm_active'); } catch (e) {}
+      }
+
+      function renderTwaFcmState() {
+        const isActive = localStorage.getItem('sismopa_fcm_active') === '1';
+        if (isActive) {
+          badge.textContent = 'Activas (App sismoPA)';
+          badge.className = 'notif-status-badge active';
+          detail.textContent = 'Recibirás alertas inmediatas atribuidas a sismoPA con icono propio en este dispositivo Android.';
+          btnToggle.textContent = 'Desactivar notificaciones';
+          btnToggle.className = 'btn-push-toggle active';
+          btnToggle.disabled = false;
+        } else {
+          badge.textContent = 'Desactivadas';
+          badge.className = 'notif-status-badge inactive';
+          detail.textContent = 'Activa las notificaciones oficiales de sismoPA para recibir alertas inmediatas de sismos en Panamá.';
+          btnToggle.textContent = 'Activar notificaciones';
+          btnToggle.className = 'btn-push-toggle';
+          btnToggle.disabled = false;
+        }
+        if (btnTest) btnTest.hidden = true;
+      }
+
+      renderTwaFcmState();
+
+      btnToggle.onclick = () => {
+        btnToggle.disabled = true;
+        const isActive = localStorage.getItem('sismopa_fcm_active') === '1';
+        const action = isActive ? 'twa_fcm_opt_out' : 'twa_fcm_opt_in';
+        window.location.href = `https://sismopa.pages.dev/?action=${action}&ts=${Date.now()}`;
+      };
+
+      return;
+    }
+
     const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     if (!isSupported) {
       badge.textContent = 'No soportado';

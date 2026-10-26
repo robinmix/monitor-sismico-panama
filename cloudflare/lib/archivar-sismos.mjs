@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import { requestSource, dateFromLocal, classifyRegion } from './sismos.mjs';
 import { resolveLocation } from './geo-resolver.mjs';
 import { sendWebPush } from './web-push.mjs';
+import { sendFcmTopicMessage } from './fcm-dispatch.mjs';
 
 const CRON_SCHEDULE = '*/30 * * * *';
 const FUENTE_NOMBRE = 'IGC-UP';
@@ -678,7 +679,61 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
     }
   }
 
-  return { enviados: totalEnviados, sismosNotificados: eligibleEvents.length };
+  // Despacho a Topic FCM oficial para usuarios de la app nativa Android sismoPA
+  let fcmEnviados = 0;
+  let fcmServiceAccount = null;
+  try {
+    if (env.FIREBASE_SERVICE_ACCOUNT) {
+      fcmServiceAccount = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string'
+        ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT)
+        : env.FIREBASE_SERVICE_ACCOUNT;
+    } else if (env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY) {
+      fcmServiceAccount = {
+        project_id: env.FIREBASE_PROJECT_ID,
+        client_email: env.FIREBASE_CLIENT_EMAIL,
+        private_key: env.FIREBASE_PRIVATE_KEY
+      };
+    }
+  } catch (parseErr) {
+    console.warn('[FCM] Error al parsear credenciales de Firebase en env:', parseErr.message);
+  }
+
+  if (fcmServiceAccount) {
+    for (const ev of eligibleEvents) {
+      try {
+        const { data: yaEnviado } = await supabase
+          .from('fcm_notificaciones_enviadas')
+          .select('id')
+          .eq('source_uid', ev.source_uid)
+          .eq('target', 'topic:sismos_panama')
+          .limit(1);
+
+        if (!yaEnviado || yaEnviado.length === 0) {
+          const fcmRes = await sendFcmTopicMessage(fcmServiceAccount, 'sismos_panama', {
+            source_uid: ev.source_uid,
+            magnitud: ev.magnitud,
+            lugar: ev.lugar,
+            profundidad: ev.profundidad,
+            hora_local: ev.fecha_hora_texto || ev.fecha_hora,
+            url: `https://sismopa.pages.dev/?sismo=${encodeURIComponent(ev.source_uid)}`
+          }, env.fetch || fetch);
+
+          if (fcmRes && fcmRes.ok) {
+            fcmEnviados++;
+            await supabase.from('fcm_notificaciones_enviadas').upsert({
+              source_uid: ev.source_uid,
+              target: 'topic:sismos_panama',
+              estado: 'CONFIRMADA'
+            }, { onConflict: 'source_uid,target' });
+          }
+        }
+      } catch (fcmErr) {
+        console.warn(`[FCM] Error despachando a topic para ${ev.source_uid}:`, fcmErr.message);
+      }
+    }
+  }
+
+  return { enviados: totalEnviados, fcmEnviados, sismosNotificados: eligibleEvents.length };
 }
 
 export {
