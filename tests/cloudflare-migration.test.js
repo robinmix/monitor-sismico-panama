@@ -62,8 +62,10 @@ test('Configuración de Wrangler para sismopa-archivador: cron de 1 min, vars p�
   assert.ok(toml.includes('VAPID_PUBLIC_KEY = "BMMtfOw_OoVIt6bjp70GMXMn-oMACjTCn870_Gn4QCQbhiM43kHuP2oto_Uu6d7Az2TOkDvp7V1RJBd-oQfSijM"'));
   assert.ok(toml.includes('VAPID_SUBJECT = "mailto:rbtservices507@gmail.com"'));
 
-  // Seguridad: AUTO_PUSH_ENABLED desactivado por defecto
-  assert.ok(toml.includes('AUTO_PUSH_ENABLED = "false"'));
+  // Control de notificaciones en wrangler.toml: Web Push preservado activo en producción, FCM apagado y kill switch armado
+  assert.ok(toml.includes('AUTO_PUSH_ENABLED = "true"'));
+  assert.ok(toml.includes('AUTO_FCM_ENABLED = "false"'));
+  assert.ok(toml.includes('FCM_KILL_SWITCH = "true"'));
 
   // Cero secretos reales definidos en [vars]
   assert.ok(!toml.match(/^SUPABASE_SECRET_KEY\s*=/m), 'SUPABASE_SECRET_KEY no debe estar en [vars]');

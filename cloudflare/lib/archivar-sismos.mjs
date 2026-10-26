@@ -738,109 +738,50 @@ async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {},
   const target = 'topic:sismos_panama';
   let fcmEnviados = 0;
   const LEASE_SECONDS = 60;
-  const leaseExpiryISO = new Date(now.getTime() + (LEASE_SECONDS * 1000)).toISOString();
   const MAX_INTENTOS = 3;
+
+  // Validación estricta: RPC en Supabase es obligatoria para el despacho FCM.
+  // Sin la función RPC atómica, no se despacha para garantizar exclusión mutua pesimista.
+  if (typeof supabase?.rpc !== 'function') {
+    console.warn('[FCM] Despacho omitido: supabase.rpc no disponible. La migración atómica es obligatoria para FCM.');
+    return { fcmEnviados: 0, omitidos: 'RPC_NOT_AVAILABLE' };
+  }
 
   for (const ev of eligibleEvents) {
     // 1. Fencing Token único por intento de ejecución para garantizar exclusión mutua
     const ownerToken = crypto.randomUUID();
     let leaseAcquired = false;
-    let rpcAvailable = true;
 
-    // Intentar adquisición mediante función atómica en PostgreSQL (RPC)
-    if (typeof supabase.rpc === 'function') {
-      try {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('acquire_fcm_lease', {
-          p_source_uid: ev.source_uid,
-          p_target: target,
-          p_owner_token: ownerToken,
-          p_lease_seconds: LEASE_SECONDS,
-          p_max_intentos: MAX_INTENTOS
-        });
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('acquire_fcm_lease', {
+        p_source_uid: ev.source_uid,
+        p_target: target,
+        p_owner_token: ownerToken,
+        p_lease_seconds: LEASE_SECONDS,
+        p_max_intentos: MAX_INTENTOS
+      });
 
-        if (!rpcErr && rpcRes) {
-          if (rpcRes.acquired) {
-            leaseAcquired = true;
-          } else {
-            // Reserva no adquirida (ya confirmada, lease activo en otro worker, o límite de reintentos)
-            continue;
-          }
-        } else if (rpcErr) {
-          // El RPC no existe en la base de datos o falló la llamada remota; recurrir al fallback cliente
-          rpcAvailable = false;
-        }
-      } catch (_) {
-        rpcAvailable = false;
+      if (rpcErr) {
+        console.warn(`[FCM] Error adquiriendo lease atómico para ${ev.source_uid}:`, rpcErr.message);
+        continue;
       }
-    } else {
-      rpcAvailable = false;
-    }
 
-    // 2. Fallback defensivo cliente en caso de que la migración RPC aún no esté aplicada
-    if (!rpcAvailable) {
-      const { error: insertErr } = await supabase
-        .from('fcm_notificaciones_enviadas')
-        .insert({
-          source_uid: ev.source_uid,
-          target,
-          enviado_en: now.toISOString(),
-          estado: 'RESERVADA',
-          lease_expires_at: leaseExpiryISO,
-          owner_token: ownerToken,
-          intentos: 1,
-          updated_at: now.toISOString()
-        });
-
-      if (!insertErr) {
+      if (rpcRes && rpcRes.acquired) {
         leaseAcquired = true;
       } else {
-        // Conflicto de unicidad: verificar si es candidato a reclamación
-        const { data: rows } = await supabase
-          .from('fcm_notificaciones_enviadas')
-          .select('id, estado, lease_expires_at, intentos, owner_token')
-          .eq('source_uid', ev.source_uid)
-          .eq('target', target)
-          .limit(1);
-
-        const existing = rows && rows[0];
-        if (existing) {
-          if (existing.estado === 'CONFIRMADA' || existing.estado === 'AMBIGUO') {
-            continue;
-          }
-
-          const leaseEnd = existing.lease_expires_at ? new Date(existing.lease_expires_at).getTime() : 0;
-          const isExpiredLease = existing.estado === 'RESERVADA' && leaseEnd <= now.getTime();
-          const isRetryableFailed = existing.estado === 'FALLIDA';
-
-          if ((isExpiredLease || isRetryableFailed) && (existing.intentos || 1) < MAX_INTENTOS) {
-            // Actualización condicional atómica exigiendo estado idéntico y retornando filas afectadas
-            const { data: updatedRows } = await supabase
-              .from('fcm_notificaciones_enviadas')
-              .update({
-                estado: 'RESERVADA',
-                lease_expires_at: leaseExpiryISO,
-                owner_token: ownerToken,
-                intentos: (existing.intentos || 1) + 1,
-                updated_at: now.toISOString()
-              })
-              .eq('id', existing.id)
-              .eq('estado', existing.estado)
-              .select('id');
-
-            // Solo si se modificó EXACTAMENTE 1 fila se considera ganado el lease
-            if (updatedRows && updatedRows.length === 1) {
-              leaseAcquired = true;
-            }
-          }
-        }
+        // Reserva no adquirida (ya confirmada, entrega ambigua, lease activo en otro Worker, o expirada transicionada a AMBIGUO)
+        continue;
       }
+    } catch (acquireEx) {
+      console.warn(`[FCM] Excepción al invocar acquire_fcm_lease para ${ev.source_uid}:`, acquireEx.message);
+      continue;
     }
 
     if (!leaseAcquired) {
       continue;
     }
 
-    // 3. Formatear payload FCM Data-Only oficial
+    // 2. Formatear payload FCM Data-Only oficial
     const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
     const geoTexto = geo?.ubicacion_texto || ev.ubicacion || ev.region || 'Panamá';
     const magStr = Number(ev.magnitud).toFixed(1);
@@ -881,7 +822,7 @@ async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {},
       url: `https://sismopa.pages.dev/?sismo=${encodeURIComponent(ev.source_uid)}`
     };
 
-    // 4. Despacho a Google FCM HTTP v1 con control estricto de ambigüedad
+    // 3. Despacho a Google FCM HTTP v1 con control estricto de ambigüedad
     let fcmRes;
     try {
       fcmRes = await sendFcmTopicMessage(
@@ -900,42 +841,34 @@ async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {},
       };
     }
 
-    // 5. Gestión de resultados condicionada estrictamente al Fencing Token (ownerToken)
+    // 4. Gestión de resultados condicionada estrictamente al Fencing Token (ownerToken)
     if (fcmRes && fcmRes.ok) {
-      fcmEnviados++;
-      if (rpcAvailable) {
-        await supabase.rpc('confirm_fcm_dispatch', {
+      // Firebase aceptó el mensaje. Confirmar atómicamente en PostgreSQL y verificar resultado.
+      try {
+        const { data: confRes, error: confErr } = await supabase.rpc('confirm_fcm_dispatch', {
           p_source_uid: ev.source_uid,
           p_target: target,
           p_owner_token: ownerToken,
           p_message_id: fcmRes.messageId || null
         });
-      } else {
-        const { data: confirmedRows } = await supabase
-          .from('fcm_notificaciones_enviadas')
-          .update({
-            estado: 'CONFIRMADA',
-            enviado_en: now.toISOString(),
-            lease_expires_at: null,
-            message_id: fcmRes.messageId || null,
-            updated_at: now.toISOString()
-          })
-          .eq('source_uid', ev.source_uid)
-          .eq('target', target)
-          .eq('owner_token', ownerToken)
-          .select('id');
 
-        if (!confirmedRows || confirmedRows.length === 0) {
-          console.warn(`[FCM] Advertencia de Fencing: El Worker perdió el lease antes de confirmar ${ev.source_uid}`);
+        if (confErr) {
+          console.error(`[FCM] Error crítico en confirm_fcm_dispatch para ${ev.source_uid}: ${confErr.message}`);
+        } else if (!confRes || !confRes.confirmed) {
+          console.error(`[FCM] Advertencia de Fencing: confirm_fcm_dispatch rechazado para ${ev.source_uid}: ${confRes?.reason || 'CONFIRMACION_RECHAZADA'}`);
+        } else {
+          fcmEnviados++;
         }
+      } catch (errConfirm) {
+        console.error(`[FCM] Excepción al ejecutar confirm_fcm_dispatch para ${ev.source_uid}:`, errConfirm.message);
       }
     } else if (fcmRes && fcmRes.ambiguous) {
       // Caso crítico: Caída de red o timeout durante la llamada a Google FCM.
       // El mensaje pudo haber sido aceptado por Google y distribuido al topic.
       // Para evitar duplicar una alerta a toda la población, se marca como AMBIGUO y no se reintenta.
       console.warn(`[FCM] Resultado ambiguo para ${ev.source_uid}. Se marca AMBIGUO para inhibir duplicados al topic general.`);
-      if (rpcAvailable) {
-        await supabase.rpc('fail_fcm_dispatch', {
+      try {
+        const { data: failRes, error: failErr } = await supabase.rpc('fail_fcm_dispatch', {
           p_source_uid: ev.source_uid,
           p_target: target,
           p_owner_token: ownerToken,
@@ -943,26 +876,19 @@ async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {},
           p_is_retryable: false,
           p_error_details: fcmRes.error || 'Entrega ambigua (caída de red/timeout)'
         });
-      } else {
-        await supabase
-          .from('fcm_notificaciones_enviadas')
-          .update({
-            estado: 'AMBIGUO',
-            lease_expires_at: null,
-            error_details: fcmRes.error || 'Entrega ambigua',
-            intentos: 99,
-            updated_at: now.toISOString()
-          })
-          .eq('source_uid', ev.source_uid)
-          .eq('target', target)
-          .eq('owner_token', ownerToken)
-          .select('id');
+        if (failErr) {
+          console.warn(`[FCM] Error en fail_fcm_dispatch (ambiguo) para ${ev.source_uid}:`, failErr.message);
+        } else if (!failRes || !failRes.updated) {
+          console.warn(`[FCM] Advertencia de Fencing: fail_fcm_dispatch (ambiguo) no aplicado para ${ev.source_uid}:`, failRes?.reason);
+        }
+      } catch (errFail) {
+        console.warn(`[FCM] Excepción en fail_fcm_dispatch (ambiguo) para ${ev.source_uid}:`, errFail.message);
       }
     } else {
       // Error confirmado devuelto por Google (ej. 429, 500, 400)
       const isRetryable = Boolean(fcmRes?.retryable);
-      if (rpcAvailable) {
-        await supabase.rpc('fail_fcm_dispatch', {
+      try {
+        const { data: failRes, error: failErr } = await supabase.rpc('fail_fcm_dispatch', {
           p_source_uid: ev.source_uid,
           p_target: target,
           p_owner_token: ownerToken,
@@ -970,20 +896,13 @@ async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {},
           p_is_retryable: isRetryable,
           p_error_details: fcmRes?.error || 'Fallo HTTP'
         });
-      } else {
-        await supabase
-          .from('fcm_notificaciones_enviadas')
-          .update({
-            estado: 'FALLIDA',
-            lease_expires_at: null,
-            error_details: fcmRes?.error || 'Fallo HTTP',
-            intentos: isRetryable ? undefined : 99,
-            updated_at: now.toISOString()
-          })
-          .eq('source_uid', ev.source_uid)
-          .eq('target', target)
-          .eq('owner_token', ownerToken)
-          .select('id');
+        if (failErr) {
+          console.warn(`[FCM] Error en fail_fcm_dispatch para ${ev.source_uid}:`, failErr.message);
+        } else if (!failRes || !failRes.updated) {
+          console.warn(`[FCM] Advertencia de Fencing: fail_fcm_dispatch no aplicado para ${ev.source_uid}:`, failRes?.reason);
+        }
+      } catch (errFail) {
+        console.warn(`[FCM] Excepción en fail_fcm_dispatch para ${ev.source_uid}:`, errFail.message);
       }
       console.warn(`[FCM] Despacho fallido para ${ev.source_uid}: ${fcmRes?.error} (Reintentable: ${isRetryable})`);
     }
