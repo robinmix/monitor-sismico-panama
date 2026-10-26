@@ -2194,7 +2194,8 @@
         '#historial': 'historial',
         '#historico': 'historial',
         '#mas': 'mas',
-        '#filtros': 'mas'
+        '#filtros': 'mas',
+        '#notificaciones': 'mas'
       };
       const targetTab = tabMap[hash] || 'sismos';
       setMobileTab(targetTab, false);
@@ -2202,6 +2203,11 @@
       if (hash === '#registros') {
         setTimeout(() => {
           const target = document.getElementById('registros');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        }, 80);
+      } else if (hash === '#notificaciones') {
+        setTimeout(() => {
+          const target = document.getElementById('notificaciones');
           if (target) target.scrollIntoView({ behavior: 'smooth' });
         }, 80);
       }
@@ -2441,12 +2447,196 @@
     return 'sismopa_push_tok_' + Math.abs(hash);
   }
 
+  /* ==========================================================================
+     DETECCIÓN DE ENTORNO ANDROID TWA (ROBUSTA Y MULTI-CRITERIO)
+     ========================================================================== */
+  function checkIsTwa() {
+    const isAndroidDevice = /Android/i.test(navigator.userAgent);
+    if (!isAndroidDevice) return false;
+
+    // 1. Confirmación directa recibida por canal nativo postMessage
+    if (window.__sismoTwaConfirmed === true) return true;
+
+    // 2. Referrer del paquete oficial Android
+    const hasAndroidAppReferrer = Boolean(document.referrer && document.referrer.startsWith('android-app://pa.sismodata.app'));
+    if (hasAndroidAppReferrer) {
+      try { localStorage.setItem('sismopa_twa_verified', '1'); } catch (_) {}
+      return true;
+    }
+
+    // 3. Parámetro inyectado en URL de inicio por LauncherActivity
+    if (window.location.search.includes('platform=android_twa')) {
+      try { localStorage.setItem('sismopa_twa_verified', '1'); } catch (_) {}
+      return true;
+    }
+
+    // 4. Modo de visualización standalone (TWA / WebAPK en Android)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone) {
+      const isVerified = localStorage.getItem('sismopa_twa_verified') === '1';
+      const isOfficialHost = window.location.hostname === 'sismopa.pages.dev' || window.location.hostname.endsWith('.pages.dev');
+      if (isVerified || isOfficialHost) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /* ==========================================================================
+     BOTÓN DE ACCESO RÁPIDO A NOTIFICACIONES EN CABECERA (TOPBAR BELL)
+     ========================================================================== */
+  function initTopbarNotificationButton() {
+    const notifTopbarBtn = document.getElementById('notifTopbarBtn');
+    if (!notifTopbarBtn) return;
+
+    function applyButtonState() {
+      const isTwa = checkIsTwa();
+
+      if (isTwa) {
+        // En APK Android TWA: enlace directo mediante deep link nativo sismopa://
+        notifTopbarBtn.href = 'sismopa://notifications';
+        notifTopbarBtn.setAttribute('aria-label', 'Abrir alertas sísmicas sismoPA');
+        notifTopbarBtn.setAttribute('title', 'Alertas sísmicas sismoPA');
+
+        notifTopbarBtn.onclick = (e) => {
+          // Acción directa del usuario: navegar al scheme nativo sismopa://
+          // NUNCA disparar postMessage simultáneo aquí para evitar que Android lance la pantalla dos veces
+          e.preventDefault();
+          window.location.href = 'sismopa://notifications';
+        };
+      } else {
+        // En navegadores normales (escritorio y móvil): dirigir al panel Web Push existente
+        notifTopbarBtn.href = '#notificaciones';
+        notifTopbarBtn.setAttribute('aria-label', 'Configurar alertas sísmicas');
+        notifTopbarBtn.setAttribute('title', 'Alertas sísmicas');
+
+        notifTopbarBtn.onclick = (e) => {
+          e.preventDefault();
+          // En vista móvil, activar la pestaña 'mas' donde reside la sección de notificaciones
+          if (typeof setMobileTab === 'function') {
+            setMobileTab('mas', true);
+          }
+          const notifSection = document.getElementById('notificaciones');
+          if (notifSection) {
+            setTimeout(() => {
+              notifSection.scrollIntoView({ behavior: 'smooth' });
+            }, 60);
+          }
+          if (window.location.hash !== '#notificaciones') {
+            try {
+              history.pushState(null, '', '#notificaciones');
+            } catch (_) {
+              window.location.hash = '#notificaciones';
+            }
+          }
+        };
+      }
+    }
+
+    applyButtonState();
+
+    // Si el canal nativo confirma la identidad TWA vía postMessage en cualquier momento, sincronizar estado
+    window.addEventListener('message', (event) => {
+      try {
+        const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (msg && msg.type === 'SISMO_FCM_STATUS') {
+          window.__sismoTwaConfirmed = true;
+          try { localStorage.setItem('sismopa_twa_verified', '1'); } catch (_) {}
+          applyButtonState();
+        }
+      } catch (_) {}
+    });
+  }
+
   async function initPushNotifications() {
     const badge = document.getElementById('pushStatusBadge');
     const detail = document.getElementById('pushStatusDetail');
     const btnToggle = document.getElementById('btnTogglePush');
     const btnTest = document.getElementById('btnTestPush');
+    const nativeDeepLink = document.getElementById('btnNativeSettingsDeepLink');
     if (!badge || !btnToggle) return;
+
+    const isTwa = checkIsTwa();
+    if (isTwa) {
+      try { localStorage.setItem('sismopa_platform', 'android_twa'); } catch (e) {}
+
+      if (window.location.search.includes('fcm_status=active')) {
+        try { localStorage.setItem('sismopa_fcm_active', '1'); } catch (e) {}
+      } else if (window.location.search.includes('fcm_status=inactive')) {
+        try { localStorage.removeItem('sismopa_fcm_active'); } catch (e) {}
+      }
+
+      function safeMigrateWebPushToFcm() {
+        const isFcmConfirmedActive = localStorage.getItem('sismopa_fcm_active') === '1';
+        if (!isFcmConfirmedActive) return;
+
+        if ('serviceWorker' in navigator && 'PushManager' in window) {
+          navigator.serviceWorker.ready.then(async (reg) => {
+            try {
+              const sub = await reg.pushManager.getSubscription();
+              if (sub) {
+                console.log('[TWA] FCM nativo confirmado activo; liberando Web Push local de la APK');
+                await sub.unsubscribe();
+                fetch('/api/push-unsubscribe', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ endpoint: sub.endpoint })
+                }).catch(() => {});
+              }
+            } catch (errClean) {
+              console.warn('[TWA] Transición Web Push omitida:', errClean);
+            }
+          }).catch(() => {});
+        }
+      }
+
+      safeMigrateWebPushToFcm();
+
+      window.addEventListener('message', (event) => {
+        try {
+          const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          if (msg && msg.type === 'SISMO_FCM_STATUS') {
+            if (msg.active) {
+              localStorage.setItem('sismopa_fcm_active', '1');
+              safeMigrateWebPushToFcm();
+            } else {
+              localStorage.removeItem('sismopa_fcm_active');
+            }
+            renderTwaFcmState();
+          }
+        } catch (e) {}
+      });
+
+      function renderTwaFcmState() {
+        const isActive = localStorage.getItem('sismopa_fcm_active') === '1';
+        if (isActive) {
+          badge.textContent = 'Activas (App sismoPA)';
+          badge.className = 'notif-status-badge active';
+          detail.textContent = 'Alertas oficiales activas en tu teléfono Android con icono propio y sonido prioritario.';
+          btnToggle.textContent = 'Gestionar en app sismoPA';
+          btnToggle.className = 'btn-push-toggle active';
+          btnToggle.disabled = false;
+        } else {
+          badge.textContent = 'Desactivadas';
+          badge.className = 'notif-status-badge inactive';
+          detail.textContent = '¡Novedad! Ahora puedes recibir alertas sísmicas oficiales instantáneas con icono propio de sismoPA directamente en tu teléfono.';
+          btnToggle.textContent = 'Configurar alertas sismoPA';
+          btnToggle.className = 'btn-push-toggle';
+          btnToggle.disabled = false;
+        }
+        if (btnTest) btnTest.hidden = true;
+        if (nativeDeepLink) nativeDeepLink.style.display = 'inline-flex';
+      }
+
+      renderTwaFcmState();
+
+      btnToggle.onclick = () => {
+        window.location.href = 'sismopa://notifications';
+      };
+
+      return;
+    }
 
     const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     if (!isSupported) {
@@ -2674,6 +2864,7 @@
   // Inicializar funciones nuevas al cargar
   window.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
+    initTopbarNotificationButton();
     initPushNotifications();
   });
 

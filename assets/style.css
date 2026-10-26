@@ -6324,3 +6324,50 @@ html[data-theme="light"] .identity-name b .brand-pa {
 @media (max-width: 420px) {
   
 }
+
+/* Acceso visible a alertas sísmicas (Topbar) */
+.notif-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.notif-topbar-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--color-blue);
+  border-color: var(--border-highlight);
+}
+.notif-topbar-btn .topbar-notif-icon {
+  width: 18px;
+  height: 18px;
+}
+html[data-theme="light"] .notif-topbar-btn {
+  background: #EAF1F8 !important;
+  border: 1px solid #D8E2EE !important;
+  color: #172338 !important;
+}
+html[data-theme="light"] .notif-topbar-btn:hover {
+  background: #DFE8F2 !important;
+  border-color: #1678D3 !important;
+  color: #1678D3 !important;
+}
+
+/* Ocultar sección notificaciones en pestañas móviles distintas a Más */
+@media (max-width: 640px) {
+  #dashboardView[data-active-tab="sismos"] > .section-notifications,
+  #dashboardView[data-active-tab="mapa"] > .section-notifications,
+  #dashboardView[data-active-tab="cerca"] > .section-notifications,
+  #dashboardView[data-active-tab="historial"] > .section-notifications {
+    display: none !important;
+  }
+}
