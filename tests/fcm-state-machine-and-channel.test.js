@@ -253,4 +253,41 @@ test('FCM State Machine, Native UI & Robust Channel Suite', async (t) => {
       'Debe conservar registro en /api/push-subscribe para clientes web estándar'
     );
   });
+
+  await t.test('15. Revocación robusta en SismoNotificationSettingsActivity: valida éxito de Firebase', () => {
+    const activityPath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/SismoNotificationSettingsActivity.java');
+    const content = fs.readFileSync(activityPath, 'utf8');
+
+    // Debe comprobar explícitamente if (!unsubTask.isSuccessful())
+    assert.ok(
+      content.includes('!unsubTask.isSuccessful()'),
+      'Debe comprobar !unsubTask.isSuccessful() antes de modificar estado'
+    );
+    assert.ok(
+      content.includes('No se pudo cancelar la suscripción en Firebase'),
+      'Debe reportar mensaje de error explícito si Firebase rechaza la desuscripción'
+    );
+    assert.ok(
+      content.includes('Reintentar Desactivación'),
+      'Debe permitir reintentar la desactivación si el topic sigue suscrito'
+    );
+  });
+
+  await t.test('16. Desacoplamiento de tokens individuales: Android no realiza llamadas HTTP a /api/fcm-subscribe', () => {
+    const servicePath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/SismoFirebaseMessagingService.java');
+    const serviceContent = fs.readFileSync(servicePath, 'utf8');
+
+    const activityPath = path.join(rootDir, 'android-twa/app/src/main/java/pa/sismodata/app/SismoNotificationSettingsActivity.java');
+    const actContent = fs.readFileSync(activityPath, 'utf8');
+
+    // No debe contener la constante de URL hacia /api/fcm-subscribe
+    assert.ok(
+      !serviceContent.includes('https://sismopa.pages.dev/api/fcm-subscribe'),
+      'SismoFirebaseMessagingService no debe conectar a /api/fcm-subscribe'
+    );
+    assert.ok(
+      !actContent.includes('syncTokenWithServer'),
+      'SismoNotificationSettingsActivity no debe llamar a syncTokenWithServer'
+    );
+  });
 });

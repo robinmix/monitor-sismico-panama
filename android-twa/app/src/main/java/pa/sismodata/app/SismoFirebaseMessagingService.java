@@ -3,7 +3,6 @@ package pa.sismodata.app;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
@@ -15,10 +14,6 @@ import androidx.core.app.NotificationManagerCompat;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -28,7 +23,6 @@ import java.util.Map;
  */
 public class SismoFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "SismoFcmService";
-    private static final String API_ENDPOINT = "https://sismopa.pages.dev/api/fcm-subscribe";
 
     @Override
     public void onNewToken(@NonNull String token) {
@@ -36,9 +30,18 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
         Log.i(TAG, "Nuevo token FCM recibido en el dispositivo");
         FcmPreferences.setToken(this, token);
 
-        // Si el usuario ya dio su consentimiento voluntario previo y está activo, sincronizar nuevo token
+        // Si el usuario ya dio su consentimiento voluntario y está activo, reasegurar suscripción al topic
         if (FcmPreferences.isOptedIn(this)) {
-            syncTokenWithServer(this, token, true);
+            com.google.firebase.messaging.FirebaseMessaging.getInstance()
+                    .subscribeToTopic(LauncherActivity.FCM_TOPIC)
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            FcmPreferences.setTopicSubscribed(this, true);
+                            Log.i(TAG, "Suscripción al topic sismos_panama reasegurada tras renovación de token");
+                        } else {
+                            Log.w(TAG, "Aviso: fallo al reasegurar topic sismos_panama tras renovación de token");
+                        }
+                    });
         }
     }
 
@@ -131,52 +134,12 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     /**
-     * Sincroniza el token FCM con el servidor de forma asíncrona mediante HTTPS.
+     * @deprecated En la arquitectura basada en Firebase Topics (/topics/sismos_panama),
+     * los dispositivos no requieren sincronizar tokens individuales con Supabase.
+     * Este método se conserva como no-op por compatibilidad retroactiva.
      */
+    @Deprecated
     public static void syncTokenWithServer(Context context, String token, boolean subscribe) {
-        if (token == null || token.isEmpty()) return;
-
-        new Thread(() -> {
-            HttpURLConnection conn = null;
-            try {
-                URL url = new URL(API_ENDPOINT);
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                conn.setRequestProperty("Accept", "application/json");
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(10000);
-                conn.setDoOutput(true);
-
-                String appVersion = "1.0.5";
-                try {
-                    PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-                    if (pInfo.versionName != null) {
-                        appVersion = pInfo.versionName;
-                    }
-                } catch (Exception ignored) {}
-
-                String action = subscribe ? "subscribe" : "unsubscribe";
-                String payload = "{\"action\":\"" + action + "\",\"token\":\"" + token + "\",\"platform\":\"android\",\"app_version\":\"" + appVersion + "\"}";
-
-                byte[] out = payload.getBytes(StandardCharsets.UTF_8);
-                conn.setFixedLengthStreamingMode(out.length);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(out);
-                }
-
-                int code = conn.getResponseCode();
-                if (code >= 200 && code < 300) {
-                    FcmPreferences.setTokenSynced(context, subscribe);
-                    Log.i(TAG, "Token FCM sincronizado exitosamente con el servidor. Acción: " + action);
-                } else {
-                    Log.w(TAG, "Servidor retornó código HTTP " + code + " al registrar token FCM");
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "Error de red al sincronizar token FCM: " + e.getMessage());
-            } finally {
-                if (conn != null) conn.disconnect();
-            }
-        }).start();
+        // No-op seguro: el despacho se realiza a nivel de topic general sin almacenar tokens individuales.
     }
 }

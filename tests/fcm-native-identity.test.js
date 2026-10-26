@@ -285,4 +285,37 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     assert.ok(content.includes('SISMO_FCM_STATUS'), 'Debe escuchar eventos SISMO_FCM_STATUS vía postMessage');
     assert.ok(content.includes('Activas (App sismoPA)'), 'Debe etiquetar el estado activo nativo');
   });
+
+  await t.test('11. Endpoint /api/fcm-subscribe: Retirado de forma segura en modo no-op para retrocompatibilidad', async () => {
+    const { onRequest } = fcmSubscribeMod;
+
+    // OPTIONS preflight
+    const optReq = new Request('https://sismopa.pages.dev/api/fcm-subscribe', { method: 'OPTIONS' });
+    const optRes = await onRequest({ request: optReq, env: {} });
+    assert.equal(optRes.status, 204);
+
+    // POST con token válido: 200 OK con flag retired: true, sin requerir conexión a Supabase
+    const validToken = 'eXamP1e_fCm-Token:APA91bF' + 'a'.repeat(120);
+    const postReq = new Request('https://sismopa.pages.dev/api/fcm-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'subscribe', token: validToken })
+    });
+    const postRes = await onRequest({ request: postReq, env: {} });
+    assert.equal(postRes.status, 200);
+    const data = await postRes.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.retired, true);
+    assert.equal(data.architecture, 'firebase_topics');
+    assert.equal(data.topic, 'sismos_panama');
+
+    // POST con token malformado: 400 Bad Request
+    const badReq = new Request('https://sismopa.pages.dev/api/fcm-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'subscribe', token: 'invalido' })
+    });
+    const badRes = await onRequest({ request: badReq, env: {} });
+    assert.equal(badRes.status, 400);
+  });
 });

@@ -299,7 +299,14 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setTextColor(Color.WHITE);
                 badgeBg.setColor(Color.parseColor("#C62828"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Ocurrió un inconveniente al conectar con Firebase. Puedes intentar nuevamente.");
+                boolean wasDeactivating = FcmPreferences.isTopicSubscribed(this);
+                if (wasDeactivating) {
+                    mStatusDesc.setText("No se pudo cancelar la suscripción con Firebase. Comprueba tu conexión e intenta nuevamente.");
+                    mBtnAction.setText("Reintentar Desactivación");
+                } else {
+                    mStatusDesc.setText("Ocurrió un inconveniente al conectar con Firebase. Puedes intentar nuevamente.");
+                    mBtnAction.setText("Reintentar Activación");
+                }
                 String err = FcmPreferences.getLastError(this);
                 if (!err.isEmpty()) {
                     mErrorDesc.setText("Detalle: " + err);
@@ -308,7 +315,6 @@ public class SismoNotificationSettingsActivity extends Activity {
                     mErrorDesc.setVisibility(View.GONE);
                 }
 
-                mBtnAction.setText("Reintentar Activación");
                 mBtnAction.setTextColor(Color.WHITE);
                 GradientDrawable btnErrBg = new GradientDrawable();
                 btnErrBg.setColor(Color.parseColor("#D32F2F"));
@@ -352,6 +358,8 @@ public class SismoNotificationSettingsActivity extends Activity {
     private void onActionClicked() {
         FcmPreferences.State current = FcmPreferences.getState(this);
         if (current == FcmPreferences.State.ACTIVO) {
+            executeRevocation();
+        } else if (current == FcmPreferences.State.ERROR && FcmPreferences.isTopicSubscribed(this)) {
             executeRevocation();
         } else {
             initiateEnrollment();
@@ -406,19 +414,16 @@ public class SismoNotificationSettingsActivity extends Activity {
                             Log.i(TAG, "Suscripción a topic FCM exitosa: " + LauncherActivity.FCM_TOPIC);
                             FcmPreferences.setTopicSubscribed(this, true);
 
-                            // 2. Obtener token del dispositivo
+                            // 2. Obtener token del dispositivo para diagnósticos y pruebas técnicas directas
                             FirebaseMessaging.getInstance().getToken()
                                     .addOnCompleteListener(this, tokenTask -> {
                                         if (tokenTask.isSuccessful() && tokenTask.getResult() != null) {
                                             String token = tokenTask.getResult();
-                                            Log.i(TAG, "Token FCM obtenido exitosamente");
+                                            Log.i(TAG, "Token FCM obtenido exitosamente para diagnósticos locales");
                                             FcmPreferences.setToken(this, token);
                                             FcmPreferences.setState(this, FcmPreferences.State.ACTIVO);
                                             FcmPreferences.setDecidedConsent(this, true);
                                             FcmPreferences.setLastError(this, "");
-
-                                            // Sincronizar token con backend sismoPA
-                                            SismoFirebaseMessagingService.syncTokenWithServer(this, token, true);
 
                                             updateUi();
                                             Toast.makeText(this, "¡Alertas de sismoPA activadas!", Toast.LENGTH_SHORT).show();
@@ -456,20 +461,31 @@ public class SismoNotificationSettingsActivity extends Activity {
         try {
             FirebaseMessaging.getInstance().unsubscribeFromTopic(LauncherActivity.FCM_TOPIC)
                     .addOnCompleteListener(this, unsubTask -> {
+                        if (!unsubTask.isSuccessful()) {
+                            Exception e = unsubTask.getException();
+                            String errMsg = (e != null) ? e.getMessage() : "Fallo de conexión con Firebase";
+                            Log.w(TAG, "Fallo al desuscribir del topic FCM: " + errMsg);
+                            FcmPreferences.setState(this, FcmPreferences.State.ERROR);
+                            FcmPreferences.setLastError(this, "No se pudo cancelar la suscripción en Firebase: " + errMsg);
+                            updateUi();
+                            Toast.makeText(this, "Error al desactivar: " + errMsg, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+
+                        Log.i(TAG, "Desuscripción de topic FCM exitosa: " + LauncherActivity.FCM_TOPIC);
                         FcmPreferences.setTopicSubscribed(this, false);
 
                         FirebaseMessaging.getInstance().deleteToken()
                                 .addOnCompleteListener(this, delTask -> {
+                                    if (!delTask.isSuccessful()) {
+                                        Exception e = delTask.getException();
+                                        Log.w(TAG, "Aviso: deleteToken reportó error pero el topic ya fue cancelado: " + (e != null ? e.getMessage() : ""));
+                                    }
                                     FirebaseMessaging.getInstance().setAutoInitEnabled(false);
-                                    String oldToken = FcmPreferences.getToken(this);
                                     FcmPreferences.setToken(this, null);
                                     FcmPreferences.setState(this, FcmPreferences.State.DESACTIVADO);
                                     FcmPreferences.setDecidedConsent(this, true);
                                     FcmPreferences.setLastError(this, "");
-
-                                    if (oldToken != null) {
-                                        SismoFirebaseMessagingService.syncTokenWithServer(this, oldToken, false);
-                                    }
 
                                     updateUi();
                                     Toast.makeText(this, "Alertas desactivadas correctamente", Toast.LENGTH_SHORT).show();
@@ -477,7 +493,8 @@ public class SismoNotificationSettingsActivity extends Activity {
                     });
         } catch (Exception e) {
             Log.e(TAG, "Excepción durante revocación FCM: " + e.getMessage(), e);
-            FcmPreferences.setState(this, FcmPreferences.State.DESACTIVADO);
+            FcmPreferences.setState(this, FcmPreferences.State.ERROR);
+            FcmPreferences.setLastError(this, e.getMessage());
             updateUi();
         }
     }
