@@ -29,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261026unify1">
+  <link rel="stylesheet" href="assets/style.css?v=20261027compare1">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261026unify1"></script>
+  <script defer src="assets/app.js?v=20261027compare1"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -159,18 +159,38 @@
                 <small class="param-sub">Distancia geodésica en línea recta</small>
               </div>
 
-              <div class="sismo-param">
-                <span class="param-label">FUENTE CIENTÍFICA</span>
-                <strong class="param-val">IGC-UP</strong>
-                <small class="param-sub">Instituto de Geociencias · Univ. de Panamá</small>
-              </div>
             </div>
 
-            <div class="sismo-tech-footer">
-              <div class="sismo-uid-box">
-                <span class="uid-label">IDENTIFICADOR ESTABLE (UID)</span>
-                <code id="sismoUidText" class="mono">—</code>
+            <!-- COMPARACIÓN INTERNACIONAL DE MAGNITUDES -->
+            <div class="sismo-agencias-section" id="sismoAgenciasSection">
+              <div class="sismo-agencias-header">
+                <span class="sismo-agencias-title">Magnitudes de otras agencias</span>
+                <span class="sismo-agencias-badge mono" id="sismoAgenciasBadge">Comparativa</span>
               </div>
+
+              <div class="sismo-agencias-grid" id="sismoAgenciasGrid" role="region" aria-label="Magnitudes reportadas por agencias internacionales">
+                <!-- USGS -->
+                <div class="sismo-agencia-card" id="agenciaCardUsgs">
+                  <span class="agencia-name">USGS</span>
+                  <strong class="agencia-mag mono" id="agenciaMagUsgs">—</strong>
+                  <span class="agencia-detail" id="agenciaDetailUsgs">Consultando…</span>
+                </div>
+
+                <!-- EMSC -->
+                <div class="sismo-agencia-card" id="agenciaCardEmsc">
+                  <span class="agencia-name">EMSC</span>
+                  <strong class="agencia-mag mono" id="agenciaMagEmsc">—</strong>
+                  <span class="agencia-detail" id="agenciaDetailEmsc">Consultando…</span>
+                </div>
+
+                <!-- GFZ -->
+                <div class="sismo-agencia-card" id="agenciaCardGfz">
+                  <span class="agencia-name">GFZ</span>
+                  <strong class="agencia-mag mono" id="agenciaMagGfz">—</strong>
+                  <span class="agencia-detail" id="agenciaDetailGfz">Consultando…</span>
+                </div>
+              </div>
+              <span id="sismoUidText" hidden></span>
             </div>
           </article>
 
@@ -951,6 +971,10 @@
               <li>
                 <strong>Red Sísmica Nacional (IGC-UP):</strong>
                 Datos sísmicos abiertos y registros técnicos provistos por el Instituto de Geociencias de la Universidad de Panamá.
+              </li>
+              <li>
+                <strong>Catálogos Sísmicos Internacionales:</strong>
+                Servicios de comparación de magnitudes y datos sismológicos de referencia provistos por el U.S. Geological Survey (USGS), el Euro-Mediterranean Seismological Centre (EMSC-CSEM) y el Centro Alemán de Investigación en Geociencias (GFZ GEOFON).
               </li>
               <li>
                 <strong>Cartografía y Mapas Base:</strong>

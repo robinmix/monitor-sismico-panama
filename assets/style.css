@@ -6384,3 +6384,138 @@ html[data-theme="light"] .notif-topbar-btn:hover {
     display: none !important;
   }
 }
+
+
+/* ==========================================================================
+   COMPARACIÓN INTERNACIONAL DE MAGNITUDES (USGS, EMSC, GFZ)
+   ========================================================================== */
+.sismo-agencias-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.sismo-agencias-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+
+.sismo-agencias-title {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sismo-agencias-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: var(--bg-surface-2);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+}
+
+.sismo-agencias-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.sismo-agencia-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  min-height: 68px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.agencia-name {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  line-height: 1.1;
+  margin-bottom: 2px;
+}
+
+.agencia-mag {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+  margin-bottom: 2px;
+}
+
+.agencia-detail {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+@media (max-width: 380px) {
+  .sismo-agencias-grid {
+    gap: 5px;
+  }
+  .sismo-agencia-card {
+    padding: 6px 2px;
+    min-height: 64px;
+  }
+  .agencia-mag {
+    font-size: 1rem;
+  }
+  .agencia-detail {
+    font-size: 9px;
+  }
+}
+
+/* Modo Claro AMOLED 5.2 */
+html[data-theme="light"] .sismo-agencias-section {
+  border-top-color: #EAF1F8 !important;
+}
+
+html[data-theme="light"] .sismo-agencias-title {
+  color: #52647A !important;
+}
+
+html[data-theme="light"] .sismo-agencias-badge {
+  background: #F1F5F9 !important;
+  border-color: #D8E2EE !important;
+  color: #64748B !important;
+}
+
+html[data-theme="light"] .sismo-agencia-card {
+  background: #F8FAFC !important;
+  border-color: #D8E2EE !important;
+}
+
+html[data-theme="light"] .agencia-name {
+  color: #52647A !important;
+}
+
+html[data-theme="light"] .agencia-mag {
+  color: #0F172A !important;
+}
+
+html[data-theme="light"] .agencia-detail {
+  color: #64748B !important;
+}

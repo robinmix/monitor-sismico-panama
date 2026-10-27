@@ -1264,6 +1264,117 @@
     }, 150);
   }
 
+
+  /* ------------------------------------------------------------------------
+     MÓDULO INTERNACIONAL — COMPARACIÓN DE MAGNITUDES (USGS, EMSC, GFZ)
+     ------------------------------------------------------------------------ */
+  const agencyComparisonCache = new Map();
+  let activeComparisonRequestId = null;
+
+  function resetAgencyBoxes() {
+    ['Usgs', 'Emsc', 'Gfz'].forEach(ag => {
+      const magEl = ui['agenciaMag' + ag] || document.getElementById('agenciaMag' + ag);
+      const detailEl = ui['agenciaDetail' + ag] || document.getElementById('agenciaDetail' + ag);
+      if (magEl) magEl.textContent = '—';
+      if (detailEl) detailEl.textContent = 'Consultando…';
+    });
+  }
+
+  function applyAgencyData(agencies) {
+    const map = {
+      Usgs: agencies?.usgs,
+      Emsc: agencies?.emsc,
+      Gfz: agencies?.gfz
+    };
+
+    Object.entries(map).forEach(([ag, data]) => {
+      const magEl = ui['agenciaMag' + ag] || document.getElementById('agenciaMag' + ag);
+      const detailEl = ui['agenciaDetail' + ag] || document.getElementById('agenciaDetail' + ag);
+      if (!magEl || !detailEl) return;
+
+      if (data && data.matched) {
+        magEl.textContent = data.magText || (Number.isFinite(data.magnitude) ? 'M' + data.magnitude.toFixed(1) : '—');
+        detailEl.textContent = data.magType ? data.magType.toUpperCase() : 'Reportada';
+      } else if (data && data.status === 'sin_coincidencia') {
+        magEl.textContent = '—';
+        detailEl.textContent = 'Sin coincidencia';
+      } else if (data && data.status === 'no_disponible') {
+        magEl.textContent = '—';
+        detailEl.textContent = 'No disponible';
+      } else {
+        magEl.textContent = '—';
+        detailEl.textContent = 'Sin coincidencia';
+      }
+    });
+  }
+
+  async function loadInternationalComparisons(e, uid) {
+    if (!e || !uid) return;
+    resetAgencyBoxes();
+
+    // 1. Revisar caché local en memoria del cliente
+    if (agencyComparisonCache.has(uid)) {
+      applyAgencyData(agencyComparisonCache.get(uid));
+      return;
+    }
+
+    const lat = Number(e.latitud);
+    const lon = Number(e.longitud);
+    const ts = e.timestamp || e.fecha_hora;
+    const mag = Number(e.magnitud);
+    const rawProf = e.profundidad !== undefined ? e.profundidad : e.profundidad_km;
+    const prof = Number(rawProf);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !ts) {
+      ['Usgs', 'Emsc', 'Gfz'].forEach(ag => {
+        const magEl = ui['agenciaMag' + ag] || document.getElementById('agenciaMag' + ag);
+        const detailEl = ui['agenciaDetail' + ag] || document.getElementById('agenciaDetail' + ag);
+        if (magEl) magEl.textContent = '—';
+        if (detailEl) detailEl.textContent = 'Sin coincidencia';
+      });
+      return;
+    }
+
+    activeComparisonRequestId = uid;
+
+    try {
+      const params = new URLSearchParams({
+        id: uid,
+        lat: lat.toFixed(5),
+        lon: lon.toFixed(5),
+        time: new Date(ts).toISOString()
+      });
+      if (Number.isFinite(mag)) params.set('mag', mag.toFixed(1));
+      if (Number.isFinite(prof)) params.set('depth', String(prof));
+
+      const resp = await fetch('/api/comparacion-sismo?' + params.toString(), {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const json = await resp.json();
+
+      if (json && json.ok && json.agencias) {
+        agencyComparisonCache.set(uid, json.agencias);
+        // Descartar si el usuario navegó a otro sismo antes de resolver la red
+        if (activeComparisonRequestId === uid) {
+          applyAgencyData(json.agencias);
+        }
+      } else {
+        throw new Error('Respuesta inválida');
+      }
+    } catch (err) {
+      if (activeComparisonRequestId === uid) {
+        ['Usgs', 'Emsc', 'Gfz'].forEach(ag => {
+          const magEl = ui['agenciaMag' + ag] || document.getElementById('agenciaMag' + ag);
+          const detailEl = ui['agenciaDetail' + ag] || document.getElementById('agenciaDetail' + ag);
+          if (magEl) magEl.textContent = '—';
+          if (detailEl) detailEl.textContent = 'No disponible';
+        });
+      }
+    }
+  }
+
   function renderSismoDetail(e) {
     const mag = Number(e.magnitud);
     const rawProf = e.profundidad !== undefined ? e.profundidad : e.profundidad_km;
@@ -1345,6 +1456,9 @@
 
     // Cartografía interactiva vectorial del epicentro con MapLibre GL JS y OpenFreeMap
     renderSismoMapLibre(e, lat, lon, mag, prof, isValidDate, dateObj);
+
+    // Comparación internacional de magnitudes bajo demanda
+    loadInternationalComparisons(e, uid);
   }
 
   let cachedOfmStyle = null;
