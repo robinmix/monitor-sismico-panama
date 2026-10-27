@@ -33,6 +33,7 @@ import com.google.firebase.messaging.FirebaseMessaging;
  * Pantalla nativa oficial de consentimiento y configuración de notificaciones sismoPA.
  * Proporciona una interfaz Android directa independiente del navegador web (Chrome/Brave),
  * garantizando que ninguna autorización se base en parámetros de URL manipulables.
+ * Versión 1.0.8: Interfaz limpia de producción, sin exposición técnica de tokens en pantalla.
  */
 public class SismoNotificationSettingsActivity extends Activity {
     private static final String TAG = "SismoSettingsActivity";
@@ -42,9 +43,7 @@ public class SismoNotificationSettingsActivity extends Activity {
     private TextView mStatusDesc;
     private TextView mErrorDesc;
     private Button mBtnAction;
-    private TextView mTokenView;
     private Button mBtnTest;
-    private Button mBtnCopyToken;
     private Button mBtnDismiss;
 
     @Override
@@ -82,7 +81,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         layout.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Notificaciones oficiales instantáneas para Panamá");
+        subtitle.setText("Avisos informativos de sismicidad para Panamá");
         subtitle.setTextColor(Color.parseColor("#9E9E9E"));
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         subtitle.setPadding(0, dp(4), 0, dp(16));
@@ -109,11 +108,17 @@ public class SismoNotificationSettingsActivity extends Activity {
         badgeParams.bottomMargin = dp(12);
         card.addView(mStatusBadge, badgeParams);
 
+        // Soporte técnico discreto (pulsación prolongada para copiar token solo si soporte técnico lo requiere)
+        mStatusBadge.setOnLongClickListener(v -> {
+            onCopyTokenClicked();
+            return true;
+        });
+
         // Descripción de estado
         mStatusDesc = new TextView(this);
         mStatusDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         mStatusDesc.setTextColor(Color.parseColor("#CFD8DC"));
-        mStatusDesc.setLineSpacing(dp(2), 1.1f);
+        mStatusDesc.setLineSpacing(dp(2), 1.15f);
         card.addView(mStatusDesc);
 
         // Mensaje de error (oculto si no hay error)
@@ -136,60 +141,51 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         layout.addView(card);
 
-        // Tarjeta de Diagnóstico y Pruebas (Desarrollo)
-        LinearLayout diagCard = new LinearLayout(this);
-        diagCard.setOrientation(LinearLayout.VERTICAL);
-        diagCard.setPadding(dp(16), dp(16), dp(16), dp(16));
-        GradientDrawable diagBg = new GradientDrawable();
-        diagBg.setColor(Color.parseColor("#0D111A"));
-        diagBg.setCornerRadius(dp(12));
-        diagBg.setStroke(dp(1), Color.parseColor("#1B2232"));
-        diagCard.setBackground(diagBg);
-
-        LinearLayout.LayoutParams diagParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        diagParams.topMargin = dp(16);
-
-        TextView diagTitle = new TextView(this);
-        diagTitle.setText("Herramientas de Desarrollo y Prueba");
-        diagTitle.setTextColor(Color.parseColor("#90CAF9"));
-        diagTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        diagTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        diagCard.addView(diagTitle);
-
-        TextView diagTopic = new TextView(this);
-        diagTopic.setText("Topic oficial: sismos_panama");
-        diagTopic.setTextColor(Color.parseColor("#78909C"));
-        diagTopic.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        diagTopic.setPadding(0, dp(4), 0, dp(8));
-        diagCard.addView(diagTopic);
-
-        mTokenView = new TextView(this);
-        mTokenView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        mTokenView.setTextColor(Color.parseColor("#B0BEC5"));
-        mTokenView.setTypeface(Typeface.MONOSPACE);
-        mTokenView.setPadding(0, 0, 0, dp(8));
-        diagCard.addView(mTokenView);
-
-        LinearLayout diagButtons = new LinearLayout(this);
-        diagButtons.setOrientation(LinearLayout.HORIZONTAL);
-
+        // Botón para probar notificación de ejemplo
         mBtnTest = new Button(this);
-        mBtnTest.setText("Probar Notificación");
-        mBtnTest.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        testParams.rightMargin = dp(6);
-        diagButtons.addView(mBtnTest, testParams);
+        mBtnTest.setText("Probar notificación de ejemplo");
+        mBtnTest.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mBtnTest.setTextColor(Color.parseColor("#90CAF9"));
+        GradientDrawable testBg = new GradientDrawable();
+        testBg.setColor(Color.parseColor("#0F172A"));
+        testBg.setCornerRadius(dp(8));
+        testBg.setStroke(dp(1), Color.parseColor("#1E293B"));
+        mBtnTest.setBackground(testBg);
+        LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        testParams.topMargin = dp(14);
+        layout.addView(mBtnTest, testParams);
 
-        mBtnCopyToken = new Button(this);
-        mBtnCopyToken.setText("Copiar Token");
-        mBtnCopyToken.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        copyParams.leftMargin = dp(6);
-        diagButtons.addView(mBtnCopyToken, copyParams);
+        // Tarjeta informativa y de transparencia (producción limpia)
+        LinearLayout infoCard = new LinearLayout(this);
+        infoCard.setOrientation(LinearLayout.VERTICAL);
+        infoCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        GradientDrawable infoBg = new GradientDrawable();
+        infoBg.setColor(Color.parseColor("#0D111A"));
+        infoBg.setCornerRadius(dp(12));
+        infoBg.setStroke(dp(1), Color.parseColor("#1B2232"));
+        infoCard.setBackground(infoBg);
 
-        diagCard.addView(diagButtons);
-        layout.addView(diagCard, diagParams);
+        LinearLayout.LayoutParams infoParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        infoParams.topMargin = dp(14);
+
+        TextView infoTitle = new TextView(this);
+        infoTitle.setText("Información sobre el servicio");
+        infoTitle.setTextColor(Color.parseColor("#90CAF9"));
+        infoTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        infoTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        infoCard.addView(infoTitle);
+
+        TextView infoText = new TextView(this);
+        infoText.setText("• Fuente de datos: Instituto de Geociencias de la Universidad de Panamá (IGC-UP).\n\n• sismoPA es una iniciativa comunitaria de monitoreo y divulgación sísmica. No es una entidad gubernamental oficial ni un sistema de alerta temprana ante terremotos (no detecta movimientos con anticipación).\n\n• La entrega puntual depende de los servicios de Google, la conectividad del dispositivo y las configuraciones de ahorro de energía del sistema operativo.");
+        infoText.setTextColor(Color.parseColor("#90A4AE"));
+        infoText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        infoText.setLineSpacing(dp(2), 1.2f);
+        infoText.setPadding(0, dp(8), 0, 0);
+        infoCard.addView(infoText);
+
+        layout.addView(infoCard, infoParams);
 
         // Botón volver / cerrar
         mBtnDismiss = new Button(this);
@@ -199,7 +195,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         mBtnDismiss.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams dismissParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dismissParams.topMargin = dp(16);
+        dismissParams.topMargin = dp(12);
         dismissParams.bottomMargin = dp(16);
         layout.addView(mBtnDismiss, dismissParams);
 
@@ -208,7 +204,6 @@ public class SismoNotificationSettingsActivity extends Activity {
         // Eventos
         mBtnAction.setOnClickListener(v -> onActionClicked());
         mBtnTest.setOnClickListener(v -> onTestNotificationClicked());
-        mBtnCopyToken.setOnClickListener(v -> onCopyTokenClicked());
         mBtnDismiss.setOnClickListener(v -> finish());
 
         return scrollView;
@@ -216,18 +211,6 @@ public class SismoNotificationSettingsActivity extends Activity {
 
     private void updateUi() {
         FcmPreferences.State state = FcmPreferences.getState(this);
-        String token = FcmPreferences.getToken(this);
-        boolean isTopic = FcmPreferences.isTopicSubscribed(this);
-
-        // Actualizar visualización del token
-        if (token != null && !token.isEmpty()) {
-            String masked = token.length() > 24 ? token.substring(0, 10) + "..." + token.substring(token.length() - 10) : token;
-            mTokenView.setText("Token FCM: " + masked);
-            mBtnCopyToken.setEnabled(true);
-        } else {
-            mTokenView.setText("Token FCM: No obtenido aún");
-            mBtnCopyToken.setEnabled(false);
-        }
 
         // Renderizado según estado
         GradientDrawable badgeBg = new GradientDrawable();
@@ -244,7 +227,7 @@ public class SismoNotificationSettingsActivity extends Activity {
                     mStatusBadge.setTextColor(Color.WHITE);
                     badgeBg.setColor(Color.parseColor("#1565C0"));
                     mStatusBadge.setBackground(badgeBg);
-                    mStatusDesc.setText("Confirmando suscripción con los servidores oficiales de Firebase...");
+                    mStatusDesc.setText("Confirmando suscripción con los servidores de Firebase...");
                     mErrorDesc.setVisibility(View.GONE);
 
                     mBtnAction.setText("Sincronizando...");
@@ -258,7 +241,7 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setTextColor(Color.parseColor("#E8F5E9"));
                 badgeBg.setColor(Color.parseColor("#2E7D32"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Tu teléfono está suscrito al topic oficial sismos_panama. Las alertas se emitirán como sismoPA con icono nativo y alta prioridad.");
+                mStatusDesc.setText("Notificaciones activas. Recibirás avisos informativos cuando el IGC-UP publique nuevos reportes sísmicos en Panamá.");
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Desactivar Alertas");
@@ -275,7 +258,7 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setTextColor(Color.WHITE);
                 badgeBg.setColor(Color.parseColor("#1565C0"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Conectando con los servidores sísmicos y verificando suscripción...");
+                mStatusDesc.setText("Conectando con el servicio de alertas y verificando suscripción...");
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Conectando...");
@@ -304,7 +287,7 @@ public class SismoNotificationSettingsActivity extends Activity {
                     mStatusDesc.setText("No se pudo cancelar la suscripción con Firebase. Comprueba tu conexión e intenta nuevamente.");
                     mBtnAction.setText("Reintentar Desactivación");
                 } else {
-                    mStatusDesc.setText("Ocurrió un inconveniente al conectar con Firebase. Puedes intentar nuevamente.");
+                    mStatusDesc.setText("Ocurrió un inconveniente al conectar con el servicio sísmico. Puedes intentar nuevamente.");
                     mBtnAction.setText("Reintentar Activación");
                 }
                 String err = FcmPreferences.getLastError(this);
@@ -328,7 +311,7 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setTextColor(Color.WHITE);
                 badgeBg.setColor(Color.parseColor("#455A64"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Cancelando suscripción en servidores sísmicos...");
+                mStatusDesc.setText("Cancelando suscripción de alertas sísmicas...");
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Desactivando...");
@@ -341,7 +324,7 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setTextColor(Color.parseColor("#ECEFF1"));
                 badgeBg.setColor(Color.parseColor("#37474F"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Activa las alertas oficiales para recibir avisos inmediatos cuando ocurra un evento sísmico en Panamá reportado por el IGC-UP.");
+                mStatusDesc.setText("Activa las alertas informativas para recibir notificaciones cuando ocurra un evento sísmico en Panamá reportado por el IGC-UP.");
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Activar Alertas Sísmicas");
@@ -414,12 +397,12 @@ public class SismoNotificationSettingsActivity extends Activity {
                             Log.i(TAG, "Suscripción a topic FCM exitosa: " + LauncherActivity.FCM_TOPIC);
                             FcmPreferences.setTopicSubscribed(this, true);
 
-                            // 2. Obtener token del dispositivo para diagnósticos y pruebas técnicas directas
+                            // 2. Obtener token del dispositivo internamente para enrollamiento en cliente
                             FirebaseMessaging.getInstance().getToken()
                                     .addOnCompleteListener(this, tokenTask -> {
                                         if (tokenTask.isSuccessful() && tokenTask.getResult() != null) {
                                             String token = tokenTask.getResult();
-                                            Log.i(TAG, "Token FCM obtenido exitosamente para diagnósticos locales");
+                                            Log.i(TAG, "Token FCM obtenido internamente con éxito");
                                             FcmPreferences.setToken(this, token);
                                             FcmPreferences.setState(this, FcmPreferences.State.ACTIVO);
                                             FcmPreferences.setDecidedConsent(this, true);
@@ -515,10 +498,8 @@ public class SismoNotificationSettingsActivity extends Activity {
             ClipData clip = ClipData.newPlainText("sismoPA FCM Token", token);
             if (clipboard != null) {
                 clipboard.setPrimaryClip(clip);
-                Toast.makeText(this, "Token FCM copiado al portapapeles", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Token copiado al portapapeles", Toast.LENGTH_SHORT).show();
             }
-        } else {
-            Toast.makeText(this, "No hay token disponible todavía. Activa las alertas primero.", Toast.LENGTH_SHORT).show();
         }
     }
 
