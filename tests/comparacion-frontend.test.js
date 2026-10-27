@@ -65,4 +65,38 @@ test('Suite Frontend — Comparación Internacional de Magnitudes', async (t) =>
     assert.ok(appJs.includes('let activeComparisonRequestId = null;'), 'Debe rastrear activeComparisonRequestId');
     assert.ok(appJs.includes('if (activeComparisonRequestId === uid)'), 'Debe comprobar que la respuesta coincida con la ficha activa');
   });
+
+  await t.test('7. Tipografía Nunito Sans y alto contraste blanco (#FFFFFF) en AMOLED', () => {
+    // Extraer bloque de agencias en style.css
+    const startCss = styleCss.indexOf('.sismo-agencias-section');
+    const endCss = styleCss.indexOf('/* Modo Claro', startCss);
+    const darkBlock = styleCss.slice(startCss, endCss);
+
+    // Nunito Sans (var(--font-sans))
+    assert.ok(darkBlock.includes('.agencia-name {\n  font-family: var(--font-sans);') || darkBlock.includes('.agencia-name {\r\n  font-family: var(--font-sans);'), 'agencia-name debe usar var(--font-sans)');
+    assert.ok(darkBlock.includes('.agencia-mag {\n  font-family: var(--font-sans);') || darkBlock.includes('.agencia-mag {\r\n  font-family: var(--font-sans);'), 'agencia-mag debe usar var(--font-sans)');
+    assert.ok(darkBlock.includes('.agencia-detail {\n  font-family: var(--font-sans);') || darkBlock.includes('.agencia-detail {\r\n  font-family: var(--font-sans);'), 'agencia-detail debe usar var(--font-sans)');
+
+    // Pesos tipográficos y colores en modo oscuro
+    assert.ok(darkBlock.includes('color: #FFFFFF;'), 'Debe incluir color blanco #FFFFFF');
+    assert.ok(darkBlock.includes('font-weight: 700;'), 'Debe incluir font-weight 700 para agencia y detalle');
+    assert.ok(darkBlock.includes('font-weight: 800;'), 'Debe incluir font-weight 800 para magnitud');
+  });
+
+  await t.test('8. Alto contraste en modo claro (#172338) con mismos pesos tipográficos', () => {
+    const lightIdx = styleCss.indexOf('/* Modo Claro AMOLED 5.2 — Alto Contraste (#172338)');
+    const lightBlock = styleCss.slice(lightIdx);
+
+    assert.ok(lightBlock.includes('html[data-theme="light"] .agencia-name {\n  color: #172338 !important;\n  font-weight: 700 !important;') ||
+              lightBlock.includes('html[data-theme="light"] .agencia-name {\r\n  color: #172338 !important;\r\n  font-weight: 700 !important;'),
+              'agencia-name en modo claro debe ser #172338 peso 700');
+
+    assert.ok(lightBlock.includes('html[data-theme="light"] .agencia-mag {\n  color: #172338 !important;\n  font-weight: 800 !important;') ||
+              lightBlock.includes('html[data-theme="light"] .agencia-mag {\r\n  color: #172338 !important;\r\n  font-weight: 800 !important;'),
+              'agencia-mag en modo claro debe ser #172338 peso 800');
+
+    assert.ok(lightBlock.includes('html[data-theme="light"] .agencia-detail {\n  color: #172338 !important;\n  font-weight: 700 !important;') ||
+              lightBlock.includes('html[data-theme="light"] .agencia-detail {\r\n  color: #172338 !important;\r\n  font-weight: 700 !important;'),
+              'agencia-detail en modo claro debe ser #172338 peso 700');
+  });
 });

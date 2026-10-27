@@ -6388,6 +6388,9 @@ html[data-theme="light"] .notif-topbar-btn:hover {
 
 /* ==========================================================================
    COMPARACIÓN INTERNACIONAL DE MAGNITUDES (USGS, EMSC, GFZ)
+   Tipografía: Nunito Sans en todos los textos
+   Contraste AMOLED: #FFFFFF en nombres (700), magnitudes (800) y detalles (700)
+   Contraste Claro:  #172338 en nombres (700), magnitudes (800) y detalles (700)
    ========================================================================== */
 .sismo-agencias-section {
   border-top: 1px solid var(--border-subtle);
@@ -6412,8 +6415,9 @@ html[data-theme="light"] .notif-topbar-btn:hover {
 }
 
 .sismo-agencias-badge {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 9.5px;
+  font-weight: 700;
   color: var(--text-dim);
   background: var(--bg-surface-2);
   padding: 2px 6px;
@@ -6444,27 +6448,28 @@ html[data-theme="light"] .notif-topbar-btn:hover {
 
 .agencia-name {
   font-family: var(--font-sans);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: var(--text-dim);
+  color: #FFFFFF;
   line-height: 1.1;
   margin-bottom: 2px;
 }
 
 .agencia-mag {
-  font-family: var(--font-mono);
-  font-size: 1.125rem;
+  font-family: var(--font-sans);
+  font-size: 1.25rem;
   font-weight: 800;
-  color: var(--text-primary);
+  color: #FFFFFF;
   line-height: 1.2;
   margin-bottom: 2px;
 }
 
 .agencia-detail {
   font-family: var(--font-sans);
-  font-size: 10px;
-  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #FFFFFF;
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
@@ -6480,27 +6485,31 @@ html[data-theme="light"] .notif-topbar-btn:hover {
     padding: 6px 2px;
     min-height: 64px;
   }
+  .agencia-name {
+    font-size: 10px;
+  }
   .agencia-mag {
-    font-size: 1rem;
+    font-size: 1.1rem;
   }
   .agencia-detail {
-    font-size: 9px;
+    font-size: 9.5px;
   }
 }
 
-/* Modo Claro AMOLED 5.2 */
+/* Modo Claro AMOLED 5.2 — Alto Contraste (#172338) */
 html[data-theme="light"] .sismo-agencias-section {
   border-top-color: #EAF1F8 !important;
 }
 
 html[data-theme="light"] .sismo-agencias-title {
-  color: #52647A !important;
+  color: #172338 !important;
 }
 
 html[data-theme="light"] .sismo-agencias-badge {
   background: #F1F5F9 !important;
   border-color: #D8E2EE !important;
-  color: #64748B !important;
+  color: #172338 !important;
+  font-weight: 700 !important;
 }
 
 html[data-theme="light"] .sismo-agencia-card {
@@ -6509,13 +6518,16 @@ html[data-theme="light"] .sismo-agencia-card {
 }
 
 html[data-theme="light"] .agencia-name {
-  color: #52647A !important;
+  color: #172338 !important;
+  font-weight: 700 !important;
 }
 
 html[data-theme="light"] .agencia-mag {
-  color: #0F172A !important;
+  color: #172338 !important;
+  font-weight: 800 !important;
 }
 
 html[data-theme="light"] .agencia-detail {
-  color: #64748B !important;
+  color: #172338 !important;
+  font-weight: 700 !important;
 }
