@@ -61,6 +61,28 @@ function toPanamaLocalMonthStr(dateInput) {
 /**
  * Inicializa cliente Supabase en el servidor sin exponer credenciales.
  */
+/**
+ * Convierte un timestamp UTC a componentes de fecha ('YYYY-MM-DD') y hora ('hh:mm:ss AM/PM') en hora local de Panamá.
+ */
+function formatPanamaDateTime(dateInput) {
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return { fecha: '', hora: '' };
+  const panamaMs = d.getTime() + PANAMA_OFFSET_MS;
+  const pDate = new Date(panamaMs);
+  const y = pDate.getUTCFullYear();
+  const m = String(pDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(pDate.getUTCDate()).padStart(2, '0');
+  let hh = pDate.getUTCHours();
+  const mm = String(pDate.getUTCMinutes()).padStart(2, '0');
+  const ss = String(pDate.getUTCSeconds()).padStart(2, '0');
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const hh12 = hh % 12 || 12;
+  return {
+    fecha: `${y}-${m}-${day}`,
+    hora: `${String(hh12).padStart(2, '0')}:${mm}:${ss} ${ampm}`
+  };
+}
+
 function getSupabaseClient(env = {}) {
   const url = env.SUPABASE_URL;
   const key = env.SUPABASE_SECRET_KEY;
@@ -95,11 +117,36 @@ function parseAndValidateParams(rawParams = {}) {
     max_mag: null,
     min_prof: null,
     max_prof: null,
+    search: null,
+    sortField: 'fecha_hora',
     page: 1,
     limit: 50,
     order: 'desc',
-    include_events: true
+    include_events: true,
+    include_stats: true
   };
+
+  if (params.include_stats === 'false' || params.stats === 'false' || params.estadisticas === 'false') {
+    filters.include_stats = false;
+  }
+
+  const rawSort = (params.sort || params.orden_campo || 'recent').toLowerCase();
+  if (rawSort === 'largest' || rawSort === 'magnitud') {
+    filters.sortField = 'magnitud';
+  } else if (rawSort === 'deepest' || rawSort === 'profundidad') {
+    filters.sortField = 'profundidad_km';
+  } else {
+    filters.sortField = 'fecha_hora';
+  }
+
+  const rawSearch = params.search || params.q || params.buscar;
+  if (rawSearch) {
+    if (rawSearch.length > 100) {
+      errors.push('El parámetro de búsqueda excede el límite de 100 caracteres.');
+    } else {
+      filters.search = rawSearch.trim();
+    }
+  }
 
   // 1. Paginación
   const rawPage = params.page || params.pagina;
@@ -135,23 +182,27 @@ function parseAndValidateParams(rawParams = {}) {
 
   // 2. Filtros de Fecha: Año y Mes
   const rawAnio = params.anio || params.year;
-  if (rawAnio) {
+  if (rawAnio && rawAnio !== 'all' && rawAnio !== 'todos' && rawAnio !== '0') {
     const aNum = Number(rawAnio);
     if (!Number.isInteger(aNum) || aNum < 1900 || aNum > 2100) {
       errors.push('El parámetro año (anio/year) debe ser un número entero de 4 dígitos entre 1900 y 2100.');
     } else {
       filters.anio = aNum;
     }
+  } else {
+    filters.anio = null;
   }
 
   const rawMes = params.mes || params.month;
-  if (rawMes) {
+  if (rawMes && rawMes !== 'all' && rawMes !== 'todos' && rawMes !== '0') {
     const mNum = Number(rawMes);
     if (!Number.isInteger(mNum) || mNum < 1 || mNum > 12) {
       errors.push('El parámetro mes (mes/month) debe ser un número entero entre 1 y 12.');
     } else {
       filters.mes = mNum;
     }
+  } else {
+    filters.mes = null;
   }
 
   // Si se pide mes sin año, asumir año actual en Panamá
@@ -313,6 +364,9 @@ function applyFiltersToQuery(query, filters) {
   }
   if (filters.max_prof != null) {
     q = q.lte('profundidad_km', filters.max_prof);
+  }
+  if (filters.search && typeof q.or === 'function') {
+    q = q.or(`region.ilike.%${filters.search}%,ubicacion.ilike.%${filters.search}%`);
   }
   return q;
 }
@@ -505,32 +559,35 @@ async function queryHistoricalSeismicData(filters, supabase) {
 
   const total = totalCount || 0;
 
-  // 2. Obtener proyección ligera de TODOS los registros coincidentes para estadísticas globales
-  const CHUNK_SIZE = 1000;
-  const statsRows = [];
+  // 2. Obtener proyección ligera de TODOS los registros coincidentes SOLO si include_stats es true
+  let estadisticas = null;
+  if (filters.include_stats !== false) {
+    const CHUNK_SIZE = 1000;
+    const statsRows = [];
 
-  if (total > 0) {
-    for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
-      let statsQuery = supabase
-        .from('sismos')
-        .select('magnitud, profundidad_km, fecha_hora, region, latitud, longitud');
-      statsQuery = applyFiltersToQuery(statsQuery, filters);
-      statsQuery = statsQuery.range(offset, offset + CHUNK_SIZE - 1);
+    if (total > 0) {
+      for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+        let statsQuery = supabase
+          .from('sismos')
+          .select('magnitud, profundidad_km, fecha_hora, region, latitud, longitud');
+        statsQuery = applyFiltersToQuery(statsQuery, filters);
+        statsQuery = statsQuery.range(offset, offset + CHUNK_SIZE - 1);
 
-      const { data: chunk, error: statsErr } = await statsQuery;
-      if (statsErr) {
-        throw new Error(`Error obteniendo registros estadísticos en Supabase: ${statsErr.message}`);
+        const { data: chunk, error: statsErr } = await statsQuery;
+        if (statsErr) {
+          throw new Error(`Error obteniendo registros estadísticos en Supabase: ${statsErr.message}`);
+        }
+        if (chunk && chunk.length > 0) {
+          statsRows.push(...chunk);
+        }
+        if (!chunk || chunk.length < CHUNK_SIZE) break;
       }
-      if (chunk && chunk.length > 0) {
-        statsRows.push(...chunk);
-      }
-      if (!chunk || chunk.length < CHUNK_SIZE) break;
     }
+
+    estadisticas = calculateStatistics(statsRows);
   }
 
-  const estadisticas = calculateStatistics(statsRows);
-
-  // 3. Paginación de registros completos
+  // 3. Paginación de registros completos con orden estable (fecha_hora + id)
   let eventos = [];
   const totalPaginas = total > 0 ? Math.ceil(total / filters.limit) : 0;
 
@@ -538,17 +595,63 @@ async function queryHistoricalSeismicData(filters, supabase) {
     const offset = (filters.page - 1) * filters.limit;
     let eventsQuery = supabase
       .from('sismos')
-      .select('id, source_uid, source_event_id, fecha_hora, magnitud, profundidad_km, latitud, longitud, region, ubicacion, estado, fuente, primera_captura, ultima_verificacion, actualizado_en');
+      .select('id, source_uid, source_event_id, fecha_hora, magnitud, profundidad_km, latitud, longitud, region, ubicacion, estado, fuente, primera_captura, ultima_verificacion, actualizado_en, datos_originales');
     eventsQuery = applyFiltersToQuery(eventsQuery, filters);
-    eventsQuery = eventsQuery
-      .order('fecha_hora', { ascending: filters.order === 'asc' })
-      .range(offset, offset + filters.limit - 1);
+
+    // Ordenamiento estable: campo principal + id como desempate
+    if (filters.sortField === 'magnitud') {
+      eventsQuery = eventsQuery
+        .order('magnitud', { ascending: false })
+        .order('fecha_hora', { ascending: false })
+        .order('id', { ascending: false });
+    } else if (filters.sortField === 'profundidad_km') {
+      eventsQuery = eventsQuery
+        .order('profundidad_km', { ascending: false })
+        .order('fecha_hora', { ascending: false })
+        .order('id', { ascending: false });
+    } else {
+      eventsQuery = eventsQuery
+        .order('fecha_hora', { ascending: filters.order === 'asc' })
+        .order('id', { ascending: filters.order === 'asc' });
+    }
+
+    eventsQuery = eventsQuery.range(offset, offset + filters.limit - 1);
 
     const { data: eventsData, error: eventsErr } = await eventsQuery;
     if (eventsErr) {
       throw new Error(`Error obteniendo eventos paginados en Supabase: ${eventsErr.message}`);
     }
-    eventos = enrichEvents(eventsData || []);
+
+    const normalizedEvents = (eventsData || []).map(r => {
+      const { fecha, hora } = formatPanamaDateTime(r.fecha_hora);
+      return {
+        id: r.id,
+        uid: r.source_uid || String(r.id),
+        source_uid: r.source_uid,
+        source_event_id: r.source_event_id,
+        fecha,
+        hora,
+        timestamp: r.fecha_hora,
+        fecha_hora: r.fecha_hora,
+        magnitud: Number(r.magnitud),
+        profundidad: Number(r.profundidad_km),
+        profundidad_km: Number(r.profundidad_km),
+        latitud: Number(r.latitud),
+        longitud: Number(r.longitud),
+        region: r.region,
+        ubicacion: r.ubicacion,
+        zona: r.datos_originales?.zona || r.ubicacion || r.region,
+        localidad: r.datos_originales?.localidad || r.ubicacion || 'Sin localidad especificada',
+        estado: r.estado,
+        fuente: r.fuente || 'IGC-UP',
+        detalle: r.datos_originales?.url_detalle || null,
+        primera_captura: r.primera_captura,
+        ultima_verificacion: r.ultima_verificacion,
+        actualizado_en: r.actualizado_en
+      };
+    });
+
+    eventos = enrichEvents(normalizedEvents);
   }
 
   return {
@@ -677,4 +780,5 @@ const handler = async function(event, context, options = {}) {
   }
 };
 
-export { handler, parseAndValidateParams, calculateStatistics, applyFiltersToQuery, queryHistoricalSeismicData, panamaToUtc, toPanamaLocalDateStr, toPanamaLocalMonthStr, memoryCache };
+export {
+  formatPanamaDateTime, handler, parseAndValidateParams, calculateStatistics, applyFiltersToQuery, queryHistoricalSeismicData, panamaToUtc, toPanamaLocalDateStr, toPanamaLocalMonthStr, memoryCache };

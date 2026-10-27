@@ -47,7 +47,8 @@ export async function onRequest(context) {
     const allowedParams = [
       'anio', 'year', 'mes', 'month', 'include_events', 'eventos',
       'page', 'pagina', 'limit', 'limite', 'order', 'orden',
-      'region', 'estado', 'min_mag', 'max_mag', 'min_prof', 'max_prof'
+      'region', 'estado', 'min_mag', 'max_mag', 'min_prof', 'max_prof',
+      'desde', 'from', 'hasta', 'to', 'sort', 'search', 'q', 'buscar', 'include_stats'
     ];
     const safeSearchParams = new URLSearchParams();
     for (const [key, value] of reqUrl.searchParams.entries()) {

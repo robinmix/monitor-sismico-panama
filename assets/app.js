@@ -49,7 +49,12 @@
     userCoords: null,
     userLeafletMarker: null,
     deferredPwaPrompt: null,
-    activeMobileTab: 'sismos'
+    activeMobileTab: 'sismos',
+    isHistoricalMode: false,
+    historicalCatalogEvents: [],
+    historicalPagination: null,
+    histPage: 1,
+    activeCatalogRequestId: 0
   };
   const f = {
     period: ui.filterPeriod, zone: ui.filterZone, town: ui.filterTown, mag: ui.filterMag,
@@ -1026,11 +1031,162 @@
     if (ui.mobileRecordsList) ui.mobileRecordsList.setAttribute('aria-hidden', isMobile ? 'false' : 'true');
   }
 
-  function drawTable(data) {
-    const total = data.length, pages = Math.max(1, Math.ceil(total / LIMIT));
-    state.page = Math.max(1, Math.min(pages, state.page));
-    const begin = (state.page - 1) * LIMIT;
-    const entries = data.slice(begin, begin + LIMIT);
+  /* ------------------------------------------------------------------------
+     CATÁLOGO HISTÓRICO PERMANENTE (SUPABASE PAGINADO)
+     ------------------------------------------------------------------------ */
+  function isHistoricalModeActive() {
+    if (state.activeMobileTab === 'historial') return true;
+    if (typeof window !== 'undefined' && (window.location.hash === '#historico' || window.location.hash === '#historial')) return true;
+    if (f.period && f.period.value === '0') return true;
+    if (f.from && f.from.value) {
+      const fromTs = new Date(f.from.value + 'T00:00:00-05:00').getTime();
+      const oldestLocalTs = state.events.length
+        ? new Date(state.events[state.events.length - 1].timestamp).getTime()
+        : Date.now() - 7 * 86400000;
+      if (fromTs < oldestLocalTs) return true;
+    }
+    return false;
+  }
+
+  async function fetchHistoricalCatalogPage(page = 1, force = false) {
+    state.histPage = page;
+    state.isHistoricalMode = true;
+    const requestId = ++state.activeCatalogRequestId;
+
+    // Indicador de carga accesible
+    if (ui.recordsBody) {
+      ui.recordsBody.replaceChildren();
+      const row = el('tr');
+      const td = el('td', 'empty-table', 'Consultando archivo histórico permanente en Supabase…');
+      td.colSpan = ui.colDistanceTh && !ui.colDistanceTh.hidden ? 7 : 6;
+      row.append(td);
+      ui.recordsBody.append(row);
+    }
+    if (ui.mobileRecordsList) {
+      ui.mobileRecordsList.replaceChildren();
+      ui.mobileRecordsList.append(el('div', 'empty-cards', 'Consultando archivo histórico permanente en Supabase…'));
+    }
+    set('paginationText', 'Consultando archivo permanente…');
+
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(LIMIT),
+      include_events: 'true',
+      include_stats: 'false'
+    });
+
+    // Orden
+    if (f.sort.value === 'largest') {
+      params.set('sort', 'largest');
+    } else if (f.sort.value === 'deepest') {
+      params.set('sort', 'deepest');
+    } else {
+      params.set('sort', 'recent');
+      params.set('order', 'desc');
+    }
+
+    // Filtros de magnitud
+    if (f.mag.value === 'below3') {
+      params.set('max_mag', '2.9');
+    } else if (f.mag.value === '3') {
+      params.set('min_mag', '3.0');
+      params.set('max_mag', '3.9');
+    } else if (f.mag.value === '4') {
+      params.set('min_mag', '4.0');
+      params.set('max_mag', '4.9');
+    } else if (f.mag.value === '5') {
+      params.set('min_mag', '5.0');
+    }
+
+    // Filtros de profundidad
+    if (f.depth.value === 'shallow') {
+      params.set('max_prof', '9.9');
+    } else if (f.depth.value === 'middle') {
+      params.set('min_prof', '10.0');
+      params.set('max_prof', '30.0');
+    } else if (f.depth.value === 'deep') {
+      params.set('min_prof', '30.1');
+    }
+
+    // Estado del registro
+    if (f.status.value) {
+      params.set('estado', f.status.value);
+    }
+
+    // Rango de fechas
+    if (f.from.value) {
+      params.set('desde', f.from.value);
+    }
+    if (f.to.value) {
+      params.set('hasta', f.to.value);
+    }
+
+    // Región o búsqueda por topónimo
+    if (f.zone.value) {
+      params.set('region', f.zone.value);
+    }
+    if (f.search.value.trim()) {
+      params.set('search', f.search.value.trim());
+    }
+
+    // Período acotado en pestaña historial si no es "Todo el historial" (f.period.value !== '0')
+    if (state.activeMobileTab === 'historial' && f.period.value !== '0' && !f.from.value && !f.to.value) {
+      const histY = ui.histYear?.value;
+      const histM = ui.histMonth?.value;
+      if (histY && histY !== 'all') params.set('anio', histY);
+      if (histM && histM !== 'all') params.set('mes', histM);
+    }
+
+    try {
+      const resp = await fetch(`${HISTORICO_API}?${params.toString()}`, {
+        headers: { Accept: 'application/json' }
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      if (requestId !== state.activeCatalogRequestId) return; // descarte de carreras
+
+      if (!data || !data.ok) {
+        throw new Error(data?.error || 'Error al consultar archivo histórico');
+      }
+
+      state.historicalCatalogEvents = data.eventos || [];
+      state.historicalPagination = data.paginacion;
+
+      drawTable(data.eventos || [], data.paginacion);
+    } catch (err) {
+      if (requestId !== state.activeCatalogRequestId) return;
+      if (ui.recordsBody) {
+        ui.recordsBody.replaceChildren();
+        const row = el('tr');
+        const td = el('td', 'empty-table', `No se pudo consultar el archivo histórico (${err.message}).`);
+        td.colSpan = ui.colDistanceTh && !ui.colDistanceTh.hidden ? 7 : 6;
+        row.append(td);
+        ui.recordsBody.append(row);
+      }
+      if (ui.mobileRecordsList) {
+        ui.mobileRecordsList.replaceChildren();
+        ui.mobileRecordsList.append(el('div', 'empty-cards', `No se pudo consultar el archivo histórico (${err.message}).`));
+      }
+      set('paginationText', 'Error de conexión');
+    }
+  }
+
+  function drawTable(data, pagination = null) {
+    let total, pages, begin, entries;
+    if (pagination) {
+      total = pagination.total_registros || 0;
+      pages = Math.max(1, pagination.total_paginas || 1);
+      state.page = pagination.pagina_actual || 1;
+      begin = (state.page - 1) * (pagination.limite || LIMIT);
+      entries = data;
+    } else {
+      total = data.length;
+      pages = Math.max(1, Math.ceil(total / LIMIT));
+      state.page = Math.max(1, Math.min(pages, state.page));
+      begin = (state.page - 1) * LIMIT;
+      entries = data.slice(begin, begin + LIMIT);
+    }
     ui.recordsBody.replaceChildren();
     if (ui.mobileRecordsList) ui.mobileRecordsList.replaceChildren();
 
@@ -1163,10 +1319,13 @@
       }
     }
 
-    set('paginationText', total ? `Mostrando ${num(begin + 1)}–${num(Math.min(total, begin + LIMIT))} de ${num(total)}` : 'No hay registros');
+    const sourceSuffix = pagination ? ' · Archivo permanente' : '';
+    set('paginationText', total
+      ? `Mostrando ${num(begin + 1)}–${num(Math.min(total, begin + (pagination ? (pagination.limite || LIMIT) : LIMIT)))} de ${num(total)}${sourceSuffix}`
+      : 'No hay registros');
     set('pageNum', `${state.page} / ${pages}`);
-    ui.pagePrev.disabled = state.page <= 1;
-    ui.pageNext.disabled = state.page >= pages;
+    ui.pagePrev.disabled = pagination ? !pagination.tiene_anterior : state.page <= 1;
+    ui.pageNext.disabled = pagination ? !pagination.tiene_siguiente : state.page >= pages;
   }
 
   function render() {
@@ -1178,7 +1337,14 @@
     makeBars('townBars',filtered,0,9);
     makeBars('regionBars',filtered,0,9);
     drawMap(filtered);
-    drawTable(filtered);
+
+    if (isHistoricalModeActive()) {
+      state.isHistoricalMode = true;
+      fetchHistoricalCatalogPage(state.histPage || 1);
+    } else {
+      state.isHistoricalMode = false;
+      drawTable(filtered);
+    }
   }
 
   function reset() {
@@ -1209,12 +1375,14 @@
 
     const cleanId = decodeURIComponent(id).trim();
 
-    // 1. Buscar en eventos cargados en memoria
-    const found = state.events.find(e =>
+    // 1. Buscar en eventos cargados en memoria (recientes o del catálogo histórico)
+    const allMemory = [...state.events, ...(state.historicalCatalogEvents || [])];
+    const found = allMemory.find(e =>
       getEventUid(e) === cleanId ||
-      e.id === cleanId ||
-      e.source_uid === cleanId ||
-      ('igc_' + e.timestamp) === cleanId
+      String(e.id) === cleanId ||
+      String(e.source_uid) === cleanId ||
+      String(e.source_event_id) === cleanId ||
+      ('igc_' + (e.timestamp || e.fecha_hora)) === cleanId
     );
 
     if (found) {
@@ -2275,6 +2443,12 @@
       if (!state.historicalData) {
         loadHistoricalData();
       }
+      fetchHistoricalCatalogPage(1);
+    } else if (tabId === 'sismos') {
+      if (f.period && f.period.value !== '0') {
+        state.isHistoricalMode = false;
+        drawTable(sortedData());
+      }
     }
 
     if (ui.sismoView && !ui.sismoView.hidden) {
@@ -2326,8 +2500,9 @@
         }, 80);
       }
 
-      if ((hash === '#historico' || hash === '#historial' || targetTab === 'historial') && !state.historicalData) {
-        loadHistoricalData();
+      if ((hash === '#historico' || hash === '#historial' || targetTab === 'historial')) {
+        if (!state.historicalData) loadHistoricalData();
+        fetchHistoricalCatalogPage(1);
       }
     }
   }
@@ -2349,11 +2524,36 @@
     }));
 
     ui.resetBtn.addEventListener('click', reset);
-    ui.refreshBtn.addEventListener('click', () => loadData());
+    ui.refreshBtn.addEventListener('click', () => {
+      if (isHistoricalModeActive()) {
+        fetchHistoricalCatalogPage(state.histPage || 1, true);
+      } else {
+        loadData();
+      }
+    });
     ui.alertRetry.addEventListener('click', () => loadData());
     ui.csvBtn.addEventListener('click', exportCsv);
-    ui.pagePrev.addEventListener('click', () => { state.page--; drawTable(sortedData()); });
-    ui.pageNext.addEventListener('click', () => { state.page++; drawTable(sortedData()); });
+    ui.pagePrev.addEventListener('click', () => {
+      if (isHistoricalModeActive()) {
+        if (state.historicalPagination && state.historicalPagination.tiene_anterior) {
+          fetchHistoricalCatalogPage(state.historicalPagination.pagina_actual - 1);
+        }
+      } else {
+        state.page--;
+        drawTable(sortedData());
+      }
+    });
+
+    ui.pageNext.addEventListener('click', () => {
+      if (isHistoricalModeActive()) {
+        if (state.historicalPagination && state.historicalPagination.tiene_siguiente) {
+          fetchHistoricalCatalogPage(state.historicalPagination.pagina_actual + 1);
+        }
+      } else {
+        state.page++;
+        drawTable(sortedData());
+      }
+    });
 
     // Acciones de la Ficha Individual
     ui.sismoBackBtn.addEventListener('click', () => closeSismoDetail(true));
@@ -2371,12 +2571,22 @@
     });
 
     // Acciones del Dashboard Histórico
-    ui.histFilterBtn.addEventListener('click', () => loadHistoricalData(true));
-    ui.histYear.addEventListener('change', () => loadHistoricalData(true));
-    ui.histMonth.addEventListener('change', () => loadHistoricalData(true));
+    ui.histFilterBtn.addEventListener('click', () => {
+      loadHistoricalData(true);
+      fetchHistoricalCatalogPage(1, true);
+    });
+    ui.histYear.addEventListener('change', () => {
+      loadHistoricalData(true);
+      fetchHistoricalCatalogPage(1, true);
+    });
+    ui.histMonth.addEventListener('change', () => {
+      loadHistoricalData(true);
+      fetchHistoricalCatalogPage(1, true);
+    });
 
     ui.navHistorico.addEventListener('click', () => {
       if (!state.historicalData) loadHistoricalData();
+      fetchHistoricalCatalogPage(1);
     });
 
     // Geolocalización y cálculo de distancia (almacenamiento exclusivo en sesión volátil)
