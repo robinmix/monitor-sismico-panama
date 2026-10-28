@@ -122,7 +122,7 @@ test('PWA Mobile Cards: style.css incluye clases para diseño compacto (magnitud
 test('PWA Mobile Cards: app.js genera las tarjetas con botón Ver Ficha y metadatos completos', () => {
   assert.ok(jsContent.includes('ui.mobileRecordsList.replaceChildren()'), 'drawTable debe resetear tarjetas móviles');
   assert.ok(jsContent.includes('card-mag-badge'), 'drawTable debe incluir badge de magnitud');
-  assert.ok(jsContent.includes('Ver ficha →'), 'drawTable debe incluir botón Ver ficha');
+  assert.ok(jsContent.includes('card-chevron') || jsContent.includes('Ver ficha →'), 'drawTable debe incluir indicador de apertura de ficha (chevron o botón)');
   assert.ok(jsContent.includes('syncRecordsA11y'), 'Debe incluir función syncRecordsA11y para evitar duplicación de lectura en accesibilidad');
 });
 

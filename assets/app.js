@@ -1293,14 +1293,34 @@
         infoStack.append(paramsGrid);
         card.append(infoStack);
 
-        // Botón de acción táctil Ver ficha técnica (a la derecha)
-        const actionRow = el('div', 'card-action-row');
-        const cardFichaLink = el('a', 'card-ficha-btn', 'Ficha ›');
-        cardFichaLink.title = 'Ver ficha →';
-        cardFichaLink.href = `#/sismo/${encodeURIComponent(uid)}`;
-        cardFichaLink.setAttribute('aria-label', `Ver ficha técnica del sismo M${e.magnitud} en ${e.localidad}`);
-        actionRow.append(cardFichaLink);
-        card.append(actionRow);
+        // Indicador chevron discreto a la derecha (columna 3)
+        const chevron = el('span', 'card-chevron');
+        chevron.setAttribute('aria-hidden', 'true');
+        chevron.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+        card.append(chevron);
+
+        // Tarjeta completa interactiva y accesible (role="button", tabindex="0")
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Sismo magnitud ${e.magnitud} en ${e.localidad}, ${formatCardDate(e.fecha, e.hora)}. Abrir ficha técnica.`);
+
+        const openCardFicha = (evt) => {
+          if (evt && evt.target && evt.target.closest('a, button, select, input')) return;
+          const targetHash = `#/sismo/${encodeURIComponent(uid)}`;
+          if (window.location.hash === targetHash) {
+            showSismoDetail(uid);
+          } else {
+            window.location.hash = targetHash;
+          }
+        };
+
+        card.addEventListener('click', openCardFicha);
+        card.addEventListener('keydown', (evt) => {
+          if (evt.key === 'Enter' || evt.key === ' ') {
+            evt.preventDefault();
+            openCardFicha(evt);
+          }
+        });
 
         ui.mobileRecordsList.append(card);
       }
