@@ -302,3 +302,107 @@ test('23. Paridad ESM (Cloudflare Worker) vs CommonJS (Node.js)', async () => {
     assert.deepEqual(esmRes, cjsRes, `Discrepancia detectada en lat: ${lat}, lon: ${lon}`);
   }
 });
+
+test('24. Sismo cercano a una isla con nombre verificado (Isla Taboga)', () => {
+  // Coordenada en aguas a ~2.5 km de Isla Taboga: lat 8.780, lon -79.540
+  const res = resolveLocation(8.780, -79.540);
+  assert.equal(res.geo_tipo, 'MARITIMO');
+  assert.equal(res.geo_poblado_ref, 'Isla Taboga');
+  assert.ok(res.geo_distancia_km <= 5, 'Distancia a Isla Taboga debe ser <= 5 km');
+  assert.ok(res.geo_ubicacion_texto.includes('Isla Taboga'));
+  assert.ok(!res.geo_ubicacion_texto.includes('Isla Menor'), 'No debe contener nombres sintéticos');
+});
+
+test('25. Sismo cercano a un islote sin nombre no expone identificadores sintéticos', () => {
+  // Caso real del catálogo: lat 7.38472, lon -80.10867 (adyacente al islote 288 pero frente a costa de Azuero)
+  const res = resolveLocation(7.38472, -80.10867, 'Localizado en Panamá a 36km al este de Tonosí');
+  assert.equal(res.geo_tipo, 'MARITIMO');
+  assert.notEqual(res.geo_poblado_ref, 'Isla Menor (288)', 'Bajo ninguna circunstancia debe exponer Isla Menor');
+  assert.ok(!res.geo_poblado_ref.includes('Isla Menor'));
+  assert.ok(!res.geo_ubicacion_texto.includes('Isla Menor'));
+  assert.equal(res.geo_poblado_ref, 'Los Asientos', 'Debe seleccionar la referencia verificada más cercana');
+  assert.ok(res.geo_zona_maritima.includes('Pacífico'));
+});
+
+test('26. Sismo entre varias islas verificadas (Canal entre Coiba y Jicarón)', () => {
+  // Coordenada en canal marítimo entre Isla Coiba e Isla Jicarón: lat 7.300, lon -81.780
+  const res = resolveLocation(7.300, -81.780);
+  assert.equal(res.geo_tipo, 'MARITIMO');
+  assert.ok(['Isla Coiba', 'Isla Jicarón'].includes(res.geo_poblado_ref), 'Debe resolver una de las islas verificadas adyacentes');
+  assert.ok(!res.geo_ubicacion_texto.includes('Isla Menor'));
+  assert.ok(res.geo_zona_maritima.includes('Pacífico'));
+});
+
+test('27. Sismo marítimo en alta mar / mar abierto sin referencia costera cercana', () => {
+  // Coordenada en mar abierto ZEE Pacífico (> 105 km de tierra): lat 6.000, lon -80.000
+  const res = resolveLocation(6.000, -80.000);
+  assert.equal(res.geo_tipo, 'MARITIMO');
+  assert.equal(res.geo_poblado_ref, null, 'En mar abierto a > 100 km no debe asociar localidades distantes');
+  assert.ok(res.geo_ubicacion_texto.includes('en mar abierto'));
+  assert.ok(res.geo_zona_maritima.includes('Pacífico'));
+});
+
+test('28. Sismo sobre un islote sin nombre: clasifica INSULAR, conserva jurisdicción y cero nombres sintéticos', () => {
+  // Epicentro dentro del polígono del islote 13 (Archipiélago de las Perlas): lat 8.400, lon -79.100
+  const res = resolveLocation(8.400, -79.100);
+  assert.equal(res.geo_tipo, 'INSULAR');
+  assert.equal(res.geo_provincia, 'Panamá');
+  assert.equal(res.geo_distrito, 'Balboa');
+  assert.notEqual(res.geo_poblado_ref, 'Isla Menor (13)');
+  assert.ok(!res.geo_poblado_ref.includes('Isla Menor'));
+  assert.ok(!res.geo_ubicacion_texto.includes('Isla Menor'));
+  assert.ok(res.geo_ubicacion_texto.includes('Balboa (Panamá)'));
+});
+
+test('29. Conservación íntegra de la descripción original del IGC y atributos administrativos', () => {
+  const origDesc = 'Localizado en Panamá a 11km al noroeste de Coiba';
+  const res = resolveLocation(7.61967, -81.81950, origDesc);
+  assert.equal(res.geo_tipo, 'MARITIMO');
+  assert.equal(res.geo_poblado_ref, 'Isla Coiba');
+  assert.equal(res.geo_distancia_km, 2.8);
+  assert.equal(res.geo_rumbo, 'al NO');
+  assert.equal(res.geo_provincia_ref, 'Veraguas');
+  assert.equal(res.geo_distrito_ref, 'Montijo');
+  assert.equal(res.geo_provincia, null);
+  assert.equal(res.geo_distrito, null);
+  assert.equal(res.geo_corregimiento, null);
+});
+
+test('30. Ausencia total de identificadores sintéticos en todas las salidas públicas del catálogo', () => {
+  const testCoords = [
+    [7.38472, -80.10867], // Azuero / Los Asientos
+    [9.02783, -82.24867], // Bocas / Chiriquí Grande
+    [7.67317, -81.51217], // Coiba NE
+    [7.67117, -81.56383], // Coiba NE
+    [7.41934, -80.24680], // Cañas / Tonosí
+    [7.66657, -81.61082], // Coiba
+    [7.70981, -81.54607], // Pixvae
+    [7.37228, -80.12955], // Los Asientos
+    [7.20799, -81.03366], // Arenas
+    [7.65711, -81.16217]  // Cébaco
+  ];
+
+  for (const [lat, lon] of testCoords) {
+    const res = resolveLocation(lat, lon);
+    const serialized = JSON.stringify(res);
+    assert.ok(!serialized.includes('Isla Menor'), `Salida pública contiene Isla Menor en (${lat}, ${lon}): ${serialized}`);
+    assert.ok(!serialized.includes('(') || !serialized.match(/Isla Menor \(\d+\)/), 'No debe contener patrón Isla Menor (X)');
+  }
+});
+
+test('31. Paridad ESM vs CJS extendida para casos de toponimia insular y marítima', async () => {
+  const esm = await import('../cloudflare/lib/geo-resolver.mjs');
+  const testCases = [
+    [7.38472, -80.10867],
+    [9.02783, -82.24867],
+    [8.400, -79.100],
+    [6.000, -80.000],
+    [8.780, -79.540]
+  ];
+
+  for (const [lat, lon] of testCases) {
+    const cjs = resolveLocation(lat, lon);
+    const esmRes = esm.resolveLocation(lat, lon);
+    assert.deepEqual(esmRes, cjs, `Divergencia ESM/CJS en (${lat}, ${lon})`);
+  }
+});

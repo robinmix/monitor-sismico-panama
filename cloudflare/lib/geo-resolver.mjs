@@ -80,7 +80,7 @@ function getNearestIslandCoast(lat, lon) {
   let nearestPt = null;
 
   for (const poly of mascara.poligonos) {
-    if (!poly.nombre || poly.id === 0) continue;
+    if (!poly.nombre || poly.id === 0 || poly.toponimia_verificada !== true) continue;
     const margin = 0.35; // ~38 km de margen para pre-filtrado por BBox
     if (lon >= poly.bbox[0] - margin && lon <= poly.bbox[2] + margin &&
         lat >= poly.bbox[1] - margin && lat <= poly.bbox[3] + margin) {
@@ -254,14 +254,22 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
       }
     }
 
-    // Detección de proximidad insular costera (< 25 km)
+    // Detección de proximidad insular costera (< 25 km) a islas con toponimia verificada
     const islandCoast = getNearestIslandCoast(lat, lon);
     let pobladoRef = nearestPlace ? nearestPlace.nombre : null;
 
     if (islandCoast) {
-      pobladoRef = islandCoast.island;
-      distanciaKm = islandCoast.distanceKm;
-      rumbo = islandCoast.rumbo;
+      if (!nearestPlace || islandCoast.distanceKm <= distanciaKm) {
+        pobladoRef = islandCoast.island;
+        distanciaKm = islandCoast.distanceKm;
+        rumbo = islandCoast.rumbo;
+      }
+    }
+
+    // Regla de distancia máxima para referencias marítimas públicas (<= 100 km)
+    // En mar abierto a más de 100 km evitar asociar localidades terrestres distantes
+    if (distanciaKm != null && distanciaKm > 100) {
+      pobladoRef = null;
     }
 
     const defaultMar = lat < 8.9 ? 'Océano Pacífico (Zona Económica Exclusiva)' : 'Mar Caribe (Zona Económica Exclusiva)';
@@ -343,9 +351,9 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
   const corrNombre = matchedCorr ? matchedCorr.nombre : null;
   const isComarca = (matchedProv && matchedProv.tipo === 'COMARCA') || ['Emberá', 'Guna Yala', 'Ngöbe Buglé', 'Naso Tjër Di'].includes(provNombre);
 
-  // Identificación del nombre insular si es territorio de isla
+  // Identificación del nombre insular si es territorio de isla con toponimia verificada
   let islandName = null;
-  if (isIsland && matchedIslandPoly && matchedIslandPoly.nombre) {
+  if (isIsland && matchedIslandPoly && matchedIslandPoly.nombre && matchedIslandPoly.toponimia_verificada === true) {
     islandName = matchedIslandPoly.nombre;
   }
 
@@ -357,6 +365,19 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
       ubicacionTexto = `${islandName}, ${distNombre} (${provNombre})`;
     } else {
       ubicacionTexto = `${islandName}, ${provNombre}`;
+    }
+  } else if (isIsland && !islandName) {
+    // Islote menor o territorio insular sin toponimia oficial individualizada:
+    // Conservar datos de jurisdicción política sin filtrar identificadores sintéticos
+    if (corrNombre && distNombre) {
+      ubicacionTexto = `${corrNombre}, ${distNombre} (${provNombre})`;
+    } else if (distNombre) {
+      ubicacionTexto = `${distNombre}, ${provNombre}`;
+    } else {
+      ubicacionTexto = provNombre;
+    }
+    if (nearestPlace && distanciaKm != null && distanciaKm > 0.5) {
+      ubicacionTexto += ` · a ${distanciaKm} km ${rumbo} de ${nearestPlace.nombre}`;
     }
   } else if (corrNombre && distNombre) {
     ubicacionTexto = `${corrNombre}, ${distNombre} (${provNombre})`;
