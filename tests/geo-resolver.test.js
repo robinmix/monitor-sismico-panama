@@ -192,3 +192,113 @@ test('15. Rendimiento: Enriquecimiento de lote grande (1,000 eventos)', () => {
   assert.ok(durationMs < 1500, `El lote tardó ${durationMs.toFixed(1)} ms, superando el límite`);
   assert.ok(enrichedList[0].geo_tipo);
 });
+
+test('16. Sismo Coiba 28-Oct-2026 15:58:03 UTC (Marítimo adyacente a costa NO de Coiba)', () => {
+  // Evento obligatorio: Lat 7.61967, Lon -81.81950, M3.5
+  const res = resolveLocation(7.61967, -81.81950, 'Localizado en Panamá a 11km al noroeste de Coiba');
+  assert.equal(res.geo_tipo, 'MARITIMO');
+  assert.equal(res.geo_provincia, null, 'No debe asignar provincia terrestre a aguas marinas');
+  assert.equal(res.geo_distrito, null, 'No debe asignar distrito terrestre a aguas marinas');
+  assert.equal(res.geo_corregimiento, null, 'No debe inventar corregimiento terrestre para el océano');
+  assert.ok(res.geo_zona_maritima.includes('Coiba') || res.geo_zona_maritima.includes('Pacífico'));
+  assert.equal(res.geo_poblado_ref, 'Isla Coiba');
+  assert.ok(res.geo_distancia_km >= 2.0 && res.geo_distancia_km <= 3.5, `Distancia a costa de Coiba debe ser ~2.8 km (obtenido: ${res.geo_distancia_km})`);
+  assert.equal(res.geo_rumbo, 'al NO');
+  assert.equal(res.geo_provincia_ref, 'Veraguas');
+  assert.equal(res.geo_distrito_ref, 'Montijo');
+  assert.ok(!res.geo_ubicacion_texto.includes('al norte de Montijo'), 'Jamas debe decir al norte de Montijo');
+  assert.ok(res.geo_ubicacion_texto.includes('Isla Coiba'));
+});
+
+test('17. Montijo Cabecera en tierra firme de Veraguas', () => {
+  // Coordenada oficial ANATI Cab_Distrito 090601: lat 7.99171, lon -81.05507
+  const res = resolveLocation(7.99171, -81.05507);
+  assert.equal(res.geo_tipo, 'TERRESTRE');
+  assert.equal(res.geo_provincia, 'Veraguas');
+  assert.equal(res.geo_distrito, 'Montijo');
+  assert.equal(res.geo_corregimiento, 'Montijo');
+  assert.equal(res.geo_distancia_km, 0);
+
+  // La distancia entre Montijo cabecera y el centro de Coiba (7.47, -81.75) debe ser > 90 km
+  const distCoiba = haversineKm(7.99171, -81.05507, 7.47, -81.75);
+  assert.ok(distCoiba > 90, `Montijo debe estar en tierra firme a más de 90 km de Coiba (obtenido: ${distCoiba.toFixed(1)} km)`);
+});
+
+test('18. Isla Gobernadora en su posición insular real', () => {
+  // Coordenada oficial ANATI Cab_Corregimiento La Punta: lat 7.55933, lon -81.18551
+  const res = resolveLocation(7.55933, -81.18551);
+  assert.equal(res.geo_tipo, 'INSULAR');
+  assert.equal(res.geo_provincia, 'Veraguas');
+  assert.equal(res.geo_distrito, 'Montijo');
+  assert.equal(res.geo_corregimiento, 'Gobernadora');
+  assert.equal(res.geo_poblado_ref, 'Isla Gobernadora');
+
+  // Distancia entre Gobernadora y Coiba debe ser > 60 km
+  const distCoiba = haversineKm(7.55933, -81.18551, 7.47, -81.75);
+  assert.ok(distCoiba > 60, `Gobernadora debe estar en el Golfo de Montijo a más de 60 km de Coiba (obtenido: ${distCoiba.toFixed(1)} km)`);
+});
+
+test('19. San Miguelito: Jerarquía completa sin oclusión por Distrito de Panamá', () => {
+  // Cabecera de San Miguelito: lat 9.0552, lon -79.48856
+  const res = resolveLocation(9.0552, -79.48856);
+  assert.equal(res.geo_tipo, 'TERRESTRE');
+  assert.equal(res.geo_provincia, 'Panamá');
+  assert.equal(res.geo_distrito, 'San Miguelito', 'Debe resolver Distrito San Miguelito, no Distrito de Panamá');
+  assert.ok(res.geo_corregimiento, 'Debe resolver corregimiento de San Miguelito (Belisario Porras)');
+  assert.equal(res.geo_corregimiento, 'Belisario Porras');
+  assert.ok(res.geo_ubicacion_texto.includes('San Miguelito'));
+});
+
+test('20. Sambú (Comarca Emberá-Wounaan) sin oclusión por Chepigana / Darién', () => {
+  // Cabecera distrital de Sambú: lat 7.83901, lon -78.14188
+  const res = resolveLocation(7.83901, -78.14188);
+  assert.equal(res.geo_tipo, 'TERRESTRE');
+  assert.equal(res.geo_provincia, 'Emberá');
+  assert.equal(res.geo_comarca, 'Emberá');
+  assert.equal(res.geo_distrito, 'Sambú', 'Debe resolver Sambú, no Chepigana');
+  assert.ok(res.geo_corregimiento, 'Debe resolver corregimiento de Sambú');
+  assert.ok(res.geo_ubicacion_texto.includes('Sambú') || res.geo_ubicacion_texto.includes('Emberá'));
+});
+
+test('21. Paso Canoas: Distinción lado Panamá vs lado Costa Rica', () => {
+  // Lado panameño (aduana/corregimiento Progreso, Barú): lat 8.5322, lon -82.8400
+  const resPA = resolveLocation(8.5322, -82.8400);
+  assert.equal(resPA.geo_tipo, 'TERRESTRE');
+  assert.equal(resPA.geo_pais, 'Panamá');
+  assert.equal(resPA.geo_provincia, 'Chiriquí');
+  assert.equal(resPA.geo_distrito, 'Barú');
+  assert.ok(resPA.geo_corregimiento);
+
+  // Lado costarricense: lat 8.5322, lon -82.8450
+  const resCR = resolveLocation(8.5322, -82.8450);
+  assert.equal(resCR.geo_tipo, 'FRONTERIZO');
+  assert.equal(resCR.geo_pais, 'Costa Rica');
+  assert.ok(resCR.geo_provincia.includes('Costa Rica') || resCR.geo_provincia.includes('Puntarenas'));
+});
+
+test('22. Isla Cébaco insular en tierra firme insular', () => {
+  // Centroide de Isla Cébaco: lat 7.5275, lon -81.1531
+  const res = resolveLocation(7.5275, -81.1531);
+  assert.equal(res.geo_tipo, 'INSULAR');
+  assert.equal(res.geo_provincia, 'Veraguas');
+  assert.equal(res.geo_distrito, 'Montijo');
+  assert.equal(res.geo_poblado_ref, 'Isla Cébaco');
+  assert.ok(res.geo_ubicacion_texto.includes('Isla Cébaco'));
+});
+
+test('23. Paridad ESM (Cloudflare Worker) vs CommonJS (Node.js)', async () => {
+  const esm = await import('../cloudflare/lib/geo-resolver.mjs');
+  const sampleCoords = [
+    [7.61967, -81.81950, 'Sismo Coiba'],
+    [7.99171, -81.05507, 'Montijo'],
+    [9.0552, -79.48856, 'San Miguelito'],
+    [7.83901, -78.14188, 'Sambú'],
+    [8.5322, -82.8400, 'Paso Canoas']
+  ];
+
+  for (const [lat, lon, desc] of sampleCoords) {
+    const cjsRes = resolveLocation(lat, lon, desc);
+    const esmRes = esm.resolveLocation(lat, lon, desc);
+    assert.deepEqual(esmRes, cjsRes, `Discrepancia detectada en lat: ${lat}, lon: ${lon}`);
+  }
+});

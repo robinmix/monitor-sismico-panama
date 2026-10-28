@@ -1,6 +1,7 @@
 /**
  * @fileoverview GeographicResolver ESM para Cloudflare Pages
  * Motor de resolución y enriquecimiento geográfico sin dependencias de Node.js
+ * basado en la cartografía oficial de la República de Panamá (IGNTG / ANATI DPA-2025, INEC, CONVEMAR).
  */
 
 import mascara from '../../lib/geo-data/panama-mascara.mjs';
@@ -10,7 +11,32 @@ import { corregimientos } from '../../lib/geo-data/panama-corregimientos.mjs';
 import { lugares } from '../../lib/geo-data/panama-lugares-poblados.mjs';
 import { maritimo } from '../../lib/geo-data/panama-maritimo.mjs';
 
-const R_EARTH_KM = 6371.0088;
+const R_EARTH_KM = 6371.0088; // Constante geodésica oficial IUGG
+
+/**
+ * Pre-ordenamiento por área de caja envolvente (BBox) para resolución de enclaves:
+ * Los distritos y corregimientos más pequeños (ej. San Miguelito dentro de Panamá,
+ * Sambú dentro de Chepigana) se evalúan primero para evitar oclusiones topológicas.
+ */
+const sortedCorregimientos = [...corregimientos].sort((a, b) => {
+  const areaA = (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]);
+  const areaB = (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]);
+  return areaA - areaB;
+});
+
+const sortedDistritos = [...distritos].sort((a, b) => {
+  const areaA = (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]);
+  const areaB = (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]);
+  return areaA - areaB;
+});
+
+const sortedProvincias = [...provincias].sort((a, b) => {
+  if (a.tipo === 'COMARCA' && b.tipo !== 'COMARCA') return -1;
+  if (b.tipo === 'COMARCA' && a.tipo !== 'COMARCA') return 1;
+  const areaA = (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]);
+  const areaB = (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]);
+  return areaA - areaB;
+});
 
 export function pointInPolygon(x, y, ring) {
   let inside = false;
@@ -48,6 +74,40 @@ export function calculateBearing(epicenterLat, epicenterLon, refLat, refLon) {
   return sectors[index];
 }
 
+function getNearestIslandCoast(lat, lon) {
+  let minCoastDist = Infinity;
+  let nearestPoly = null;
+  let nearestPt = null;
+
+  for (const poly of mascara.poligonos) {
+    if (!poly.nombre || poly.id === 0) continue;
+    const margin = 0.35; // ~38 km de margen para pre-filtrado por BBox
+    if (lon >= poly.bbox[0] - margin && lon <= poly.bbox[2] + margin &&
+        lat >= poly.bbox[1] - margin && lat <= poly.bbox[3] + margin) {
+      for (const pt of poly.coordinates) {
+        const d = haversineKm(lat, lon, pt[1], pt[0]);
+        if (d < minCoastDist) {
+          minCoastDist = d;
+          nearestPoly = poly;
+          nearestPt = pt;
+        }
+      }
+    }
+  }
+
+  if (nearestPoly && minCoastDist <= 25) {
+    const rumbo = calculateBearing(lat, lon, nearestPt[1], nearestPt[0]);
+    return {
+      island: nearestPoly.nombre,
+      poly: nearestPoly,
+      distanceKm: Number(minCoastDist.toFixed(1)),
+      rumbo: rumbo,
+      nearestPt: nearestPt
+    };
+  }
+  return null;
+}
+
 export function resolveLocation(latInput, lonInput, igcDescription = '') {
   const lat = typeof latInput === 'number' ? latInput : parseFloat(latInput);
   const lon = typeof lonInput === 'number' ? lonInput : parseFloat(lonInput);
@@ -65,7 +125,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     geo_rumbo: null,
     geo_ubicacion_texto: igcDescription || 'Ubicación no determinada',
     geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-    geo_version: 'DPA-2025-v1',
+    geo_version: 'DPA-2025-v2',
     geo_calidad: 'NO_DETERMINADA'
   };
 
@@ -74,25 +134,45 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     return baseResult;
   }
 
+  // Bounding Box general de monitoreo sismoPA: lon [-85.5, -75.5], lat [4.0, 11.8]
   if (lon < -85.5 || lon > -75.5 || lat < 4.0 || lat > 11.8) {
     baseResult.geo_tipo = 'FUERA_DE_COBERTURA';
     baseResult.geo_ubicacion_texto = 'Fuera del área de monitoreo de Panamá';
     return baseResult;
   }
 
+  // 1. Verificar si está en tierra (continental o insular)
   let onLand = false;
   let isIsland = false;
+  let matchedIslandPoly = null;
 
   for (const part of mascara.poligonos) {
     if (pointInBBox(lon, lat, part.bbox)) {
       if (pointInPolygon(lon, lat, part.coordinates)) {
         onLand = true;
         isIsland = (part.id !== 0);
+        if (isIsland) matchedIslandPoly = part;
         break;
       }
     }
   }
 
+  // Comprobación de borde costero: si está dentro de un corregimiento terrestre, considerar onLand
+  if (!onLand) {
+    for (const c of sortedCorregimientos) {
+      if (pointInBBox(lon, lat, c.bbox)) {
+        for (const poly of c.coordinates) {
+          if (pointInPolygon(lon, lat, poly)) {
+            onLand = true;
+            break;
+          }
+        }
+        if (onLand) break;
+      }
+    }
+  }
+
+  // 2. Calcular la población / referencia más cercana
   let nearestPlace = null;
   let minDistance = Infinity;
   for (const l of lugares) {
@@ -103,15 +183,30 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     }
   }
 
-  const distanciaKm = nearestPlace ? Number(minDistance.toFixed(1)) : null;
-  const rumbo = nearestPlace ? calculateBearing(lat, lon, nearestPlace.lat, nearestPlace.lon) : null;
+  let distanciaKm = nearestPlace ? Number(minDistance.toFixed(1)) : null;
+  let rumbo = nearestPlace ? calculateBearing(lat, lon, nearestPlace.lat, nearestPlace.lon) : null;
 
-  const isCostaRicaBorder = (lon < -82.90 && lat >= 8.03 && lat <= 9.7) ||
-                            (lon < -82.80 && lat >= 8.5 && lat <= 9.0 && !onLand);
-  const isColombiaBorder = (lon > -77.30 && lat >= 7.0 && lat <= 8.8 && !onLand);
+  // 3. Manejo de zonas fuera de tierra panameña: Marítimo o Frontera
+  let isCostaRicaBorder = false;
+  if (!onLand) {
+    if (lat >= 8.0 && lat < 8.50) {
+      isCostaRicaBorder = (lon < -82.87);
+    } else if (lat >= 8.50 && lat < 8.65) {
+      isCostaRicaBorder = (lon < -82.842);
+    } else if (lat >= 8.65 && lat < 9.0) {
+      isCostaRicaBorder = (lon < -82.88);
+    } else if (lat >= 9.0 && lat <= 9.8) {
+      isCostaRicaBorder = (lon < -82.60 && lat > 9.5) || (lon < -82.88);
+    } else {
+      isCostaRicaBorder = (lon < -82.90 && lat >= 8.03 && lat <= 9.7);
+    }
+  }
+
+  const isColombiaBorder = (!onLand && lon > -77.30 && lat >= 7.0 && lat <= 8.8);
 
   if (!onLand) {
     if (isCostaRicaBorder) {
+      const crRef = nearestPlace ? nearestPlace.nombre : 'Paso Canoas';
       return {
         geo_tipo: 'FRONTERIZO',
         geo_pais: 'Costa Rica',
@@ -120,17 +215,18 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
         geo_distrito: null,
         geo_corregimiento: null,
         geo_zona_maritima: null,
-        geo_poblado_ref: nearestPlace ? nearestPlace.nombre : 'Paso Canoas',
+        geo_poblado_ref: crRef,
         geo_distancia_km: distanciaKm,
         geo_rumbo: rumbo,
-        geo_ubicacion_texto: `Costa Rica (Región Fronteriza · a ${distanciaKm} km ${rumbo} de ${nearestPlace ? nearestPlace.nombre : 'Paso Canoas'})`,
+        geo_ubicacion_texto: `Costa Rica (Región Fronteriza · a ${distanciaKm} km ${rumbo} de ${crRef})`,
         geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-        geo_version: 'DPA-2025-v1',
+        geo_version: 'DPA-2025-v2',
         geo_calidad: 'ALTA'
       };
     }
 
     if (isColombiaBorder) {
+      const colRef = nearestPlace ? nearestPlace.nombre : 'Juradó';
       return {
         geo_tipo: 'FRONTERIZO',
         geo_pais: 'Colombia',
@@ -139,16 +235,17 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
         geo_distrito: null,
         geo_corregimiento: null,
         geo_zona_maritima: null,
-        geo_poblado_ref: nearestPlace ? nearestPlace.nombre : 'Juradó',
+        geo_poblado_ref: colRef,
         geo_distancia_km: distanciaKm,
         geo_rumbo: rumbo,
-        geo_ubicacion_texto: `Colombia (Región Fronteriza · a ${distanciaKm} km ${rumbo} de ${nearestPlace ? nearestPlace.nombre : 'Juradó'})`,
+        geo_ubicacion_texto: `Colombia (Región Fronteriza · a ${distanciaKm} km ${rumbo} de ${colRef})`,
         geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-        geo_version: 'DPA-2025-v1',
+        geo_version: 'DPA-2025-v2',
         geo_calidad: 'ALTA'
       };
     }
 
+    // Identificar zona marítima oficial (CONVEMAR)
     let matchedMarine = null;
     for (const zm of maritimo) {
       if (pointInBBox(lon, lat, zm.bbox)) {
@@ -156,8 +253,20 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
         break;
       }
     }
-    const zonaMaritimaNombre = matchedMarine ? matchedMarine.nombre : (lat < 8.3 ? 'Océano Pacífico (Zona Económica Exclusiva)' : 'Mar Caribe (Zona Económica Exclusiva)');
-    const refText = nearestPlace ? `a ${distanciaKm} km ${rumbo} de ${nearestPlace.nombre}` : 'en mar abierto';
+
+    // Detección de proximidad insular costera (< 25 km)
+    const islandCoast = getNearestIslandCoast(lat, lon);
+    let pobladoRef = nearestPlace ? nearestPlace.nombre : null;
+
+    if (islandCoast) {
+      pobladoRef = islandCoast.island;
+      distanciaKm = islandCoast.distanceKm;
+      rumbo = islandCoast.rumbo;
+    }
+
+    const defaultMar = lat < 8.9 ? 'Océano Pacífico (Zona Económica Exclusiva)' : 'Mar Caribe (Zona Económica Exclusiva)';
+    const zonaMaritimaNombre = matchedMarine ? matchedMarine.nombre : defaultMar;
+    const refText = pobladoRef ? `a ${distanciaKm} km ${rumbo} de ${pobladoRef}` : 'en mar abierto';
 
     return {
       geo_tipo: 'MARITIMO',
@@ -166,34 +275,40 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
       geo_comarca: null,
       geo_distrito: null,
       geo_corregimiento: null,
+      geo_provincia_ref: matchedMarine && matchedMarine.provincia_ref ? matchedMarine.provincia_ref : (islandCoast && islandCoast.poly.provincia ? islandCoast.poly.provincia : null),
+      geo_distrito_ref: matchedMarine && matchedMarine.distrito_ref ? matchedMarine.distrito_ref : (islandCoast && islandCoast.poly.distrito ? islandCoast.poly.distrito : null),
       geo_zona_maritima: zonaMaritimaNombre,
-      geo_poblado_ref: nearestPlace ? nearestPlace.nombre : null,
+      geo_poblado_ref: pobladoRef,
       geo_distancia_km: distanciaKm,
       geo_rumbo: rumbo,
       geo_ubicacion_texto: `${zonaMaritimaNombre} (${refText})`,
       geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-      geo_version: 'DPA-2025-v1',
+      geo_version: 'DPA-2025-v2',
       geo_calidad: 'ALTA'
     };
   }
 
-  let matchedProv = null;
-  for (const prov of provincias) {
-    if (pointInBBox(lon, lat, prov.bbox)) {
-      for (const poly of prov.coordinates) {
+  // 4. Ubicación en tierra: Jerarquía Corregimiento -> Distrito -> Provincia (Enclave Precedence)
+  let matchedCorr = null;
+  for (const corr of sortedCorregimientos) {
+    if (pointInBBox(lon, lat, corr.bbox)) {
+      for (const poly of corr.coordinates) {
         if (pointInPolygon(lon, lat, poly)) {
-          matchedProv = prov;
+          matchedCorr = corr;
           break;
         }
       }
-      if (matchedProv) break;
+      if (matchedCorr) break;
     }
   }
 
   let matchedDist = null;
-  if (matchedProv) {
-    for (const dist of distritos) {
-      if (dist.provincia_id === matchedProv.id && pointInBBox(lon, lat, dist.bbox)) {
+  if (matchedCorr) {
+    matchedDist = distritos.find(d => d.id === matchedCorr.distrito_id) || null;
+  }
+  if (!matchedDist) {
+    for (const dist of sortedDistritos) {
+      if (pointInBBox(lon, lat, dist.bbox)) {
         for (const poly of dist.coordinates) {
           if (pointInPolygon(lon, lat, poly)) {
             matchedDist = dist;
@@ -205,28 +320,45 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     }
   }
 
-  let matchedCorr = null;
+  let matchedProv = null;
   if (matchedDist) {
-    for (const corr of corregimientos) {
-      if (corr.distrito_id === matchedDist.id && pointInBBox(lon, lat, corr.bbox)) {
-        for (const poly of corr.coordinates) {
+    matchedProv = provincias.find(p => p.id === matchedDist.provincia_id) || null;
+  }
+  if (!matchedProv) {
+    for (const prov of sortedProvincias) {
+      if (pointInBBox(lon, lat, prov.bbox)) {
+        for (const poly of prov.coordinates) {
           if (pointInPolygon(lon, lat, poly)) {
-            matchedCorr = corr;
+            matchedProv = prov;
             break;
           }
         }
-        if (matchedCorr) break;
+        if (matchedProv) break;
       }
     }
   }
 
-  const provNombre = matchedProv ? matchedProv.nombre : (nearestPlace ? nearestPlace.provincia : 'Panamá');
-  const distNombre = matchedDist ? matchedDist.nombre : (nearestPlace ? nearestPlace.distrito : null);
+  const provNombre = matchedProv ? matchedProv.nombre : (matchedCorr ? matchedCorr.provincia : (nearestPlace ? nearestPlace.provincia : 'Panamá'));
+  const distNombre = matchedDist ? matchedDist.nombre : (matchedCorr ? matchedCorr.distrito : (nearestPlace ? nearestPlace.distrito : null));
   const corrNombre = matchedCorr ? matchedCorr.nombre : null;
-  const isComarca = matchedProv && matchedProv.tipo === 'COMARCA';
+  const isComarca = (matchedProv && matchedProv.tipo === 'COMARCA') || ['Emberá', 'Guna Yala', 'Ngöbe Buglé', 'Naso Tjër Di'].includes(provNombre);
+
+  // Identificación del nombre insular si es territorio de isla
+  let islandName = null;
+  if (isIsland && matchedIslandPoly && matchedIslandPoly.nombre) {
+    islandName = matchedIslandPoly.nombre;
+  }
+
+  let pobladoRef = islandName || (nearestPlace ? nearestPlace.nombre : null);
 
   let ubicacionTexto = '';
-  if (corrNombre && distNombre) {
+  if (isIsland && islandName) {
+    if (distNombre && provNombre) {
+      ubicacionTexto = `${islandName}, ${distNombre} (${provNombre})`;
+    } else {
+      ubicacionTexto = `${islandName}, ${provNombre}`;
+    }
+  } else if (corrNombre && distNombre) {
     ubicacionTexto = `${corrNombre}, ${distNombre} (${provNombre})`;
   } else if (distNombre) {
     ubicacionTexto = `${distNombre}, ${provNombre}`;
@@ -234,7 +366,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     ubicacionTexto = provNombre;
   }
 
-  if (nearestPlace && distanciaKm != null && distanciaKm > 0.5) {
+  if (nearestPlace && distanciaKm != null && distanciaKm > 0.5 && !isIsland) {
     ubicacionTexto += ` · a ${distanciaKm} km ${rumbo} de ${nearestPlace.nombre}`;
   }
 
@@ -246,12 +378,12 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     geo_distrito: distNombre,
     geo_corregimiento: corrNombre,
     geo_zona_maritima: null,
-    geo_poblado_ref: nearestPlace ? nearestPlace.nombre : null,
+    geo_poblado_ref: pobladoRef,
     geo_distancia_km: distanciaKm,
     geo_rumbo: rumbo,
     geo_ubicacion_texto: ubicacionTexto,
     geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-    geo_version: 'DPA-2025-v1',
+    geo_version: 'DPA-2025-v2',
     geo_calidad: matchedCorr ? 'ALTA' : (matchedProv ? 'ESTIMADA' : 'LIMITROFE')
   };
 }
@@ -285,8 +417,8 @@ export function enrichEvents(events) {
 
 export const CARTOGRAPHY_METADATA = {
   fuente: 'Instituto Geográfico Nacional Tommy Guardia / ANATI / INEC / CONVEMAR',
-  version: 'DPA-2025-v1',
-  fecha: '2026-10-24',
+  version: 'DPA-2025-v2',
+  fecha: '2026-10-28',
   crs: 'WGS84 / EPSG:4326'
 };
 
@@ -296,5 +428,7 @@ export default {
   enrichEvents,
   haversineKm,
   calculateBearing,
+  pointInPolygon,
+  pointInBBox,
   CARTOGRAPHY_METADATA
 };
