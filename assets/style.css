@@ -97,7 +97,7 @@ body {
   max-width: 100vw;
   font-family: var(--font-sans);
   font-size: 14.5px;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.5;
   color: var(--text-main);
   background-color: var(--bg-root);
@@ -228,7 +228,7 @@ a {
 .topnav a {
   font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
@@ -720,44 +720,54 @@ a {
   padding: 4px 0 0;
 }
 
-/* BOTÓN PRINCIPAL AZUL ESTILIZADO (ESTILO 3 / 4) */
+/* BOTÓN PRINCIPAL MARFIL CÁLIDO DE ALTO CONTRASTE */
 .hero-btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, #2563EB 0%, #3B82F6 100%);
-  color: #FFFFFF;
+  background: #E9E6D8;
+  color: #161716;
   font-family: var(--font-sans);
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 9px 24px;
   border-radius: var(--radius-pill);
   text-decoration: none;
-  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   transition: all 0.2s ease;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(22, 23, 22, 0.15);
 }
 
 .hero-btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
-  color: #FFFFFF;
+  background: #DCD7C3;
+  color: #161716;
+  border-color: rgba(22, 23, 22, 0.25);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 
 .hero-btn-primary:active {
   transform: translateY(0);
+  background: #D0CAB4;
+  color: #161716;
+}
+
+.hero-btn-primary:focus-visible {
+  outline: 2px solid #E9E6D8;
+  outline-offset: 2px;
 }
 
 .hero-btn-arrow {
   width: 15px;
   height: 15px;
-  stroke: currentColor;
+  stroke: #161716;
   transition: transform 0.2s ease;
 }
 
 .hero-btn-primary:hover .hero-btn-arrow {
   transform: translateX(3px);
+  stroke: #161716;
 }
 
 /* WIDGETS DE TELEMETRÍA (DISTANCIA Y CUENTA REGRESIVA) */
@@ -788,13 +798,13 @@ a {
   align-items: center;
   gap: 8px;
   background: transparent;
-  border: 1px dashed rgba(56, 130, 246, 0.4);
-  color: var(--color-blue);
+  border: 1px dashed #CFC9B5;
+  color: #E9E6D8;
   padding: 7px 12px;
   border-radius: var(--radius-sm);
   font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
   width: 100%;
   justify-content: center;
@@ -802,18 +812,29 @@ a {
 }
 
 .geo-dist-btn:hover {
-  background: rgba(56, 130, 246, 0.08);
-  border-color: var(--color-blue);
+  background: rgba(233, 230, 216, 0.08);
+  border-color: #E9E6D8;
   border-style: solid;
+  color: #E9E6D8;
+}
+
+.geo-dist-btn:active {
+  background: rgba(233, 230, 216, 0.14);
+}
+
+.geo-dist-btn:focus-visible {
+  outline: 2px solid #E9E6D8;
+  outline-offset: 2px;
 }
 
 .geo-dist-icon {
   font-size: 13px;
   display: inline-block;
+  color: #E9E6D8;
 }
 
 .geo-dist-icon.active {
-  color: var(--color-blue);
+  color: #E9E6D8;
 }
 
 .distance-active {
@@ -1182,7 +1203,7 @@ a {
 .section-kicker {
   font-family: var(--font-sans);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 800;
   letter-spacing: 0.3px;
   color: var(--color-cyan);
   display: block;
@@ -1192,7 +1213,7 @@ a {
 .filter-topline h2, .panel-head h2 {
   font-family: var(--font-sans);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.2px;
   color: var(--text-main);
   margin: 0;
@@ -1839,6 +1860,7 @@ a {
   padding: 0 10px;
   font-family: var(--font-sans);
   font-size: 12px;
+  font-weight: 700;
 }
 
 .download-button, .refresh-button {
@@ -1849,7 +1871,7 @@ a {
   gap: 6px;
   font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   padding: 0 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-default);
@@ -2000,7 +2022,7 @@ tbody tr:hover {
 .state-chip {
   font-family: var(--font-sans);
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 3px 8px;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border-default);
@@ -2541,16 +2563,30 @@ td.align-right {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
-    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
-    color: #FFFFFF !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    background: #E9E6D8 !important;
+    color: #161716 !important;
+    border: 1px solid rgba(22, 23, 22, 0.15) !important;
     border-radius: var(--radius-sm) !important;
     font-size: 12.5px !important;
     font-weight: 700 !important;
     text-decoration: none !important;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
     box-sizing: border-box !important;
     white-space: nowrap !important;
+  }
+
+  .hero-btn-primary .hero-btn-arrow {
+    stroke: #161716 !important;
+  }
+
+  .hero-btn-primary:hover {
+    background: #DCD7C3 !important;
+    color: #161716 !important;
+  }
+
+  .hero-btn-primary:active {
+    background: #D0CAB4 !important;
+    color: #161716 !important;
   }
 
   .user-distance-card {
@@ -2577,18 +2613,24 @@ td.align-right {
     align-items: center !important;
     justify-content: center !important;
     gap: 6px !important;
-    background: var(--bg-surface-elevated) !important;
-    color: #93C5FD !important;
-    border: 1px solid var(--border-accent) !important;
+    background: transparent !important;
+    color: #E9E6D8 !important;
+    border: 1px dashed #CFC9B5 !important;
     border-radius: var(--radius-sm) !important;
     font-size: 12px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     cursor: pointer !important;
     box-sizing: border-box !important;
     white-space: normal !important;
     line-height: 1.25 !important;
     padding: 6px 10px !important;
     text-align: center !important;
+  }
+
+  .geo-dist-btn:hover {
+    background: rgba(233, 230, 216, 0.08) !important;
+    border-color: #E9E6D8 !important;
+    border-style: solid !important;
   }
 
   .timer-box {
@@ -2884,16 +2926,30 @@ td.align-right {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
-    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
-    color: #FFFFFF !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    background: #E9E6D8 !important;
+    color: #161716 !important;
+    border: 1px solid rgba(22, 23, 22, 0.15) !important;
     border-radius: var(--radius-sm) !important;
     font-size: 12.5px !important;
     font-weight: 700 !important;
     text-decoration: none !important;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
     box-sizing: border-box !important;
     white-space: nowrap !important;
+  }
+
+  .hero-btn-primary .hero-btn-arrow {
+    stroke: #161716 !important;
+  }
+
+  .hero-btn-primary:hover {
+    background: #DCD7C3 !important;
+    color: #161716 !important;
+  }
+
+  .hero-btn-primary:active {
+    background: #D0CAB4 !important;
+    color: #161716 !important;
   }
 
   .user-distance-card {
@@ -2920,18 +2976,24 @@ td.align-right {
     align-items: center !important;
     justify-content: center !important;
     gap: 6px !important;
-    background: var(--bg-surface-elevated) !important;
-    color: #93C5FD !important;
-    border: 1px solid var(--border-accent) !important;
+    background: transparent !important;
+    color: #E9E6D8 !important;
+    border: 1px dashed #CFC9B5 !important;
     border-radius: var(--radius-sm) !important;
     font-size: 12px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     cursor: pointer !important;
     box-sizing: border-box !important;
     white-space: normal !important;
     line-height: 1.25 !important;
     padding: 6px 10px !important;
     text-align: center !important;
+  }
+
+  .geo-dist-btn:hover {
+    background: rgba(233, 230, 216, 0.08) !important;
+    border-color: #E9E6D8 !important;
+    border-style: solid !important;
   }
 
   .timer-box {
@@ -3303,13 +3365,13 @@ td.align-right {
     gap: 4px !important;
     padding: 8px 14px !important;
     min-height: 44px !important;
-    background: rgba(56, 189, 248, 0.1) !important;
-    border: 1px solid rgba(56, 189, 248, 0.3) !important;
+    background: rgba(233, 230, 216, 0.08) !important;
+    border: 1px solid #CFC9B5 !important;
     border-radius: 6px !important;
-    color: #38BDF8 !important;
+    color: #E9E6D8 !important;
     font-family: var(--font-sans) !important;
     font-size: 11.5px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     text-decoration: none !important;
     white-space: nowrap !important;
     cursor: pointer !important;
@@ -3317,8 +3379,8 @@ td.align-right {
   }
 
   .card-ficha-btn:hover {
-    background: rgba(56, 189, 248, 0.22) !important;
-    border-color: #38BDF8 !important;
+    background: rgba(233, 230, 216, 0.18) !important;
+    border-color: #E9E6D8 !important;
     color: #FFFFFF !important;
   }
 
@@ -3434,7 +3496,7 @@ td.align-right {
   .mobile-nav-label {
     font-family: var(--font-sans);
     font-size: 10.5px;
-    font-weight: 500;
+    font-weight: 700;
     letter-spacing: 0.15px;
     line-height: 1;
   }
@@ -3452,7 +3514,7 @@ td.align-right {
 
   .mobile-nav-btn.active .mobile-nav-label,
   .mobile-nav-btn[aria-selected="true"] .mobile-nav-label {
-    font-weight: 600;
+    font-weight: 700;
     color: var(--color-cyan);
   }
 
@@ -3688,19 +3750,19 @@ td.align-right {
     align-items: center !important;
     justify-content: center !important;
     gap: 8px !important;
-    background: rgba(56, 189, 248, 0.08) !important;
-    color: #38BDF8 !important;
-    border: 1px dashed rgba(56, 189, 248, 0.45) !important;
+    background: rgba(233, 230, 216, 0.06) !important;
+    color: #E9E6D8 !important;
+    border: 1px dashed #CFC9B5 !important;
     border-radius: var(--radius-sm) !important;
     font-size: 13px !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     cursor: pointer !important;
     transition: all 0.15s ease !important;
   }
 
   #dashboardView[data-active-tab="cerca"] .geo-dist-btn:hover {
-    background: rgba(56, 189, 248, 0.16) !important;
-    border-color: #38BDF8 !important;
+    background: rgba(233, 230, 216, 0.14) !important;
+    border-color: #E9E6D8 !important;
     border-style: solid !important;
   }
 
@@ -3917,7 +3979,7 @@ td.align-right {
   gap: 7px;
   font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--color-cyan);
   background: var(--bg-surface-2);
   border: 1px solid var(--border-default);
@@ -3945,7 +4007,7 @@ td.align-right {
   gap: 6px;
   font-family: var(--font-sans);
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text-main);
   background: var(--bg-surface-2);
   border: 1px solid var(--border-default);
@@ -4004,7 +4066,7 @@ td.align-right {
   margin-top: var(--sp-3);
   font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-cyan);
   background: var(--bg-surface-2);
   border: 1px solid var(--border-default);
@@ -4101,7 +4163,7 @@ td.align-right {
 .sismo-state-chip {
   font-family: var(--font-sans);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.2px;
   padding: 4px 10px;
   background: var(--bg-surface-2);
@@ -4120,7 +4182,7 @@ td.align-right {
 .sismo-region-title {
   font-family: var(--font-sans);
   font-size: 21px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-main);
   margin: var(--sp-2) 0 var(--sp-1);
   line-height: 1.25;
@@ -4161,7 +4223,7 @@ td.align-right {
 .param-label {
   font-family: var(--font-sans);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: 0.2px;
   color: var(--text-muted);
 }
@@ -4703,7 +4765,7 @@ td.align-right {
 .historico-head h2 {
   font-family: var(--font-sans);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
   color: #F8FAFC;
   margin-top: 2px;
   letter-spacing: -0.3px;
@@ -4797,7 +4859,7 @@ td.align-right {
   padding: 0 12px;
   font-family: var(--font-sans);
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 700;
   color: #FFFFFF;
   background: #121312;
   border: 1px solid #373B37;
@@ -5251,7 +5313,7 @@ td.align-right {
   padding: 0 10px;
   font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   color: #FFFFFF;
   background: #121312;
   border: 1px solid #373B37;
@@ -5789,7 +5851,7 @@ td.align-right {
 .card-primary-title,
 .card-place-name {
   font-size: 14.5px;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--text-main);
 }
 
@@ -6166,15 +6228,20 @@ html[data-theme="light"] #snapshotStatus {
   color: #52647A !important;
 }
 html[data-theme="light"] .geo-dist-btn {
-  background: #EAF1F8 !important;
-  border: 1px solid #D8E2EE !important;
-  color: #1678D3 !important;
+  background: #F1EFE6 !important;
+  border: 1px solid #CFC9B5 !important;
+  color: #172338 !important;
+  font-weight: 700 !important;
 }
 html[data-theme="light"] .hero-btn-primary {
-  background: #1678D3 !important;
+  background: #172338 !important;
   color: #FFFFFF !important;
-  border: 1px solid #1678D3 !important;
-  box-shadow: 0 2px 8px rgba(22, 120, 211, 0.25) !important;
+  border: 1px solid #172338 !important;
+  box-shadow: 0 2px 8px rgba(23, 35, 56, 0.25) !important;
+  font-weight: 700 !important;
+}
+html[data-theme="light"] .hero-btn-primary .hero-btn-arrow {
+  stroke: #FFFFFF !important;
 }
 
 /* 3. TARJETAS ESTADÍSTICAS (METRICS) */

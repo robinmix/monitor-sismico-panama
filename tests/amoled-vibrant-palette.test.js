@@ -29,8 +29,8 @@ test('Tipografía: --font-sans configurada con Nunito Sans en style.css', () => 
   );
   assert.match(
     css,
-    /body\s*\{[^}]*font-weight:\s*500/m,
-    'body debe tener font-weight: 500 para texto normal'
+    /body\s*\{[^}]*font-weight:\s*(?:500|700)/m,
+    'body debe tener font-weight: 500 o 700 para texto normal'
   );
 });
 

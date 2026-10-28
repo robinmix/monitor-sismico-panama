@@ -57,9 +57,9 @@ test('Topbar Bell Notification & Navigation Suite', async (t) => {
   });
 
   await t.test('7. sw.js y index.html sincronizan versiones de caché renovadas para invalidar cachés viejas', () => {
-    assert.ok(swJs.includes('core-v20261026unify1') || swJs.includes('core-v20261026topbar2') || swJs.includes('core-v20261027compare1') || swJs.includes('core-v20261027contrast1') || swJs.includes('core-v20261027history1'), 'sw.js debe tener clave de cache renovada');
-    assert.ok(indexHtml.includes('assets/style.css?v=20261026unify1') || indexHtml.includes('assets/style.css?v=20261026topbar2') || indexHtml.includes('assets/style.css?v=20261027compare1') || indexHtml.includes('assets/style.css?v=20261027contrast1') || indexHtml.includes('assets/style.css?v=20261027history1'), 'index.html debe solicitar style.css versionado');
-    assert.ok(indexHtml.includes('assets/app.js?v=20261026unify1') || indexHtml.includes('assets/app.js?v=20261026topbar2') || indexHtml.includes('assets/app.js?v=20261027compare1') || indexHtml.includes('assets/app.js?v=20261027contrast1') || indexHtml.includes('assets/app.js?v=20261027history1'), 'index.html debe solicitar app.js versionado');
+    assert.ok(swJs.includes('core-v20261026unify1') || swJs.includes('core-v20261026topbar2') || swJs.includes('core-v20261027compare1') || swJs.includes('core-v20261027contrast1') || swJs.includes('core-v20261027history1') || swJs.includes('core-v20261028buttons1'), 'sw.js debe tener clave de cache renovada');
+    assert.ok(indexHtml.includes('assets/style.css?v=20261026unify1') || indexHtml.includes('assets/style.css?v=20261026topbar2') || indexHtml.includes('assets/style.css?v=20261027compare1') || indexHtml.includes('assets/style.css?v=20261027contrast1') || indexHtml.includes('assets/style.css?v=20261027history1') || indexHtml.includes('assets/style.css?v=20261028buttons1'), 'index.html debe solicitar style.css versionado');
+    assert.ok(indexHtml.includes('assets/app.js?v=20261026unify1') || indexHtml.includes('assets/app.js?v=20261026topbar2') || indexHtml.includes('assets/app.js?v=20261027compare1') || indexHtml.includes('assets/app.js?v=20261027contrast1') || indexHtml.includes('assets/app.js?v=20261027history1') || indexHtml.includes('assets/app.js?v=20261028buttons1'), 'index.html debe solicitar app.js versionado');
   });
 
   await t.test('8. app.js en navegadores normales activa la pestaña "mas" y desplaza a #notificaciones', () => {
