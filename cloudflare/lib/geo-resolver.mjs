@@ -125,7 +125,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     geo_rumbo: null,
     geo_ubicacion_texto: igcDescription || 'Ubicación no determinada',
     geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-    geo_version: 'DPA-2025-v2',
+    geo_version: 'DPA-2025-v4',
     geo_calidad: 'NO_DETERMINADA'
   };
 
@@ -220,7 +220,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
         geo_rumbo: rumbo,
         geo_ubicacion_texto: `Costa Rica (Región Fronteriza · a ${distanciaKm} km ${rumbo} de ${crRef})`,
         geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-        geo_version: 'DPA-2025-v2',
+        geo_version: 'DPA-2025-v4',
         geo_calidad: 'ALTA'
       };
     }
@@ -240,7 +240,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
         geo_rumbo: rumbo,
         geo_ubicacion_texto: `Colombia (Región Fronteriza · a ${distanciaKm} km ${rumbo} de ${colRef})`,
         geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-        geo_version: 'DPA-2025-v2',
+        geo_version: 'DPA-2025-v4',
         geo_calidad: 'ALTA'
       };
     }
@@ -291,7 +291,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
       geo_rumbo: rumbo,
       geo_ubicacion_texto: `${zonaMaritimaNombre} (${refText})`,
       geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-      geo_version: 'DPA-2025-v2',
+      geo_version: 'DPA-2025-v4',
       geo_calidad: 'ALTA'
     };
   }
@@ -349,7 +349,12 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
   const provNombre = matchedProv ? matchedProv.nombre : (matchedCorr ? matchedCorr.provincia : (nearestPlace ? nearestPlace.provincia : 'Panamá'));
   const distNombre = matchedDist ? matchedDist.nombre : (matchedCorr ? matchedCorr.distrito : (nearestPlace ? nearestPlace.distrito : null));
   const corrNombre = matchedCorr ? matchedCorr.nombre : null;
-  const isComarca = (matchedProv && matchedProv.tipo === 'COMARCA') || ['Emberá', 'Guna Yala', 'Ngöbe Buglé', 'Naso Tjër Di'].includes(provNombre);
+  const comarcaNombre = (matchedProv && matchedProv.tipo === 'COMARCA')
+    ? matchedProv.nombre
+    : ((matchedDist && (matchedDist.tipo === 'DISTRITO_COMARCAL' || matchedDist.nombre.includes('Comarca')))
+      ? matchedDist.nombre
+      : (['Emberá', 'Guna Yala', 'Kuna Yala', 'Ngöbe Buglé', 'Ngäbe-Buglé', 'Naso Tjër Di'].some(c => provNombre.includes(c) || (distNombre && distNombre.includes(c))) ? (distNombre && distNombre.includes('Comarca') ? distNombre : provNombre) : null));
+  const isComarca = Boolean(comarcaNombre);
 
   // Identificación del nombre insular si es territorio de isla con toponimia verificada
   let islandName = null;
@@ -395,7 +400,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     geo_tipo: isIsland ? 'INSULAR' : 'TERRESTRE',
     geo_pais: 'Panamá',
     geo_provincia: provNombre,
-    geo_comarca: isComarca ? provNombre : null,
+    geo_comarca: comarcaNombre,
     geo_distrito: distNombre,
     geo_corregimiento: corrNombre,
     geo_zona_maritima: null,
@@ -404,7 +409,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     geo_rumbo: rumbo,
     geo_ubicacion_texto: ubicacionTexto,
     geo_fuente: 'IGNTG / ANATI / INEC / CONVEMAR',
-    geo_version: 'DPA-2025-v2',
+    geo_version: 'DPA-2025-v4',
     geo_calidad: matchedCorr ? 'ALTA' : (matchedProv ? 'ESTIMADA' : 'LIMITROFE')
   };
 }
