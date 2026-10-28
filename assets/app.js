@@ -1611,14 +1611,14 @@
     ui.sismoTimeLocal.textContent = isValidDate ? `${fullDate.format(dateObj)}` : `${e.fecha || ''} ${e.hora || ''}`;
     ui.sismoTimeUtc.textContent = isValidDate ? `${dateObj.toISOString().replace('T', ' ').slice(0, 19)} UTC` : '—';
     ui.sismoDepth.textContent = isNaN(prof) ? '—' : `${prof} km`;
-    ui.sismoDepthCat.textContent = isNaN(prof) ? 'Sin dato' : 'Profundidad hipocentral';
+    if (ui.sismoDepthCat) ui.sismoDepthCat.textContent = '';
 
     const lat = Number(e.latitud);
     const lon = Number(e.longitud);
     const latStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}`;
     const lonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
     ui.sismoCoordinates.textContent = `${latStr}, ${lonStr}`;
-    ui.sismoCoordDecimal.textContent = `Latitud: ${lat.toFixed(5)} · Longitud: ${lon.toFixed(5)}`;
+    if (ui.sismoCoordDecimal) ui.sismoCoordDecimal.textContent = '';
     ui.sismoMapCoords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}° · ${prof} km`;
 
     if (e.geo_poblado_ref) {
@@ -1628,11 +1628,7 @@
       ui.sismoTown.className = 'param-val';
       ui.sismoTown.textContent = e.localidad || 'Localidad de referencia no especificada';
     }
-    ui.sismoZone.textContent = e.geo_tipo === 'MARITIMO'
-      ? ('Clasificación: Marítimo · ' + (e.geo_zona_maritima || 'ZEE') + ' [IGC: ' + e.region + ']')
-      : (e.geo_provincia
-          ? ('Provincia: ' + e.geo_provincia + (e.geo_distrito ? ' · Distrito de ' + e.geo_distrito : '') + (e.geo_corregimiento ? ' · Corr. ' + e.geo_corregimiento : '') + ' [IGC: ' + e.region + ']')
-          : (e.zona ? ('Zonificación: ' + e.zona) : 'Región tectónica de Panamá'));
+    if (ui.sismoZone) ui.sismoZone.textContent = '';
 
     // Distancia geográfica al visitante si la geolocalización está activa
     updateFichaDistance(e, lat, lon);

@@ -29,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261028catalog1">
+  <link rel="stylesheet" href="assets/style.css?v=20261028ficha1">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261028catalog1"></script>
+  <script defer src="assets/app.js?v=20261028ficha1"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -126,39 +126,32 @@
               <div class="sismo-param">
                 <span class="param-label">FECHA Y HORA LOCAL (PANAMÁ)</span>
                 <strong id="sismoTimeLocal" class="param-val mono">—</strong>
-                <small class="param-sub">Zona horaria América/Panamá (UTC−5)</small>
               </div>
 
               <div class="sismo-param">
                 <span class="param-label">FECHA Y HORA UNIVERSAL (UTC)</span>
                 <strong id="sismoTimeUtc" class="param-val mono">—</strong>
-                <small class="param-sub">Tiempo Universal Coordinado</small>
               </div>
 
               <div class="sismo-param">
                 <span class="param-label">PROFUNDIDAD HIPOCENTRAL</span>
                 <strong id="sismoDepth" class="param-val mono">— km</strong>
-                <small id="sismoDepthCat" class="param-sub">Superficial (&lt; 10 km)</small>
               </div>
 
               <div class="sismo-param">
                 <span class="param-label">COORDENADAS EPICENTRALES</span>
                 <strong id="sismoCoordinates" class="param-val mono">—</strong>
-                <small id="sismoCoordDecimal" class="param-sub">Latitud / Longitud en grados decimales</small>
               </div>
 
               <div class="sismo-param">
                 <span class="param-label">LOCALIDAD MÁS CERCANA</span>
                 <strong id="sismoTown" class="param-val">—</strong>
-                <small id="sismoZone" class="param-sub">Zonificación IGC-UP</small>
               </div>
 
               <div class="sismo-param" id="sismoDistanceParam" hidden>
                 <span class="param-label">DISTANCIA A TU UBICACIÓN</span>
                 <strong id="sismoDistanceVal" class="param-val mono">—</strong>
-                <small class="param-sub">Distancia geodésica en línea recta</small>
               </div>
-
             </div>
 
             <!-- COMPARACIÓN INTERNACIONAL DE MAGNITUDES -->

@@ -4283,7 +4283,7 @@ td.align-right {
 .sismo-params-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--sp-4) var(--sp-5);
+  gap: 12px 20px;
 }
 
 .sismo-param {
@@ -4308,9 +4308,10 @@ td.align-right {
 }
 
 .param-sub {
-  font-family: var(--font-sans);
-  font-size: 11.5px;
-  color: var(--text-dim);
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 0 !important;
 }
 
 .sismo-tech-footer {
