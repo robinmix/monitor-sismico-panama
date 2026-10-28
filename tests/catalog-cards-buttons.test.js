@@ -50,7 +50,7 @@ test('Tema Claro: Contraste y variantes adecuadas para botones y tarjetas', () =
 
 test('Caché y Service Worker: Sincronización v20261028catalog1', () => {
   const swContent = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes('core-v20261028catalog1') || swContent.includes('core-v20261028ficha1'), 'sw.js debe contener clave de caché renovada');
-  assert.ok(htmlContent.includes('assets/style.css?v=20261028catalog1') || htmlContent.includes('assets/style.css?v=20261028ficha1'), 'index.html debe solicitar style.css versionado');
-  assert.ok(htmlContent.includes('assets/app.js?v=20261028catalog1') || htmlContent.includes('assets/app.js?v=20261028ficha1'), 'index.html debe solicitar app.js versionado');
+  assert.ok(swContent.includes('core-v20261028catalog1') || swContent.includes('core-v20261028ficha1') || swContent.includes('core-v20261028nav1'), 'sw.js debe contener clave de caché renovada');
+  assert.ok(htmlContent.includes('assets/style.css?v=20261028catalog1') || htmlContent.includes('assets/style.css?v=20261028ficha1') || htmlContent.includes('assets/style.css?v=20261028nav1'), 'index.html debe solicitar style.css versionado');
+  assert.ok(htmlContent.includes('assets/app.js?v=20261028catalog1') || htmlContent.includes('assets/app.js?v=20261028ficha1') || htmlContent.includes('assets/app.js?v=20261028nav1'), 'index.html debe solicitar app.js versionado');
 });

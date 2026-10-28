@@ -29,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261028ficha1">
+  <link rel="stylesheet" href="assets/style.css?v=20261028nav1">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261028ficha1"></script>
+  <script defer src="assets/app.js?v=20261028nav1"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -251,7 +251,7 @@
       </section>
 
       <!-- VISTA PRINCIPAL DEL DASHBOARD (MONITOR RECIENTE Y ARCHIVO HISTÓRICO) -->
-      <div id="dashboardView">
+      <div id="dashboardView" data-active-tab="sismos">
       <!-- CABECERA COMPACTA DE OBSERVATORIO -->
       <section class="masthead" id="resumen">
         <div class="masthead-copy">
@@ -675,8 +675,10 @@
       <section id="registros" class="panel records-section">
         <div class="panel-head records-head">
           <div>
-            <span class="section-kicker">07 / EVENTOS DETALLADOS</span>
-            <h2>Catálogo sísmico <small id="recordCount" class="mono">—</small></h2>
+            <span class="section-kicker kicker-recent">07 / EVENTOS DETALLADOS</span>
+            <span class="section-kicker kicker-hist" style="display: none;">ARCHIVO HISTÓRICO PERMANENTE</span>
+            <h2 class="title-recent">Catálogo sísmico <small id="recordCount" class="mono">—</small></h2>
+            <h2 class="title-hist" style="display: none;">Registros del archivo <small id="histRecordCount" class="mono">—</small></h2>
           </div>
           <div class="record-actions">
             <label class="sort-wrap">

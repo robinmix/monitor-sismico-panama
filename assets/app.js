@@ -1180,12 +1180,16 @@
       state.page = pagination.pagina_actual || 1;
       begin = (state.page - 1) * (pagination.limite || LIMIT);
       entries = data;
+      set('histRecordCount', `${num(total)} registros`);
+      set('recordCount', num(total));
     } else {
       total = data.length;
       pages = Math.max(1, Math.ceil(total / LIMIT));
       state.page = Math.max(1, Math.min(pages, state.page));
       begin = (state.page - 1) * LIMIT;
       entries = data.slice(begin, begin + LIMIT);
+      set('recordCount', num(total));
+      set('histRecordCount', `${num(total)} eventos`);
     }
     ui.recordsBody.replaceChildren();
     if (ui.mobileRecordsList) ui.mobileRecordsList.replaceChildren();
@@ -2451,20 +2455,25 @@
     });
 
     if (tabId === 'mapa') {
+      if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Actualizar';
       setTimeout(() => {
         if (state.generalMapLibre) state.generalMapLibre.resize();
         if (state.map) state.map.invalidateSize();
       }, 120);
     } else if (tabId === 'historial') {
+      if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Consultar archivo';
       if (!state.historicalData) {
         loadHistoricalData();
       }
-      fetchHistoricalCatalogPage(1);
+      fetchHistoricalCatalogPage(state.histPage || 1);
     } else if (tabId === 'sismos') {
+      if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Actualizar';
       if (f.period && f.period.value !== '0') {
         state.isHistoricalMode = false;
         drawTable(sortedData());
       }
+    } else {
+      if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Actualizar';
     }
 
     if (ui.sismoView && !ui.sismoView.hidden) {
@@ -2491,16 +2500,23 @@
         '#inicio': 'sismos',
         '#resumen': 'sismos',
         '#sismos': 'sismos',
-        '#registros': 'registros',
+        '#registros': 'sismos',
         '#mapa': 'mapa',
         '#geografia': 'mapa',
         '#cerca': 'cerca',
         '#historial': 'historial',
         '#historico': 'historial',
+        '#filtros': 'historial',
         '#mas': 'mas',
-        '#filtros': 'mas',
-        '#notificaciones': 'mas'
+        '#notificaciones': 'mas',
+        '#alertas': 'mas',
+        '#transparencia': 'mas',
+        '#privacidad': 'mas'
       };
+      // Preservar la navegación si no hay hash explícito y el usuario ya seleccionó una pestaña
+      if ((hash === '' || hash === '#inicio') && state.activeMobileTab && state.activeMobileTab !== 'sismos') {
+        return;
+      }
       const targetTab = tabMap[hash] || 'sismos';
       setMobileTab(targetTab, false);
 
@@ -2509,16 +2525,26 @@
           const target = document.getElementById('registros');
           if (target) target.scrollIntoView({ behavior: 'smooth' });
         }, 80);
-      } else if (hash === '#notificaciones') {
+      } else if (hash === '#notificaciones' || hash === '#alertas') {
         setTimeout(() => {
           const target = document.getElementById('notificaciones');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        }, 80);
+      } else if (hash === '#filtros') {
+        setTimeout(() => {
+          const target = document.getElementById('filtros');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        }, 80);
+      } else if (hash === '#transparencia' || hash === '#privacidad') {
+        setTimeout(() => {
+          const target = document.getElementById('transparencia');
           if (target) target.scrollIntoView({ behavior: 'smooth' });
         }, 80);
       }
 
       if ((hash === '#historico' || hash === '#historial' || targetTab === 'historial')) {
         if (!state.historicalData) loadHistoricalData();
-        fetchHistoricalCatalogPage(1);
+        fetchHistoricalCatalogPage(state.histPage || 1);
       }
     }
   }
@@ -3001,13 +3027,14 @@
     syncNotificationUi();
     if (!badge || !btnToggle) return;
 
-    const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const isSupported = window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     if (!isSupported) {
-      badge.textContent = 'No soportado';
+      badge.textContent = 'Servicio no disponible';
       badge.className = 'notif-status-badge inactive';
-      detail.textContent = 'Este navegador o plataforma no admite la API estándar de notificaciones Web Push.';
+      detail.textContent = 'Este navegador o entorno no admite la API estándar de notificaciones Web Push (requiere conexión segura HTTPS y compatibilidad con PushManager).';
       btnToggle.disabled = true;
-      btnToggle.textContent = 'No disponible';
+      btnToggle.textContent = 'Servicio no disponible';
+      if (btnTest) btnTest.hidden = true;
       return;
     }
 
@@ -3026,13 +3053,23 @@
 
     async function checkSubscription() {
       try {
+        if (!isSupported) {
+          badge.textContent = 'Servicio no disponible';
+          badge.className = 'notif-status-badge inactive';
+          detail.textContent = 'Este navegador o entorno no admite la API estándar de notificaciones Web Push.';
+          btnToggle.disabled = true;
+          btnToggle.textContent = 'Servicio no disponible';
+          if (btnTest) btnTest.hidden = true;
+          return null;
+        }
+
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
 
         if (Notification.permission === 'denied') {
-          badge.textContent = 'Bloqueadas';
+          badge.textContent = 'Permiso denegado';
           badge.className = 'notif-status-badge denied';
-          detail.textContent = 'El permiso fue denegado en el navegador. Para recibirlas, permite las notificaciones en la configuración del sitio.';
+          detail.textContent = 'El permiso fue denegado en el navegador. Para recibirlas, permite las notificaciones en la configuración de permisos del sitio en tu navegador.';
           btnToggle.textContent = 'Permiso denegado';
           btnToggle.className = 'btn-push-toggle disabled';
           btnToggle.disabled = true;
@@ -3041,7 +3078,7 @@
         }
 
         if (!sub) {
-          badge.textContent = 'Desactivadas';
+          badge.textContent = 'Notificaciones desactivadas';
           badge.className = 'notif-status-badge inactive';
           detail.textContent = 'Activa las notificaciones voluntarias para recibir alertas de actividad sísmica en este dispositivo.';
           btnToggle.textContent = 'Activar notificaciones';
@@ -3097,6 +3134,13 @@
         return sub;
       } catch (err) {
         console.warn('[Push] Error comprobando estado:', err);
+        badge.textContent = 'Error de conexión';
+        badge.className = 'notif-status-badge inactive';
+        detail.textContent = 'No se pudo verificar el estado de notificaciones: ' + (err.message || 'Error de conexión con el servicio del navegador.');
+        btnToggle.textContent = 'Reintentar comprobación';
+        btnToggle.className = 'btn-push-toggle';
+        btnToggle.disabled = false;
+        if (btnTest) btnTest.hidden = true;
         return null;
       }
     }
@@ -3179,11 +3223,16 @@
         }
       } catch (err) {
         console.error('[Push] Error al alternar notificaciones:', err);
-        if (err.name === 'AbortError' || err.message?.includes('push service error')) {
-          detail.textContent = 'El servicio Push del navegador no pudo conectar con los servidores de mensajería (FCM/Google). En computadoras esto ocurre comúnmente por políticas de red, firewall, VPN o perfiles de invitado en Chrome.';
+        badge.textContent = 'Error de conexión';
+        badge.className = 'notif-status-badge inactive';
+        if (err.name === 'AbortError' || err.message?.includes('push service error') || err.message?.includes('Registration failed')) {
+          detail.textContent = 'El servicio Push del navegador no pudo conectar con los servidores de mensajería (FCM/Google). En computadoras esto ocurre comúnmente por políticas de red, firewall, VPN o perfiles de invitado en el navegador.';
         } else {
           detail.textContent = 'No se pudo completar la suscripción: ' + (err.message || 'Error de conexión');
         }
+        btnToggle.textContent = 'Reintentar activación';
+        btnToggle.className = 'btn-push-toggle';
+        btnToggle.disabled = false;
       } finally {
         btnToggle.disabled = false;
       }

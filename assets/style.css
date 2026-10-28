@@ -1827,6 +1827,16 @@ a {
   gap: var(--sp-3);
 }
 
+.records-head .kicker-recent,
+.records-head .title-recent {
+  display: block;
+}
+
+.records-head .kicker-hist,
+.records-head .title-hist {
+  display: none !important;
+}
+
 .records-head h2 small {
   font-family: var(--font-sans);
   font-size: 13px;
@@ -3965,8 +3975,24 @@ td.align-right {
     margin-top: 0 !important;
   }
 
+  /* Presentación diferenciada de registros históricos en móvil (sin duplicar 07 / EVENTOS DETALLADOS) */
+  #dashboardView[data-active-tab="historial"] .records-head .kicker-recent,
+  #dashboardView[data-active-tab="historial"] .records-head .title-recent {
+    display: none !important;
+  }
+  #dashboardView[data-active-tab="historial"] .records-head .kicker-hist {
+    display: inline-block !important;
+  }
+  #dashboardView[data-active-tab="historial"] .records-head .title-hist {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+  }
+
   /* ==========================================================================
-     PESTAÑA: MÁS (FILTROS AVANZADOS, GRÁFICAS, REGIONES Y TRANSPARENCIA)
+     PESTAÑA: MÁS (ALERTAS / NOTIFICACIONES, TRANSPARENCIA Y PRIVACIDAD)
+     Exclusivamente configuraciones, alertas, información, privacidad y funciones relacionadas.
+     Cero filtros sísmicos, catálogos ni estadísticas pertenecientes a otras pestañas.
      ========================================================================== */
   #dashboardView[data-active-tab="mas"] {
     display: flex !important;
@@ -3976,31 +4002,24 @@ td.align-right {
 
   #dashboardView[data-active-tab="mas"] > .masthead,
   #dashboardView[data-active-tab="mas"] > .metrics,
+  #dashboardView[data-active-tab="mas"] > .filter-panel,
+  #dashboardView[data-active-tab="mas"] > .chart-layout,
   #dashboardView[data-active-tab="mas"] > .location-layout,
+  #dashboardView[data-active-tab="mas"] > .section-regions,
   #dashboardView[data-active-tab="mas"] > .records-section,
   #dashboardView[data-active-tab="mas"] > .historico-section {
     display: none !important;
   }
 
-  #dashboardView[data-active-tab="mas"] > .filter-panel {
+  #dashboardView[data-active-tab="mas"] > .section-notifications {
     display: block !important;
-    margin-bottom: 0 !important;
-  }
-
-  #dashboardView[data-active-tab="mas"] > .chart-layout {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
-    margin-bottom: 0 !important;
-  }
-
-  #dashboardView[data-active-tab="mas"] > .section-regions {
-    display: block !important;
+    order: 1 !important;
     margin-top: 0 !important;
   }
 
   #dashboardView[data-active-tab="mas"] > .section-transparency {
     display: block !important;
+    order: 2 !important;
     margin-top: 0 !important;
   }
   #dashboardView[data-active-tab="registros"] > .masthead,
