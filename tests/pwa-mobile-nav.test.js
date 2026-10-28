@@ -28,13 +28,14 @@ test('PWA Mobile Nav: manifest.webmanifest incluye "id": "/" explícito y consis
   assert.ok(Array.isArray(manifestContent.icons) && manifestContent.icons.length >= 2, 'Debe incluir al menos iconos 192 y 512');
 });
 
-test('PWA Mobile Nav: index.html contiene los 5 botones de navegación móvil requeridos', () => {
+test('PWA Mobile Nav: index.html contiene los 4 botones de navegación móvil requeridos', () => {
   assert.ok(htmlContent.includes('id="mobileBottomNav"'), 'Debe existir contenedor mobileBottomNav');
-  const requiredTabs = ['sismos', 'mapa', 'cerca', 'historial', 'mas'];
+  const requiredTabs = ['sismos', 'mapa', 'historial', 'mas'];
   for (const tab of requiredTabs) {
     const pattern = new RegExp(`data-tab=["']${tab}["']`, 'i');
     assert.match(htmlContent, pattern, `Debe existir botón para pestaña "${tab}"`);
   }
+  assert.ok(!htmlContent.includes('data-tab="cerca"'), 'No debe existir botón para pestaña redundante "cerca"');
 });
 
 test('PWA Mobile Nav: barra inferior está oculta por defecto en escritorio (> 640px)', () => {
@@ -77,13 +78,12 @@ test('PWA Mobile Nav: la barra superior (topbar) es fija y respeta env(safe-area
   );
 });
 
-test('PWA Mobile Nav: control dinámico de pestañas en CSS para sismos, mapa, cerca, historial y mas', () => {
+test('PWA Mobile Nav: control dinámico de pestañas en CSS para sismos, mapa, historial y mas', () => {
   const media640Index = cssContent.indexOf('@media (max-width: 640px)');
   const media640Content = cssContent.slice(media640Index);
 
   assert.ok(media640Content.includes('[data-active-tab="sismos"]'), 'Debe tener regla para pestaña sismos');
   assert.ok(media640Content.includes('[data-active-tab="mapa"]'), 'Debe tener regla para pestaña mapa');
-  assert.ok(media640Content.includes('[data-active-tab="cerca"]'), 'Debe tener regla para pestaña cerca');
   assert.ok(media640Content.includes('[data-active-tab="historial"]'), 'Debe tener regla para pestaña historial');
   assert.ok(media640Content.includes('[data-active-tab="mas"]'), 'Debe tener regla para pestaña mas');
 });

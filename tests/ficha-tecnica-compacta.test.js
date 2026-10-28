@@ -50,7 +50,7 @@ test('Ficha Técnica Compacta: style.css optimiza espaciado y oculta param-sub s
 
 test('Ficha Técnica Compacta: Versión de caché v20261028ficha1 sincronizada', () => {
   const swContent = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-  assert.ok(swContent.includes('core-v20261028ficha1') || swContent.includes('core-v20261028nav1'), 'sw.js debe sincronizar core-v20261028ficha1');
-  assert.ok(htmlContent.includes('assets/style.css?v=20261028ficha1') || htmlContent.includes('assets/style.css?v=20261028nav1'), 'index.html debe solicitar style.css versionado');
-  assert.ok(htmlContent.includes('assets/app.js?v=20261028ficha1') || htmlContent.includes('assets/app.js?v=20261028nav1'), 'index.html debe solicitar app.js versionado');
+  assert.ok(swContent.includes('core-v20261028ficha1') || swContent.includes('core-v20261028nav1') || swContent.includes('core-v20261028nav2') || swContent.includes('core-v20261028nav2'), 'sw.js debe sincronizar core-v20261028ficha1');
+  assert.ok(htmlContent.includes('assets/style.css?v=20261028ficha1') || htmlContent.includes('assets/style.css?v=20261028nav1') || htmlContent.includes('assets/style.css?v=20261028nav2'), 'index.html debe solicitar style.css versionado');
+  assert.ok(htmlContent.includes('assets/app.js?v=20261028ficha1') || htmlContent.includes('assets/app.js?v=20261028nav1') || htmlContent.includes('assets/app.js?v=20261028nav2'), 'index.html debe solicitar app.js versionado');
 });

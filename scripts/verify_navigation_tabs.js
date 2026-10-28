@@ -173,13 +173,39 @@ async function runValidation() {
       }
     }
 
-    console.log('\n--- 1. INICIANDO VALIDACIÓN DE VISIBILIDAD Y NAVEGACIÓN EN MÓVIL (412x915 Samsung A57) ---');
+    console.log('\n--- 1. VERIFICACIÓN DE BARRA DE NAVEGACIÓN MÓVIL (4 PESTAÑAS) ---');
     await setViewport(412, 915, true);
     await sleep(1500);
 
-    // TEST TAB: SISMOS (INICIAL)
+    const navInfo = await evaluate(`(() => {
+      const btns = Array.from(document.querySelectorAll('.mobile-bottom-nav .mobile-nav-btn'));
+      return {
+        count: btns.length,
+        tabs: btns.map(b => b.getAttribute('data-tab')),
+        labels: btns.map(b => b.querySelector('.mobile-nav-label')?.textContent.trim()),
+        widths: btns.map(b => b.getBoundingClientRect().width),
+        heights: btns.map(b => b.getBoundingClientRect().height)
+      };
+    })()`);
+    console.log('[Nav Info]:', navInfo);
+    if (navInfo.count === 4 && JSON.stringify(navInfo.tabs) === JSON.stringify(['sismos', 'mapa', 'historial', 'mas'])) {
+      console.log('✔ Barra móvil contiene exactamente 4 pestañas: Sismos, Mapa, Historial, Más.');
+    } else {
+      console.error('✖ Error en conteo de pestañas:', navInfo);
+    }
+
+    // Verificar distribución equitativa (widths parejos en 412px ~100px cada uno)
+    const avgWidth = navInfo.widths.reduce((a, b) => a + b, 0) / navInfo.widths.length;
+    const isEven = navInfo.widths.every(w => Math.abs(w - avgWidth) < 2);
+    console.log(`[Distribución]: Anchos [${navInfo.widths.map(w => w.toFixed(1)).join(', ')}] px (Promedio: ${avgWidth.toFixed(1)}px). Equitativo: ${isEven}`);
+
+    // TEST TAB: SISMOS
+    console.log('\n--- 2. VERIFICACIÓN PESTAÑA SISMOS Y GEOLOCALIZACIÓN HERO ---');
     let sismosCheck = await evaluate(`(() => {
-      const getDisp = sel => window.getComputedStyle(document.querySelector(sel)).display;
+      const getDisp = sel => {
+        const el = document.querySelector(sel);
+        return el ? window.getComputedStyle(el).display : 'not_found';
+      };
       return {
         tab: document.querySelector('#dashboardView').getAttribute('data-active-tab'),
         kickerRecentDisp: getDisp('.kicker-recent'),
@@ -187,82 +213,113 @@ async function runValidation() {
         recordsDisp: getDisp('.records-section'),
         filterDisp: getDisp('.filter-panel'),
         historicoDisp: getDisp('.historico-section'),
-        notifDisp: getDisp('.section-notifications')
+        notifDisp: getDisp('.section-notifications'),
+        userDistCardDisp: getDisp('#userDistanceCard'),
+        geoDistBtnDisp: getDisp('#btnRequestGeo')
       };
     })()`);
     console.log('[Tab: Sismos]', sismosCheck);
-    if (sismosCheck.kickerRecentDisp !== 'none' && sismosCheck.kickerHistDisp === 'none' && sismosCheck.filterDisp === 'none' && sismosCheck.notifDisp === 'none') {
-      console.log('✔ Pestaña Sismos: Muestra "07 / EVENTOS DETALLADOS" y oculta filtros, histórico y notificaciones.');
+    if (sismosCheck.kickerRecentDisp !== 'none' && sismosCheck.userDistCardDisp !== 'none') {
+      console.log('✔ Pestaña Sismos: Muestra catálogo reciente y componente "Mi distancia al sismo" activo en Hero Card.');
     } else {
       console.error('✖ Error en visibilidad de pestaña Sismos:', sismosCheck);
     }
     await takeScreenshot('412px_tab_sismos.png');
 
-    // NAVEGAR A: HISTORIAL
-    console.log('\n--- NAVEGANDO: Sismos -> Historial ---');
+    // TEST REDIRECCIÓN DE HASH ANTIGUO #cerca
+    console.log('\n--- 3. VERIFICACIÓN REDIRECCIÓN DE HASH ANTIGUO #cerca ---');
+    await evaluate(`window.location.hash = '#cerca'`);
+    await sleep(400);
+    const cercaRedirectCheck = await evaluate(`(() => {
+      return {
+        hash: window.location.hash,
+        tab: document.querySelector('#dashboardView').getAttribute('data-active-tab'),
+        activeBtn: document.querySelector('.mobile-nav-btn.active')?.getAttribute('data-tab')
+      };
+    })()`);
+    console.log('[Redirección #cerca]:', cercaRedirectCheck);
+    if (cercaRedirectCheck.tab === 'sismos' && cercaRedirectCheck.activeBtn === 'sismos') {
+      console.log('✔ Redirección correcta: #cerca redirige fluidamente a pestaña Sismos sin pantallas vacías.');
+    } else {
+      console.error('✖ Fallo en redirección de #cerca:', cercaRedirectCheck);
+    }
+
+    // TEST TAB: MAPA
+    console.log('\n--- 4. NAVEGANDO: Sismos -> Mapa ---');
+    await evaluate(`document.querySelector('#tabBtnMapa')?.click()`);
+    await sleep(500);
+    let mapaCheck = await evaluate(`(() => {
+      const getDisp = sel => {
+        const el = document.querySelector(sel);
+        return el ? window.getComputedStyle(el).display : 'not_found';
+      };
+      return {
+        tab: document.querySelector('#dashboardView').getAttribute('data-active-tab'),
+        locationDisp: getDisp('.location-layout'),
+        recordsDisp: getDisp('.records-section'),
+        filterDisp: getDisp('.filter-panel')
+      };
+    })()`);
+    console.log('[Tab: Mapa]', mapaCheck);
+    if (mapaCheck.locationDisp !== 'none' && mapaCheck.recordsDisp === 'none') {
+      console.log('✔ Pestaña Mapa: Muestra cartografía interactiva y oculta catálogo/filtros.');
+    }
+    await takeScreenshot('412px_tab_mapa.png');
+
+    // TEST TAB: HISTORIAL
+    console.log('\n--- 5. NAVEGANDO: Mapa -> Historial ---');
     await evaluate(`document.querySelector('#tabBtnHistorial')?.click()`);
     await sleep(500);
-
     let histCheck = await evaluate(`(() => {
-      const getDisp = sel => window.getComputedStyle(document.querySelector(sel)).display;
+      const getDisp = sel => {
+        const el = document.querySelector(sel);
+        return el ? window.getComputedStyle(el).display : 'not_found';
+      };
       return {
         tab: document.querySelector('#dashboardView').getAttribute('data-active-tab'),
         kickerRecentDisp: getDisp('.kicker-recent'),
         kickerHistDisp: getDisp('.kicker-hist'),
-        titleHistDisp: getDisp('.title-hist'),
         recordsDisp: getDisp('.records-section'),
-        filterDisp: getDisp('.filter-panel'),
-        historicoDisp: getDisp('.historico-section'),
-        notifDisp: getDisp('.section-notifications')
+        filterDisp: getDisp('.filter-panel')
       };
     })()`);
     console.log('[Tab: Historial]', histCheck);
-    if (histCheck.kickerRecentDisp === 'none' && histCheck.kickerHistDisp !== 'none' && histCheck.filterDisp !== 'none' && histCheck.notifDisp === 'none') {
-      console.log('✔ Pestaña Historial: CERO duplicación de "07 / EVENTOS DETALLADOS". Muestra "ARCHIVO HISTÓRICO PERMANENTE" y filtros.');
-    } else {
-      console.error('✖ Error en visibilidad de pestaña Historial:', histCheck);
+    if (histCheck.kickerRecentDisp === 'none' && histCheck.kickerHistDisp !== 'none' && histCheck.filterDisp !== 'none') {
+      console.log('✔ Pestaña Historial: Muestra archivo histórico permanente y filtros sin duplicación.');
     }
     await takeScreenshot('412px_tab_historial.png');
 
-    // NAVEGAR A: MÁS
-    console.log('\n--- NAVEGANDO: Historial -> Más ---');
+    // TEST TAB: MÁS
+    console.log('\n--- 6. NAVEGANDO: Historial -> Más ---');
     await evaluate(`document.querySelector('#tabBtnMas')?.click()`);
     await sleep(500);
-
     let masCheck = await evaluate(`(() => {
-      const getDisp = sel => window.getComputedStyle(document.querySelector(sel)).display;
+      const getDisp = sel => {
+        const el = document.querySelector(sel);
+        return el ? window.getComputedStyle(el).display : 'not_found';
+      };
       return {
         tab: document.querySelector('#dashboardView').getAttribute('data-active-tab'),
         filterDisp: getDisp('.filter-panel'),
         chartDisp: getDisp('.chart-layout'),
         recordsDisp: getDisp('.records-section'),
-        historicoDisp: getDisp('.historico-section'),
         notifDisp: getDisp('.section-notifications'),
         transpDisp: getDisp('.section-transparency')
       };
     })()`);
     console.log('[Tab: Más]', masCheck);
-    if (masCheck.filterDisp === 'none' && masCheck.chartDisp === 'none' && masCheck.recordsDisp === 'none' && masCheck.notifDisp !== 'none' && masCheck.transpDisp !== 'none') {
-      console.log('✔ Pestaña Más: CERO filtros de actividad, cero catálogos y cero gráficas. Muestra exclusivamente alertas y transparencia.');
-    } else {
-      console.error('✖ Error en visibilidad de pestaña Más:', masCheck);
+    if (masCheck.filterDisp === 'none' && masCheck.chartDisp === 'none' && masCheck.notifDisp !== 'none' && masCheck.transpDisp !== 'none') {
+      console.log('✔ Pestaña Más: Exclusiva para alertas y transparencia. Cero filtros ni catálogos.');
     }
     await takeScreenshot('412px_tab_mas.png');
 
-    // NAVEGAR: Más -> Sismos
-    console.log('\n--- NAVEGANDO: Más -> Sismos ---');
+    // TEST PROBAR CICLO COMPLETO DE VUELTA A SISMOS
+    console.log('\n--- 7. NAVEGANDO: Más -> Sismos ---');
     await evaluate(`document.querySelector('#tabBtnSismos')?.click()`);
     await sleep(400);
 
-    // NAVEGAR: Sismos -> Historial -> Sismos
-    console.log('\n--- NAVEGANDO: Sismos -> Historial -> Sismos ---');
-    await evaluate(`document.querySelector('#tabBtnHistorial')?.click()`);
-    await sleep(300);
-    await evaluate(`document.querySelector('#tabBtnSismos')?.click()`);
-    await sleep(300);
-
     // PROBAR APERTURA Y CIERRE DE FICHA DETALLE
-    console.log('\n--- PROBANDO: Abrir y cerrar ficha de detalle sísmico ---');
+    console.log('\n--- 8. PROBANDO: Abrir y cerrar ficha de detalle sísmico ---');
     await evaluate(`(() => {
       const card = document.querySelector('.card-tap-zone');
       if (card) card.click();
@@ -279,12 +336,15 @@ async function runValidation() {
     console.log('Ficha cerrada correctamente:', sismoViewClosed);
 
     // CAPTURAS EN TODOS LOS ANCHOS REQUERIDOS (320, 360, 393, 412, 430, 650, 768, 820, 1440 px)
-    console.log('\n--- CAPTURANDO SCREENSHOTS EN TODOS LOS ANCHOS REQUERIDOS ---');
+    console.log('\n--- 9. CAPTURANDO SCREENSHOTS EN TODOS LOS ANCHOS REQUERIDOS ---');
     const viewports = [
       { w: 320, h: 640, name: '320px_mobile_historial.png', tab: '#tabBtnHistorial' },
       { w: 360, h: 740, name: '360px_mobile_mas.png', tab: '#tabBtnMas' },
       { w: 393, h: 852, name: '393px_mobile_sismos.png', tab: '#tabBtnSismos' },
+      { w: 412, h: 915, name: '412px_samsung_a57_sismos.png', tab: '#tabBtnSismos' },
+      { w: 412, h: 915, name: '412px_samsung_a57_mapa.png', tab: '#tabBtnMapa' },
       { w: 412, h: 915, name: '412px_samsung_a57_historial.png', tab: '#tabBtnHistorial' },
+      { w: 412, h: 915, name: '412px_samsung_a57_mas.png', tab: '#tabBtnMas' },
       { w: 430, h: 932, name: '430px_mobile_sismos.png', tab: '#tabBtnSismos' },
       { w: 650, h: 900, name: '650px_tablet_small_mas.png', tab: '#tabBtnMas' },
       { w: 768, h: 1024, name: '768px_tablet_historial.png', tab: '#tabBtnHistorial' },

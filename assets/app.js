@@ -2439,7 +2439,7 @@
      ESTRUCTURA DE NAVEGACIÓN MÓVIL ANDROID (BOTTOM NAVIGATION)
      ------------------------------------------------------------------------ */
   function setMobileTab(tabId, updateHash = true) {
-    const validTabs = ['sismos', 'mapa', 'cerca', 'historial', 'mas', 'registros'];
+    const validTabs = ['sismos', 'mapa', 'historial', 'mas', 'registros'];
     if (!validTabs.includes(tabId)) tabId = 'sismos';
     state.activeMobileTab = tabId;
 
@@ -2503,7 +2503,9 @@
         '#registros': 'sismos',
         '#mapa': 'mapa',
         '#geografia': 'mapa',
-        '#cerca': 'cerca',
+        '#cerca': 'sismos',
+        '#cercanos': 'sismos',
+        '#distancia': 'sismos',
         '#historial': 'historial',
         '#historico': 'historial',
         '#filtros': 'historial',

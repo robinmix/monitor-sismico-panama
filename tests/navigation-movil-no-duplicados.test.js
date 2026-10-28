@@ -58,3 +58,38 @@ test('5. Web Push: Estados diferenciados y claridad de mensajes', () => {
   assert.ok(js.includes('Error de conexión'), 'Debe manejar estado Error de conexión');
   assert.ok(js.includes('isSupported = window.isSecureContext'), 'Debe verificar contexto seguro HTTPS para Push');
 });
+
+test('6. Navegación Móvil de 4 pestañas: Eliminación de «Cerca de mí» sin pantallas vacías ni duplicados', () => {
+  // Barra móvil contiene exactamente 4 botones
+  const navBtnMatches = html.match(/class="mobile-nav-btn[^"]*"\s+data-tab="([^"]+)"/g);
+  assert.ok(navBtnMatches, 'Deben existir botones de navegación');
+  assert.equal(navBtnMatches.length, 4, 'La barra inferior fija debe contener exactamente 4 pestañas');
+  
+  assert.ok(html.includes('data-tab="sismos"'), 'Debe incluir pestaña Sismos');
+  assert.ok(html.includes('data-tab="mapa"'), 'Debe incluir pestaña Mapa');
+  assert.ok(html.includes('data-tab="historial"'), 'Debe incluir pestaña Historial');
+  assert.ok(html.includes('data-tab="mas"'), 'Debe incluir pestaña Más');
+  assert.ok(!html.includes('data-tab="cerca"'), 'No debe existir data-tab="cerca" en index.html');
+
+  // En app.js validTabs no contiene 'cerca'
+  assert.ok(js.includes("['sismos', 'mapa', 'historial', 'mas', 'registros']"), 'validTabs debe incluir sólo las 4 pestañas activas más registros');
+
+  // En tabMap, los hashes de cercanía se redirigen limpiamente a sismos
+  assert.ok(js.includes("'#cerca': 'sismos'"), 'tabMap debe redirigir #cerca a sismos para evitar pantallas vacías');
+  assert.ok(js.includes("'#cercanos': 'sismos'"), 'tabMap debe redirigir #cercanos a sismos');
+  assert.ok(js.includes("'#distancia': 'sismos'"), 'tabMap debe redirigir #distancia a sismos');
+});
+
+test('7. Preservación íntegra de geolocalización y cálculo de distancia', () => {
+  // index.html conserva el componente interactivo "Mi distancia al sismo" en hero card
+  assert.ok(html.includes('id="userDistanceCard"'), 'index.html debe conservar userDistanceCard');
+  assert.ok(html.includes('id="btnRequestGeo"'), 'index.html debe conservar btnRequestGeo');
+  assert.ok(html.includes('Mi distancia al sismo'), 'index.html debe conservar texto "Mi distancia al sismo"');
+  assert.ok(html.includes('id="distValue"'), 'index.html debe conservar distValue');
+
+  // app.js conserva las funciones geográficas
+  assert.ok(js.includes('function requestUserLocation('), 'app.js debe conservar requestUserLocation');
+  assert.ok(js.includes('function updateUserDistanceDisplay('), 'app.js debe conservar updateUserDistanceDisplay');
+  assert.ok(js.includes('function haversineKm('), 'app.js debe conservar haversineKm');
+  assert.ok(js.includes('userCoords'), 'app.js debe conservar gestión de userCoords');
+});

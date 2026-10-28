@@ -3771,171 +3771,10 @@ td.align-right {
   }
 
   /* ==========================================================================
-     PESTAÑA: CERCA DE MÍ (INTERFAZ ORIGINAL RESTAURADA CON ESTILO NUEVO)
+     NAVEGACIÓN MÓVIL SIMPLIFICADA (4 PESTAÑAS: SISMOS, MAPA, HISTORIAL, MÁS)
+     «Cerca de mí» retirada de la barra inferior. Funciones geográficas y cálculo
+     de distancia preservados íntegramente en Hero Card, Ficha y Mapa.
      ========================================================================== */
-  #dashboardView[data-active-tab="cerca"] {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  #dashboardView[data-active-tab="cerca"] > .metrics,
-  #dashboardView[data-active-tab="cerca"] > .filter-panel,
-  #dashboardView[data-active-tab="cerca"] > .chart-layout,
-  #dashboardView[data-active-tab="cerca"] > .location-layout,
-  #dashboardView[data-active-tab="cerca"] > .section-regions,
-  #dashboardView[data-active-tab="cerca"] > .section-transparency,
-  #dashboardView[data-active-tab="cerca"] > .historico-section {
-    display: none !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .masthead {
-    margin-bottom: 0 !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .masthead-copy {
-    display: none !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .timer-box {
-    display: none !important;
-  }
-
-  /* Ocultar botones adicionales en Cerca de mí: únicamente el componente de ubicación */
-  #dashboardView[data-active-tab="cerca"] #heroDetailBtn {
-    display: none !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .hero-actions-grid {
-    display: block !important;
-    width: 100% !important;
-    margin-top: 8px !important;
-  }
-
-  /* Componente original de ubicación con el estilo visual nuevo de sismoPA */
-  #dashboardView[data-active-tab="cerca"] .user-distance-card {
-    display: block !important;
-    width: 100% !important;
-    padding: 10px 14px !important;
-    background: #242624 !important;
-    border: 1px solid #373B37 !important;
-    border-radius: var(--radius-sm) !important;
-    box-shadow: 0 0 16px rgba(56, 189, 248, 0.12) !important;
-    margin: 0 !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .geo-dist-btn {
-    width: 100% !important;
-    height: 44px !important;
-    min-height: 44px !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 8px !important;
-    background: rgba(233, 230, 216, 0.06) !important;
-    color: #E9E6D8 !important;
-    border: 1px dashed #CFC9B5 !important;
-    border-radius: var(--radius-sm) !important;
-    font-size: 13px !important;
-    font-weight: 700 !important;
-    cursor: pointer !important;
-    transition: all 0.15s ease !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .geo-dist-btn:hover {
-    background: rgba(233, 230, 216, 0.14) !important;
-    border-color: #E9E6D8 !important;
-    border-style: solid !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-val-line {
-    display: flex !important;
-    align-items: baseline !important;
-    gap: 8px !important;
-    flex-wrap: wrap !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-label {
-    font-family: var(--font-sans) !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    color: #94A3B8 !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-num {
-    font-family: var(--font-mono) !important;
-    font-size: 16px !important;
-    font-weight: 700 !important;
-    color: #38BDF8 !important;
-    letter-spacing: -0.2px !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-note {
-    font-family: var(--font-sans) !important;
-    font-size: 10.5px !important;
-    color: #64748B !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-actions {
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    margin-top: 4px !important;
-    padding-top: 6px !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-action-link {
-    background: none !important;
-    border: none !important;
-    padding: 0 !important;
-    font-family: var(--font-sans) !important;
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    color: #38BDF8 !important;
-    cursor: pointer !important;
-    text-decoration: underline !important;
-    text-underline-offset: 2px !important;
-    transition: opacity 0.15s !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-action-link:hover {
-    opacity: 0.8 !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-action-link.danger {
-    color: #94A3B8 !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-action-link.danger:hover {
-    color: #EF4444 !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .dist-sep {
-    color: rgba(255, 255, 255, 0.2) !important;
-    font-size: 11px !important;
-  }
-
-  /* Catálogo en Cerca de mí ligeramente compactado */
-  #dashboardView[data-active-tab="cerca"] .records-section {
-    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-    margin-top: 2px !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .card-param-txt.dist-active {
-    color: #38BDF8 !important;
-    font-weight: 700 !important;
-    font-size: 11px !important;
-    background: rgba(56, 189, 248, 0.14) !important;
-    border: 1px solid rgba(56, 189, 248, 0.4) !important;
-    border-radius: 5px !important;
-    padding: 1px 6px !important;
-  }
-
-  #dashboardView[data-active-tab="cerca"] .card-param-txt.dist-empty {
-    color: #64748B !important;
-    font-weight: 700 !important;
-  }
 
   /* ==========================================================================
      PESTAÑA: HISTORIAL (HERRAMIENTA COMPLETA DE CONSULTA, KPIs Y CATÁLOGO)
@@ -6726,7 +6565,6 @@ html[data-theme="light"] .identity-name b .brand-pa {
   /* Ocultar sección notificaciones en pestañas distintas a Más */
   #dashboardView[data-active-tab="sismos"] > .section-notifications,
   #dashboardView[data-active-tab="mapa"] > .section-notifications,
-  #dashboardView[data-active-tab="cerca"] > .section-notifications,
   #dashboardView[data-active-tab="historial"] > .section-notifications {
     display: none !important;
   }
@@ -6782,7 +6620,6 @@ html[data-theme="light"] .notif-topbar-btn:hover {
 @media (max-width: 640px) {
   #dashboardView[data-active-tab="sismos"] > .section-notifications,
   #dashboardView[data-active-tab="mapa"] > .section-notifications,
-  #dashboardView[data-active-tab="cerca"] > .section-notifications,
   #dashboardView[data-active-tab="historial"] > .section-notifications {
     display: none !important;
   }
