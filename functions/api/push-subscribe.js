@@ -69,6 +69,16 @@ function generateRandomToken() {
     .join('');
 }
 
+export function constantTimeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
 
@@ -116,8 +126,30 @@ export async function onRequest(context) {
       );
     }
 
-    // 1. Desuscripción voluntaria (Eliminación inmediata y total)
+    // 1. Desuscripción voluntaria (Eliminación inmediata y autenticada)
     if (action === 'unsubscribe') {
+      const authToken = client_token || test_token;
+      const { data: subRows, error: fetchErr } = await supabase
+        .from('push_subscriptions')
+        .select('endpoint, client_token_hash, test_token_hash')
+        .eq('endpoint', targetEndpoint)
+        .limit(1);
+
+      if (!fetchErr && subRows && subRows.length > 0) {
+        const currentSub = subRows[0];
+        if (currentSub.client_token_hash || currentSub.test_token_hash) {
+          if (!authToken || typeof authToken !== 'string') {
+            return Response.json({ ok: false, error: 'client_token requerido para desuscribir suscripción protegida' }, { status: 401 });
+          }
+          const tokenHash = await sha256Hex(authToken);
+          const matchesAuth = (currentSub.client_token_hash && constantTimeEqual(currentSub.client_token_hash, tokenHash)) ||
+                              (currentSub.test_token_hash && constantTimeEqual(currentSub.test_token_hash, tokenHash));
+          if (!matchesAuth) {
+            return Response.json({ ok: false, error: 'Token de autorización inválido para desuscribir' }, { status: 403 });
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('push_subscriptions')
         .delete()
@@ -154,8 +186,8 @@ export async function onRequest(context) {
       }
 
       const currentSub = subRows[0];
-      const matchesAuth = (currentSub.client_token_hash && currentSub.client_token_hash === tokenHash) ||
-                          (currentSub.test_token_hash && currentSub.test_token_hash === tokenHash);
+      const matchesAuth = (currentSub.client_token_hash && constantTimeEqual(currentSub.client_token_hash, tokenHash)) ||
+                          (currentSub.test_token_hash && constantTimeEqual(currentSub.test_token_hash, tokenHash));
 
       if (!matchesAuth) {
         return Response.json({ ok: false, error: 'Token de autorización inválido' }, { status: 403 });
@@ -232,8 +264,8 @@ export async function onRequest(context) {
       }
 
       const currentSub = subRows[0];
-      const matchesAuth = (currentSub.client_token_hash && currentSub.client_token_hash === tokenHash) ||
-                          (currentSub.test_token_hash && currentSub.test_token_hash === tokenHash);
+      const matchesAuth = (currentSub.client_token_hash && constantTimeEqual(currentSub.client_token_hash, tokenHash)) ||
+                          (currentSub.test_token_hash && constantTimeEqual(currentSub.test_token_hash, tokenHash));
 
       if (!matchesAuth) {
         return Response.json({ ok: false, error: 'Token de autorización inválido' }, { status: 403 });
@@ -260,19 +292,49 @@ export async function onRequest(context) {
       return Response.json({ ok: true, ubicacion_eliminada: true });
     }
 
-    // 4. Registro o renovación de suscripción Web Push
+    // 4. Registro o renovación de suscripción Web Push (Con protección contra Takeover)
     const p256dh = subscription?.keys?.p256dh;
     const auth = subscription?.keys?.auth;
     if (!p256dh || !auth) {
       return Response.json({ ok: false, error: 'Claves criptográficas p256dh y auth requeridas' }, { status: 400 });
     }
 
-    // Generar credencial de prueba y client_token de alta entropía (256 bits)
-    const testToken = generateRandomToken();
-    const testTokenHash = await sha256Hex(testToken);
-    const clientToken = client_token || generateRandomToken();
-    const clientTokenHash = await sha256Hex(clientToken);
+    // Verificar si el endpoint ya existe para evitar sobrescrituras de credenciales no autorizadas
+    const { data: existingRows } = await supabase
+      .from('push_subscriptions')
+      .select('endpoint, client_token_hash, test_token_hash')
+      .eq('endpoint', targetEndpoint)
+      .limit(1);
+
+    const existingSub = existingRows && existingRows[0];
+    let testToken = generateRandomToken();
+    let testTokenHash = await sha256Hex(testToken);
+    let clientToken = client_token || generateRandomToken();
+    let clientTokenHash = await sha256Hex(clientToken);
     const vapidKeyHash = env.VAPID_PUBLIC_KEY ? await sha256Hex(env.VAPID_PUBLIC_KEY) : null;
+
+    if (existingSub && (existingSub.client_token_hash || existingSub.test_token_hash)) {
+      const callerToken = client_token || test_token;
+      if (!callerToken || typeof callerToken !== 'string') {
+        return Response.json({
+          ok: false,
+          error: 'Endpoint ya registrado. Se requiere client_token existente para renovar credenciales.'
+        }, { status: 409 });
+      }
+      const callerTokenHash = await sha256Hex(callerToken);
+      const isAuthorized = (existingSub.client_token_hash && constantTimeEqual(existingSub.client_token_hash, callerTokenHash)) ||
+                           (existingSub.test_token_hash && constantTimeEqual(existingSub.test_token_hash, callerTokenHash));
+      if (!isAuthorized) {
+        return Response.json({
+          ok: false,
+          error: 'Token de autorización inválido para el endpoint existente.'
+        }, { status: 403 });
+      }
+      if (!client_token) {
+        clientToken = callerToken;
+        clientTokenHash = callerTokenHash;
+      }
+    }
 
     const record = {
       endpoint: targetEndpoint,
