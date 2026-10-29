@@ -2,6 +2,9 @@ package pa.sismodata.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.location.Location;
+import android.location.LocationManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -45,6 +48,15 @@ public class SismoNotificationSettingsActivity extends Activity {
     private Button mBtnAction;
     private Button mBtnTest;
     private Button mBtnDismiss;
+
+    // Elementos de la tarjeta de Distancia en Notificaciones
+    private LinearLayout mDistCard;
+    private TextView mDistBadge;
+    private TextView mDistDesc;
+    private Button mBtnGps;
+    private Button mBtnZone;
+    private Button mBtnClearLoc;
+    private static final int RC_LOCATION = 3002;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -154,6 +166,85 @@ public class SismoNotificationSettingsActivity extends Activity {
         LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         testParams.topMargin = dp(14);
+                // Tarjeta de Personalización por Distancia (sismoPA)
+        mDistCard = new LinearLayout(this);
+        mDistCard.setOrientation(LinearLayout.VERTICAL);
+        mDistCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        GradientDrawable distCardBg = new GradientDrawable();
+        distCardBg.setColor(Color.parseColor("#10141D"));
+        distCardBg.setCornerRadius(dp(12));
+        distCardBg.setStroke(dp(1), Color.parseColor("#1E2536"));
+        mDistCard.setBackground(distCardBg);
+
+        LinearLayout.LayoutParams distCardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        distCardParams.topMargin = dp(14);
+
+        TextView distTitle = new TextView(this);
+        distTitle.setText("Distancia en mis notificaciones");
+        distTitle.setTextColor(Color.WHITE);
+        distTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        distTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        mDistCard.addView(distTitle);
+
+        mDistBadge = new TextView(this);
+        mDistBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        mDistBadge.setTypeface(Typeface.DEFAULT_BOLD);
+        mDistBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+        LinearLayout.LayoutParams distBadgeParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        distBadgeParams.topMargin = dp(8);
+        distBadgeParams.bottomMargin = dp(8);
+        mDistCard.addView(mDistBadge, distBadgeParams);
+
+        mDistDesc = new TextView(this);
+        mDistDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mDistDesc.setTextColor(Color.parseColor("#CFD8DC"));
+        mDistDesc.setLineSpacing(dp(2), 1.15f);
+        mDistCard.addView(mDistDesc);
+
+        // Botón GPS
+        mBtnGps = new Button(this);
+        mBtnGps.setText("Usar mi ubicación actual (GPS)");
+        mBtnGps.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mBtnGps.setTextColor(Color.WHITE);
+        GradientDrawable gpsBg = new GradientDrawable();
+        gpsBg.setColor(Color.parseColor("#1B5E20"));
+        gpsBg.setCornerRadius(dp(8));
+        mBtnGps.setBackground(gpsBg);
+        LinearLayout.LayoutParams gpsParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gpsParams.topMargin = dp(12);
+        mDistCard.addView(mBtnGps, gpsParams);
+
+        // Botón Zona Fija
+        mBtnZone = new Button(this);
+        mBtnZone.setText("Elegir provincia o zona fija");
+        mBtnZone.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mBtnZone.setTextColor(Color.parseColor("#90CAF9"));
+        GradientDrawable zoneBg = new GradientDrawable();
+        zoneBg.setColor(Color.parseColor("#152238"));
+        zoneBg.setCornerRadius(dp(8));
+        zoneBg.setStroke(dp(1), Color.parseColor("#1E3A5F"));
+        mBtnZone.setBackground(zoneBg);
+        LinearLayout.LayoutParams zoneParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        zoneParams.topMargin = dp(8);
+        mDistCard.addView(mBtnZone, zoneParams);
+
+        // Botón Desactivar
+        mBtnClearLoc = new Button(this);
+        mBtnClearLoc.setText("Desactivar distancia (formato general)");
+        mBtnClearLoc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        mBtnClearLoc.setTextColor(Color.parseColor("#90A4AE"));
+        mBtnClearLoc.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clearParams.topMargin = dp(6);
+        mDistCard.addView(mBtnClearLoc, clearParams);
+
+        layout.addView(mDistCard, distCardParams);
+
         layout.addView(mBtnTest, testParams);
 
         // Tarjeta informativa y de transparencia (producción limpia)
@@ -204,12 +295,16 @@ public class SismoNotificationSettingsActivity extends Activity {
         // Eventos
         mBtnAction.setOnClickListener(v -> onActionClicked());
         mBtnTest.setOnClickListener(v -> onTestNotificationClicked());
+        mBtnGps.setOnClickListener(v -> onGpsLocationClicked());
+        mBtnZone.setOnClickListener(v -> onZoneSelectClicked());
+        mBtnClearLoc.setOnClickListener(v -> onClearLocationClicked());
         mBtnDismiss.setOnClickListener(v -> finish());
 
         return scrollView;
     }
 
     private void updateUi() {
+        updateDistUi();
         FcmPreferences.State state = FcmPreferences.getState(this);
 
         // Renderizado según estado
@@ -380,6 +475,12 @@ public class SismoNotificationSettingsActivity extends Activity {
                 FcmPreferences.setDecidedConsent(this, true);
                 updateUi();
             }
+        } else if (requestCode == RC_LOCATION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                captureDeviceLocation();
+            } else {
+                Toast.makeText(this, "Permiso GPS no concedido. Puedes elegir una provincia fija sin dar permisos.", Toast.LENGTH_LONG).show();
+            }
         }
     }
 
@@ -507,4 +608,125 @@ public class SismoNotificationSettingsActivity extends Activity {
         return (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics());
     }
+
+    private void updateDistUi() {
+        if (mDistCard == null) return;
+        boolean isActive = FcmPreferences.isDistancePersonalizationActive(this);
+        GradientDrawable bBg = new GradientDrawable();
+        bBg.setCornerRadius(dp(6));
+
+        if (!isActive) {
+            mDistBadge.setText("DISTANCIA DESACTIVADA");
+            mDistBadge.setTextColor(Color.parseColor("#CFD8DC"));
+            bBg.setColor(Color.parseColor("#263238"));
+            mDistBadge.setBackground(bBg);
+            mDistDesc.setText("Recibirás el formato general (ej. M3.5 · Nuevo sismo · 60 km al sureste de Soná). Puedes activar la distancia aproximada para saber qué tan lejos ocurrió de ti.");
+            mBtnClearLoc.setVisibility(View.GONE);
+        } else {
+            String mode = FcmPreferences.getUserLocationMode(this);
+            long updatedAt = FcmPreferences.getUserLocationUpdatedAt(this);
+            long ageMs = System.currentTimeMillis() - updatedAt;
+            String zoneName = FcmPreferences.getUserLocationZoneName(this);
+
+            if ("ZONA".equalsIgnoreCase(mode)) {
+                mDistBadge.setText("ZONA: " + (zoneName.isEmpty() ? "SELECCIONADA" : zoneName.toUpperCase()));
+                mDistBadge.setTextColor(Color.parseColor("#E1F5FE"));
+                bBg.setColor(Color.parseColor("#0277BD"));
+                mDistBadge.setBackground(bBg);
+                mDistDesc.setText("Notificaciones mostrarán 'de tu zona' (ej. M3.5 · 42 km de tu zona). Las coordenadas de referencia están guardadas solo en este dispositivo.");
+            } else {
+                if (ageMs <= 48L * 3600 * 1000L) {
+                    mDistBadge.setText("GPS ACTIVO (DE TI)");
+                    mDistBadge.setTextColor(Color.parseColor("#E8F5E9"));
+                    bBg.setColor(Color.parseColor("#2E7D32"));
+                    mDistBadge.setBackground(bBg);
+                    mDistDesc.setText("Notificaciones mostrarán 'de ti' (ej. M3.5 · 42 km de ti). Las coordenadas están truncadas a 3 decimales (~110m) para proteger tu privacidad.");
+                } else {
+                    mDistBadge.setText("GPS ANTERIOR (DE TU ZONA)");
+                    mDistBadge.setTextColor(Color.parseColor("#FFF8E1"));
+                    bBg.setColor(Color.parseColor("#F57F17"));
+                    mDistBadge.setBackground(bBg);
+                    mDistDesc.setText("Tu última posición GPS tiene más de 48h. Las alertas mostrarán 'de tu zona'. Toca 'Usar mi ubicación actual' para actualizarla.");
+                }
+            }
+            mBtnClearLoc.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void onGpsLocationClicked() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                requestPermissions(new String[]{
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                }, RC_LOCATION);
+            }
+            return;
+        }
+        captureDeviceLocation();
+    }
+
+    private void captureDeviceLocation() {
+        try {
+            LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) {
+                Toast.makeText(this, "Servicio de ubicación no disponible", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            Location loc = null;
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                loc = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
+                if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                if (loc == null) loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            }
+
+            if (loc != null) {
+                FcmPreferences.setUserLocation(this, loc.getLatitude(), loc.getLongitude(), "GPS", null);
+                updateUi();
+                Toast.makeText(this, "Ubicación GPS registrada (3 decimales). Notificaciones personalizadas activas.", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "No se pudo obtener la posición actual. Puedes elegir una provincia fija.", Toast.LENGTH_LONG).show();
+            }
+        } catch (SecurityException se) {
+            Toast.makeText(this, "Permiso de ubicación denegado", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Error al obtener ubicación: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+
+
+    private void onZoneSelectClicked() {
+        final String[] zonas = {
+            "Panamá (Centro)", "Panamá Oeste", "Chiriquí", "Bocas del Toro",
+            "Coclé", "Colón", "Herrera", "Los Santos", "Veraguas", "Darién"
+        };
+        final double[][] coords = {
+            {8.983, -79.520}, {8.880, -79.780}, {8.430, -82.430}, {9.333, -82.250},
+            {8.500, -80.350}, {9.350, -79.900}, {7.960, -80.430}, {7.700, -80.300},
+            {8.100, -80.980}, {8.350, -77.950}
+        };
+
+        new AlertDialog.Builder(this)
+            .setTitle("Elige tu provincia o zona de referencia")
+            .setItems(zonas, (dialog, which) -> {
+                String selectedZone = zonas[which];
+                double lat = coords[which][0];
+                double lon = coords[which][1];
+                FcmPreferences.setUserLocation(this, lat, lon, "ZONA", selectedZone);
+                updateUi();
+                Toast.makeText(this, "Zona fija establecida: " + selectedZone, Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("Cancelar", null)
+            .show();
+    }
+
+    private void onClearLocationClicked() {
+        FcmPreferences.clearUserLocation(this);
+        updateUi();
+        Toast.makeText(this, "Personalización por distancia desactivada", Toast.LENGTH_SHORT).show();
+    }
+
 }

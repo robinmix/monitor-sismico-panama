@@ -147,4 +147,94 @@ public final class FcmPreferences {
         if (sourceUid == null || sourceUid.isEmpty()) return;
         getPrefs(context).edit().putLong(PREF_PREFIX_NOTIFIED + sourceUid, System.currentTimeMillis()).apply();
     }
+
+    /* ==========================================================================
+       PREFERENCIAS DE UBICACIÓN Y DISTANCIA EN NOTIFICACIONES (sismoPA)
+       ========================================================================== */
+    private static final String KEY_LOC_ACTIVE = "loc_pers_active";
+    private static final String KEY_LOC_LAT = "loc_user_lat";
+    private static final String KEY_LOC_LON = "loc_user_lon";
+    private static final String KEY_LOC_UPDATED_AT = "loc_updated_at";
+    private static final String KEY_LOC_MODE = "loc_mode"; // "GPS" o "ZONA"
+    private static final String KEY_LOC_ZONE_NAME = "loc_zone_name";
+
+    public static boolean isDistancePersonalizationActive(Context context) {
+        return getPrefs(context).getBoolean(KEY_LOC_ACTIVE, false);
+    }
+
+    public static void setDistancePersonalizationActive(Context context, boolean active) {
+        getPrefs(context).edit().putBoolean(KEY_LOC_ACTIVE, active).apply();
+    }
+
+    public static void setUserLocation(Context context, double lat, double lon, String mode, String zoneName) {
+        // Truncar estrictamente a 3 decimales (~110m) para garantizar la privacidad
+        double truncatedLat = Math.round(lat * 1000.0) / 1000.0;
+        double truncatedLon = Math.round(lon * 1000.0) / 1000.0;
+
+        getPrefs(context).edit()
+                .putString(KEY_LOC_LAT, String.valueOf(truncatedLat))
+                .putString(KEY_LOC_LON, String.valueOf(truncatedLon))
+                .putLong(KEY_LOC_UPDATED_AT, System.currentTimeMillis())
+                .putString(KEY_LOC_MODE, mode != null ? mode.toUpperCase() : "GPS")
+                .putString(KEY_LOC_ZONE_NAME, zoneName != null ? zoneName : "")
+                .putBoolean(KEY_LOC_ACTIVE, true)
+                .apply();
+    }
+
+    public static Double getUserLatitude(Context context) {
+        String val = getPrefs(context).getString(KEY_LOC_LAT, null);
+        if (val == null) return null;
+        try {
+            return Double.parseDouble(val);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    public static Double getUserLongitude(Context context) {
+        String val = getPrefs(context).getString(KEY_LOC_LON, null);
+        if (val == null) return null;
+        try {
+            return Double.parseDouble(val);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    public static long getUserLocationUpdatedAt(Context context) {
+        return getPrefs(context).getLong(KEY_LOC_UPDATED_AT, 0L);
+    }
+
+    public static String getUserLocationMode(Context context) {
+        return getPrefs(context).getString(KEY_LOC_MODE, "GPS");
+    }
+
+    public static String getUserLocationZoneName(Context context) {
+        return getPrefs(context).getString(KEY_LOC_ZONE_NAME, "");
+    }
+
+    public static void clearUserLocation(Context context) {
+        getPrefs(context).edit()
+                .remove(KEY_LOC_LAT)
+                .remove(KEY_LOC_LON)
+                .remove(KEY_LOC_UPDATED_AT)
+                .remove(KEY_LOC_MODE)
+                .remove(KEY_LOC_ZONE_NAME)
+                .putBoolean(KEY_LOC_ACTIVE, false)
+                .apply();
+    }
+
+    /**
+     * Cálculo de distancia ortodrómica Haversine en kilómetros.
+     */
+    public static double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371.0088; // Radio medio de la Tierra WGS84
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                   Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+        return R * c;
+    }
 }

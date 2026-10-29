@@ -68,23 +68,96 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
         // Asegurar que el canal de notificaciones esté activo (Android 8.0+)
         SismoNotificationHelper.createNotificationChannel(this);
 
-        String title = data.get("title");
-        String body = data.get("body");
+        String rawMag = data.get("magnitud");
+        String rawLat = data.get("latitud");
+        String rawLon = data.get("longitud");
+        String lugar = data.get("lugar");
+        if (lugar == null || lugar.isEmpty()) {
+            lugar = data.get("ubicacion");
+        }
+        if (lugar == null || lugar.isEmpty()) {
+            lugar = "Panamá";
+        }
+        String profKm = data.get("profundidad");
         String urlString = data.get("url");
 
-        if (title == null || title.isEmpty()) {
-            if (remoteMessage.getNotification() != null && remoteMessage.getNotification().getTitle() != null) {
-                title = remoteMessage.getNotification().getTitle();
-            } else {
-                title = "sismoPA — Alerta Sísmica";
+        String magStr = (rawMag != null && !rawMag.isEmpty()) ? ("M" + rawMag) : "Sismo";
+        String personalizedDistStr = null;
+
+        // Evaluación de personalización local por distancia en el dispositivo (100% privacidad)
+        if (FcmPreferences.isDistancePersonalizationActive(this)) {
+            Double userLat = FcmPreferences.getUserLatitude(this);
+            Double userLon = FcmPreferences.getUserLongitude(this);
+            long updatedAt = FcmPreferences.getUserLocationUpdatedAt(this);
+            String mode = FcmPreferences.getUserLocationMode(this);
+            long now = System.currentTimeMillis();
+            long ageMs = now - updatedAt;
+
+            // Vigencia máxima de 30 días
+            if (ageMs <= 30L * 24 * 3600 * 1000L && userLat != null && userLon != null) {
+                String suffix = null;
+                if ("ZONA".equalsIgnoreCase(mode)) {
+                    suffix = "de tu zona";
+                } else if ("GPS".equalsIgnoreCase(mode)) {
+                    if (ageMs <= 48L * 3600 * 1000L) {
+                        suffix = "de ti";
+                    } else {
+                        suffix = "de tu zona";
+                    }
+                }
+
+                if (suffix != null && rawLat != null && rawLon != null) {
+                    try {
+                        double sismoLat = Double.parseDouble(rawLat);
+                        double sismoLon = Double.parseDouble(rawLon);
+                        double dist = FcmPreferences.haversineKm(userLat, userLon, sismoLat, sismoLon);
+                        long roundedDist = Math.round(dist);
+                        if (roundedDist <= 0) {
+                            personalizedDistStr = "a menos de 1 km " + suffix;
+                        } else {
+                            personalizedDistStr = roundedDist + " km " + suffix;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
             }
         }
 
-        if (body == null || body.isEmpty()) {
-            if (remoteMessage.getNotification() != null && remoteMessage.getNotification().getBody() != null) {
-                body = remoteMessage.getNotification().getBody();
+        String title;
+        String body;
+
+        if (personalizedDistStr != null) {
+            // FORMATO PERSONALIZADO ESTRICTO:
+            // Título: M3.5 · 42 km de ti
+            title = magStr + " · " + personalizedDistStr;
+
+            // Cuerpo: M3.5 · 42 km de ti · 60 km al sureste de Soná [· 12 km prof.]
+            StringBuilder sb = new StringBuilder();
+            sb.append(magStr).append(" · ").append(personalizedDistStr).append(" · ").append(lugar);
+            if (profKm != null && !profKm.isEmpty()) {
+                try {
+                    int p = Math.round(Float.parseFloat(profKm));
+                    sb.append(" · ").append(p).append(" km prof.");
+                } catch (Exception ignored) {}
+            }
+            body = sb.toString();
+        } else {
+            // FORMATO GENERAL DE FALLBACK:
+            title = (data.get("title") != null && !data.get("title").isEmpty())
+                    ? data.get("title")
+                    : (magStr + " · Nuevo sismo");
+
+            if (data.get("body") != null && !data.get("body").isEmpty()) {
+                body = data.get("body");
             } else {
-                body = "Nuevo sismo registrado por el IGC-UP en Panamá.";
+                StringBuilder sb = new StringBuilder();
+                sb.append(magStr).append(" · ").append(lugar);
+                if (profKm != null && !profKm.isEmpty()) {
+                    try {
+                        int p = Math.round(Float.parseFloat(profKm));
+                        sb.append(" · ").append(p).append(" km prof.");
+                    } catch (Exception ignored) {}
+                }
+                body = sb.toString();
             }
         }
 

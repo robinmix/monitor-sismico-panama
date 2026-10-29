@@ -2755,10 +2755,191 @@
         btnToggle.disabled = false;
         if (btnTest) btnTest.hidden = false;
         return sub;
+        syncWebPushDistanceUi(true);
       } catch (err) {
         console.warn('[Push] Error comprobando estado:', err);
         return null;
       }
+    }
+
+    
+    /* ==========================================================================
+       GESTIÓN DE DISTANCIA EN NOTIFICACIONES WEB PUSH (sismoPA)
+       ========================================================================== */
+    const distPanel = document.getElementById('webPushDistancePanel');
+    const distBadge = document.getElementById('webPushDistanceBadge');
+    const distDetail = document.getElementById('webPushDistanceDetail');
+    const btnDistGps = document.getElementById('btnWebPushGps');
+    const selectDistZone = document.getElementById('selectWebPushZone');
+    const btnDistClear = document.getElementById('btnWebPushClearDist');
+
+    function syncWebPushDistanceUi(isSubActive) {
+      if (!distPanel) return;
+      if (!isSubActive) {
+        distPanel.style.display = 'none';
+        return;
+      }
+      distPanel.style.display = 'block';
+
+      let userLoc = null;
+      try {
+        const stored = localStorage.getItem('sismopa_user_location');
+        if (stored) userLoc = JSON.parse(stored);
+      } catch (e) {}
+
+      if (!userLoc || userLoc.activa === false) {
+        if (distBadge) {
+          distBadge.textContent = 'Desactivada';
+          distBadge.className = 'notif-status-badge inactive';
+        }
+        if (distDetail) {
+          distDetail.innerHTML = 'Muestra qué tan lejos ocurrió el sismo de ti (ej. <em>M3.5 · 42 km de ti</em>). Tus coordenadas se truncan a 3 decimales (~110m) para proteger tu privacidad.';
+        }
+        if (btnDistClear) btnDistClear.style.display = 'none';
+        if (selectDistZone) selectDistZone.value = '';
+      } else {
+        const mode = String(userLoc.modo || 'GPS').toUpperCase();
+        const ageMs = userLoc.updatedAt ? (Date.now() - new Date(userLoc.updatedAt).getTime()) : 0;
+
+        if (mode === 'ZONA') {
+          if (distBadge) {
+            distBadge.textContent = 'Zona: ' + (userLoc.zona || 'Fija') + ' (de tu zona)';
+            distBadge.className = 'notif-status-badge active';
+          }
+          if (distDetail) {
+            distDetail.textContent = 'Alertas mostrarán la distancia aproximada a tu zona elegida (' + (userLoc.zona || '') + ').';
+          }
+        } else {
+          if (ageMs <= 48 * 3600 * 1000) {
+            if (distBadge) {
+              distBadge.textContent = 'GPS activo · Reciente (de ti)';
+              distBadge.className = 'notif-status-badge active';
+            }
+            if (distDetail) {
+              distDetail.textContent = 'Alertas mostrarán la distancia directa de ti (ej. M3.5 · 42 km de ti). Posición guardada con 3 decimales (~110m).';
+            }
+          } else if (ageMs <= 30 * 24 * 3600 * 1000) {
+            if (distBadge) {
+              distBadge.textContent = 'GPS anterior · >48h (de tu zona)';
+              distBadge.className = 'notif-status-badge warning';
+            }
+            if (distDetail) {
+              distDetail.textContent = 'Tu posición GPS tiene más de 48h. Las alertas mostrarán "de tu zona". Toca GPS para actualizarla.';
+            }
+          } else {
+            if (distBadge) {
+              distBadge.textContent = 'Caducada (> 30 días)';
+              distBadge.className = 'notif-status-badge inactive';
+            }
+            if (distDetail) {
+              distDetail.textContent = 'Tu posición tiene más de 30 días y fue desactivada automáticamente. Actualízala para reanudar.';
+            }
+          }
+        }
+        if (btnDistClear) btnDistClear.style.display = 'inline-block';
+      }
+    }
+
+    async function sendLocationUpdateToServer(locData) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) return;
+
+        const tokKey = getEndpointTokenKey(sub.endpoint);
+        const token = localStorage.getItem(tokKey) || '';
+
+        await fetch('/api/push-subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: locData ? 'update_location' : 'delete_location',
+            endpoint: sub.endpoint,
+            client_token: token,
+            location: locData || null
+          })
+        });
+      } catch (err) {
+        console.warn('[Push] Advertencia sincronizando ubicación con servidor:', err);
+      }
+    }
+
+    if (btnDistGps) {
+      btnDistGps.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+          alert('La geolocalización no está soportada en este navegador.');
+          return;
+        }
+        btnDistGps.textContent = '📍 Obteniendo GPS…';
+        btnDistGps.disabled = true;
+
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            btnDistGps.textContent = '📍 Usar mi ubicación actual (GPS)';
+            btnDistGps.disabled = false;
+            const lat = Math.round(pos.coords.latitude * 1000) / 1000;
+            const lon = Math.round(pos.coords.longitude * 1000) / 1000;
+            const locObj = {
+              lat,
+              lon,
+              modo: 'GPS',
+              precision_m: pos.coords.accuracy || null,
+              updatedAt: new Date().toISOString(),
+              activa: true
+            };
+            try { localStorage.setItem('sismopa_user_location', JSON.stringify(locObj)); } catch (e) {}
+            await sendLocationUpdateToServer({
+              latitud: lat,
+              longitud: lon,
+              modo: 'GPS',
+              precision_m: pos.coords.accuracy || null,
+              activa: true
+            });
+            syncWebPushDistanceUi(true);
+          },
+          (err) => {
+            btnDistGps.textContent = '📍 Usar mi ubicación actual (GPS)';
+            btnDistGps.disabled = false;
+            alert('No se pudo obtener la posición GPS (' + (err.message || 'permiso denegado') + '). Puedes elegir una provincia fija.');
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+      });
+    }
+
+    if (selectDistZone) {
+      selectDistZone.addEventListener('change', async () => {
+        const val = selectDistZone.value;
+        if (!val) return;
+        const [zoneName, latStr, lonStr] = val.split('|');
+        const lat = parseFloat(latStr);
+        const lon = parseFloat(lonStr);
+        const locObj = {
+          lat,
+          lon,
+          modo: 'ZONA',
+          zona: zoneName,
+          updatedAt: new Date().toISOString(),
+          activa: true
+        };
+        try { localStorage.setItem('sismopa_user_location', JSON.stringify(locObj)); } catch (e) {}
+        await sendLocationUpdateToServer({
+          latitud: lat,
+          longitud: lon,
+          modo: 'ZONA',
+          zona: zoneName,
+          activa: true
+        });
+        syncWebPushDistanceUi(true);
+      });
+    }
+
+    if (btnDistClear) {
+      btnDistClear.addEventListener('click', async () => {
+        try { localStorage.removeItem('sismopa_user_location'); } catch (e) {}
+        await sendLocationUpdateToServer(null);
+        syncWebPushDistanceUi(true);
+      });
     }
 
     btnToggle.addEventListener('click', async () => {

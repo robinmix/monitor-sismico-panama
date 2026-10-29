@@ -255,7 +255,7 @@
 
     <main class="policy-card">
       <h1>Política de Privacidad</h1>
-      <time class="meta-date" datetime="2026-10-20">Última actualización: 20 de octubre de 2026</time>
+      <time class="meta-date" datetime="2026-10-29">Última actualización: 29 de octubre de 2026</time>
 
       <section>
         <h2>1. Identidad del Proyecto y Contacto</h2>
@@ -295,18 +295,32 @@
       </section>
 
       <section>
-        <h2>4. Tratamiento de Datos de Ubicación Geográfica (GPS)</h2>
+        <h2>4. Tratamiento de Datos de Ubicación Geográfica y Notificaciones Personalizadas por Distancia</h2>
         <p>
-          La aplicación incluye una función opcional denominada <strong>«Cerca de mí»</strong>, que permite calcular la distancia aproximada entre el usuario y los epicentros de los sismos registrados.
+          sismoPA ofrece dos funciones opcionales basadas en ubicación, ambas orientadas a contextualizar la distancia respecto a los eventos sísmicos de manera segura y respetuosa de la privacidad:
+        </p>
+        <p>
+          <strong>a) Modo visualización interactiva («Cerca de mí»):</strong> Permite ordenar los sismos y visualizarlos en el mapa según la proximidad física. Las coordenadas se procesan en memoria volátil de sesión y se descartan al salir.
+        </p>
+        <p>
+          <strong>b) Notificaciones personalizadas por distancia (Novedad):</strong> Permite que las alertas sísmicas indiquen de forma clara la distancia aproximada respecto al usuario (ej. <code>M3.5 · 42 km de ti</code> o <code>M3.5 · 42 km de tu zona</code>).
         </p>
         <div class="callout">
-          <strong>PROCESAMIENTO LOCAL EN EL DISPOSITIVO:</strong>
+          <strong>GARANTÍAS Y PROTECCIONES DE PRIVACIDAD IMPLEMENTADAS:</strong>
           <ul>
-            <li><strong>Consentimiento explícito:</strong> La geolocalización solo se activa si el usuario pulsa de forma deliberada el botón o pestaña de ubicación en la aplicación.</li>
-            <li><strong>Sin transmisión de coordenadas:</strong> Las coordenadas exactas de latitud y longitud calculadas por el sensor del dispositivo no se transmiten al backend de sismoPA ni a Supabase.</li>
-            <li><strong>Sin persistencia en almacenamiento permanente:</strong> Las coordenadas no se guardan en el almacenamiento local persistente (<code>localStorage</code>, <code>IndexedDB</code>) ni en cookies del navegador.</li>
-            <li><strong>Permanencia en memoria durante la sesión:</strong> Las coordenadas se conservan en la memoria volátil de la aplicación durante la sesión activa para permitir el cálculo de distancias en las distintas vistas (como el catálogo sísmico y la visualización geográfica). El usuario puede eliminarlas en cualquier momento pulsando el botón «Desactivar ubicación», o se descartan de forma automática al cerrar o recargar la aplicación.</li>
-            <li><strong>Cálculo geodésico local:</strong> La estimación de distancias relativas respecto a los epicentros se ejecuta de manera local en el propio dispositivo mediante la fórmula matemática de Haversine.</li>
+            <li><strong>Consentimiento informado y voluntario:</strong> La función de distancia en notificaciones está desactivada por defecto. Requiere activación explícita del usuario desde los ajustes de la aplicación.</li>
+            <li><strong>Truncamiento estricto de coordenadas (~110 metros):</strong> Las coordenadas de latitud y longitud se redondean a un máximo de 3 decimales antes de cualquier almacenamiento o cálculo. Esto impide de forma matemática la identificación de direcciones, calles, residencias o puntos de interés específicos.</li>
+            <li><strong>Procesamiento local en Android TWA/APK:</strong> En la aplicación Android oficial, el cálculo de distancia geodésica se ejecuta 100% en el dispositivo receptor al llegar el aviso por Firebase Topics. Ninguna coordenada de usuario se transmite a servidores ni a Supabase.</li>
+            <li><strong>Web Push con credencial criptográfica de un solo dispositivo:</strong> En navegadores web que activan la personalización en servidor, las coordenadas truncadas se asocian exclusivamente a un hash criptográfico aleatorio (<code>client_token_hash</code>), sin vinculación a nombres, correos ni identificadores personales.</li>
+            <li><strong>Degradación de frescura y caducidad temporal:</strong>
+              <ul>
+                <li>Ubicación GPS actualizada hace ≤ 48 horas: se califica como <em>«de ti»</em>.</li>
+                <li>Ubicación fija por provincia o GPS con antigüedad &gt; 48 horas: se califica transparentemente como <em>«de tu zona»</em>.</li>
+                <li>Antigüedad &gt; 30 días: caduca automáticamente y revierte al formato general sin distancia (<code>M3.5 · Nuevo sismo</code>).</li>
+              </ul>
+            </li>
+            <li><strong>Cero rastreo en segundo plano:</strong> La aplicación no solicita el permiso <code>ACCESS_BACKGROUND_LOCATION</code> ni realiza sondeos periódicos en segundo plano.</li>
+            <li><strong>Control total y eliminación inmediata:</strong> El usuario puede desactivar la distancia o seleccionar una provincia fija en cualquier momento. Al pulsar «Desactivar distancia» o revocar las notificaciones, los datos de ubicación se borran de forma inmediata y definitiva.</li>
           </ul>
         </div>
       </section>

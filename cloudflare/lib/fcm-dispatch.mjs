@@ -176,8 +176,11 @@ export async function sendFcmTopicMessage(arg1, arg2, arg3, arg4) {
       data: {
         source_uid: String(sismoPayload.source_uid || ''),
         magnitud: String(sismoPayload.magnitud || ''),
-        lugar: String(sismoPayload.lugar || ''),
-        profundidad: String(sismoPayload.profundidad || ''),
+        latitud: String(sismoPayload.latitud || ''),
+        longitud: String(sismoPayload.longitud || ''),
+        lugar: String(sismoPayload.lugar || sismoPayload.ubicacion || ''),
+        ubicacion: String(sismoPayload.ubicacion || sismoPayload.lugar || ''),
+        profundidad: String(sismoPayload.profundidad || sismoPayload.profundidad_km || ''),
         hora_local: String(sismoPayload.hora_local || ''),
         url: String(sismoPayload.url || `https://sismopa.pages.dev/?sismo=${sismoPayload.source_uid || ''}`),
         title,
@@ -292,6 +295,11 @@ export async function sendFcmDirectMessage(arg1, arg2, arg3, arg4) {
       token: token.trim(),
       data: {
         source_uid: String(sismoPayload.source_uid || 'TEST_FCM'),
+        magnitud: String(sismoPayload.magnitud || ''),
+        latitud: String(sismoPayload.latitud || ''),
+        longitud: String(sismoPayload.longitud || ''),
+        lugar: String(sismoPayload.lugar || sismoPayload.ubicacion || ''),
+        ubicacion: String(sismoPayload.ubicacion || sismoPayload.lugar || ''),
         url: String(sismoPayload.url || 'https://sismopa.pages.dev/'),
         title,
         body

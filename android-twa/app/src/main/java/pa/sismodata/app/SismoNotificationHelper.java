@@ -77,11 +77,23 @@ public final class SismoNotificationHelper {
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(context, TEST_NOTIFICATION_ID, intent, flags);
 
+        // Personalizar prueba según configuración de distancia activa
+        String testTitle = "M3.5 · Nuevo sismo";
+        String testBody = "M3.5 · 60 km al sureste de Soná · 12 km prof.";
+
+        if (FcmPreferences.isDistancePersonalizationActive(context)) {
+            String mode = FcmPreferences.getUserLocationMode(context);
+            long ageMs = System.currentTimeMillis() - FcmPreferences.getUserLocationUpdatedAt(context);
+            String suffix = ("GPS".equalsIgnoreCase(mode) && ageMs <= 48L * 3600 * 1000L) ? "de ti" : "de tu zona";
+            testTitle = "M3.5 · 42 km " + suffix;
+            testBody = "M3.5 · 42 km " + suffix + " · 60 km al sureste de Soná · 12 km prof.";
+        }
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification_icon)
-                .setContentTitle("sismoPA — Notificación Nativa")
-                .setContentText("Prueba local exitosa en pa.sismodata.app.")
-                .setStyle(new NotificationCompat.BigTextStyle().bigText("Prueba local exitosa en pa.sismodata.app. Alertas nativas oficiales funcionando directamente en Android sin navegador intermediario."))
+                .setContentTitle(testTitle)
+                .setContentText(testBody)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(testBody))
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setColor(0xFFD32F2F)
