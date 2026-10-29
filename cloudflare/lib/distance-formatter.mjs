@@ -78,7 +78,11 @@ export function truncateCoordinates(lat, lon, decimals = 3) {
 export function getDistanceSuffix(userLocation, now = Date.now()) {
   if (!userLocation || typeof userLocation !== 'object') return null;
 
-  const mode = String(userLocation.modo || userLocation.mode || 'GPS').toUpperCase();
+  const rawMode = String(userLocation.modo || userLocation.mode || 'GPS').trim().toUpperCase();
+  if (rawMode === 'INACTIVO' || userLocation.personalizacion_distancia_activa === false || userLocation.activa === false) {
+    return null;
+  }
+
   const rawUpdatedAt = userLocation.actualizada_en || userLocation.updated_at || userLocation.ubicacion_actualizada_en;
 
   let ageMs = 0;
@@ -96,11 +100,11 @@ export function getDistanceSuffix(userLocation, now = Date.now()) {
     return null;
   }
 
-  if (mode === 'ZONA') {
+  if (rawMode === 'ZONA' || rawMode === 'PROVINCIA' || rawMode === 'MANUAL') {
     return 'de tu zona';
   }
 
-  if (mode === 'GPS') {
+  if (rawMode === 'GPS') {
     if (ageMs <= FRESH_GPS_MAX_AGE_MS) {
       return 'de ti';
     }

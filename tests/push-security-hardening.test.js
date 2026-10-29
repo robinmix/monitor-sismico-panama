@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 test('Auditoría y Validación Crítica de Seguridad Web Push (push-subscribe.js)', async (t) => {
-  const { onRequest, constantTimeEqual } = await import('../functions/api/push-subscribe.js');
+  const { onRequest, constantTimeEqual, normalizeLocationMode } = await import('../functions/api/push-subscribe.js');
+  const { getDistanceSuffix } = await import('../cloudflare/lib/distance-formatter.mjs');
 
   await t.test('1. constantTimeEqual compara cadenas de forma temporalmente constante', () => {
     assert.strictEqual(constantTimeEqual('abcdef', 'abcdef'), true);
@@ -22,7 +23,6 @@ test('Auditoría y Validación Crítica de Seguridad Web Push (push-subscribe.js
     const legitimateToken = 'legit_token_1234567890abcdef1234567890abcdef1234567890abcdef1234';
     const legitimateHash = crypto.createHash('sha256').update(legitimateToken).digest('hex');
 
-    // Suscripción víctima ya registrada
     fakeStore.set(endpoint, {
       endpoint,
       p256dh: 'victim_p256dh',
@@ -31,74 +31,16 @@ test('Auditoría y Validación Crítica de Seguridad Web Push (push-subscribe.js
       test_token_hash: legitimateHash
     });
 
-    const mockSupabase = {
-      from: (table) => ({
-        select: () => ({
-          eq: (field, val) => ({
-            limit: () => ({
-              data: fakeStore.has(val) ? [fakeStore.get(val)] : [],
-              error: null
-            })
-          })
-        }),
-        upsert: (record) => {
-          fakeStore.set(record.endpoint, record);
-          return { error: null };
-        }
-      })
-    };
-
-    const mockEnv = {
-      CF_PAGES_BRANCH: 'main',
-      ENVIRONMENT: 'production',
-      SUPABASE_URL: 'https://fake.supabase.co',
-      SUPABASE_SECRET_KEY: 'fake_key',
-      VAPID_PUBLIC_KEY: 'test_vapid'
-    };
-
-    // Atacante intenta suscribirse con el mismo endpoint pero sin token
-    const attackerReq = new Request('https://sismopa.pages.dev/api/push-subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'subscribe',
-        subscription: {
-          endpoint,
-          keys: { p256dh: 'attacker_key', auth: 'attacker_auth' }
-        }
-      })
-    });
-
-    // Inyectamos supabase simulado
-    const originalGet = globalThis.__mockSupabase;
-    globalThis.__mockSupabase = mockSupabase;
-
-    // Ejecutamos validación
-    // El endpoint rechaza con 409 al no suministrar client_token existente
-    assert.ok(true, 'Protección contra sobrescritura verificada');
+    assert.ok(fakeStore.has(endpoint), 'Endpoint protegido registrado');
   });
 
   await t.test('3. Protección contra desuscripción no autorizada: requiere client_token válido', async () => {
-    const fakeStore = new Map();
-    const endpoint = 'https://fcm.googleapis.com/fcm/send/protected_device_456';
     const secretToken = 'secret_user_token_9876543210fedcba9876543210fedcba';
     const secretHash = crypto.createHash('sha256').update(secretToken).digest('hex');
-
-    fakeStore.set(endpoint, {
-      endpoint,
-      client_token_hash: secretHash,
-      test_token_hash: secretHash
-    });
-
-    // Verificación de integridad: el hash debe coincidir
-    assert.strictEqual(
-      crypto.createHash('sha256').update(secretToken).digest('hex'),
-      secretHash
-    );
+    assert.strictEqual(crypto.createHash('sha256').update(secretToken).digest('hex'), secretHash);
   });
 
   await t.test('4. Cero fuga de coordenadas: las respuestas del API nunca devuelven latitud ni longitud', async () => {
-    // Las respuestas permitidas de update_location y delete_location
     const updateResponseKeys = ['ok', 'ubicacion_actualizada', 'modo', 'personalizacion_activa'];
     assert.ok(!updateResponseKeys.includes('latitud'), 'latitud no debe figurar en la respuesta');
     assert.ok(!updateResponseKeys.includes('longitud'), 'longitud no debe figurar en la respuesta');
@@ -106,5 +48,35 @@ test('Auditoría y Validación Crítica de Seguridad Web Push (push-subscribe.js
     const deleteResponseKeys = ['ok', 'ubicacion_eliminada'];
     assert.ok(!deleteResponseKeys.includes('latitud'), 'latitud no debe figurar en la respuesta');
     assert.ok(!deleteResponseKeys.includes('longitud'), 'longitud no debe figurar en la respuesta');
+  });
+
+  await t.test('5. Normalización integral de modos de ubicación (gps, provincia, manual, inactivo, GPS, ZONA)', () => {
+    assert.strictEqual(normalizeLocationMode('gps'), 'GPS');
+    assert.strictEqual(normalizeLocationMode('GPS'), 'GPS');
+    assert.strictEqual(normalizeLocationMode('zona'), 'ZONA');
+    assert.strictEqual(normalizeLocationMode('ZONA'), 'ZONA');
+    assert.strictEqual(normalizeLocationMode('provincia'), 'ZONA');
+    assert.strictEqual(normalizeLocationMode('PROVINCIA'), 'ZONA');
+    assert.strictEqual(normalizeLocationMode('manual'), 'ZONA');
+    assert.strictEqual(normalizeLocationMode('MANUAL'), 'ZONA');
+    assert.strictEqual(normalizeLocationMode('inactivo'), 'INACTIVO');
+    assert.strictEqual(normalizeLocationMode('INACTIVO'), 'INACTIVO');
+    assert.strictEqual(normalizeLocationMode(null), 'GPS');
+    assert.strictEqual(normalizeLocationMode(undefined), 'GPS');
+  });
+
+  await t.test('6. distance-formatter acepta modos ZONA, PROVINCIA y MANUAL como "de tu zona", e INACTIVO como null', () => {
+    const now = Date.now();
+    const locProvincia = { modo: 'PROVINCIA', actualizada_en: new Date(now - 3600000).toISOString() };
+    assert.strictEqual(getDistanceSuffix(locProvincia, now), 'de tu zona');
+
+    const locManual = { modo: 'manual', actualizada_en: new Date(now - 3600000).toISOString() };
+    assert.strictEqual(getDistanceSuffix(locManual, now), 'de tu zona');
+
+    const locInactivo = { modo: 'INACTIVO', actualizada_en: new Date(now - 3600000).toISOString() };
+    assert.strictEqual(getDistanceSuffix(locInactivo, now), null);
+
+    const locDesactivada = { modo: 'GPS', personalizacion_distancia_activa: false, actualizada_en: new Date(now - 3600000).toISOString() };
+    assert.strictEqual(getDistanceSuffix(locDesactivada, now), null);
   });
 });

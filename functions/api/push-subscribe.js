@@ -79,6 +79,14 @@ export function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
+export function normalizeLocationMode(raw) {
+  if (!raw || typeof raw !== 'string') return 'GPS';
+  const upper = raw.trim().toUpperCase();
+  if (upper === 'ZONA' || upper === 'PROVINCIA' || upper === 'MANUAL') return 'ZONA';
+  if (upper === 'INACTIVO' || upper === 'NONE' || upper === 'OFF') return 'INACTIVO';
+  return 'GPS';
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
 
@@ -196,7 +204,8 @@ export async function onRequest(context) {
       // Validar y sanitizar parámetros de ubicación
       const rawLat = location?.latitud ?? location?.lat;
       const rawLon = location?.longitud ?? location?.lon;
-      const mode = String(location?.modo || location?.mode || 'GPS').toUpperCase();
+      const rawMode = location?.modo || location?.mode || 'GPS';
+      const canonicalMode = normalizeLocationMode(rawMode);
       const zoneName = location?.zona ? String(location.zona).slice(0, 64).trim() : null;
       const precisionM = Number(location?.precision_m);
       const isActiva = (location?.personalizacion_distancia_activa !== false && location?.activa !== false);
@@ -209,7 +218,7 @@ export async function onRequest(context) {
       const updatePayload = {
         latitud: truncated.lat,
         longitud: truncated.lon,
-        ubicacion_modo: mode === 'ZONA' ? 'ZONA' : 'GPS',
+        ubicacion_modo: canonicalMode,
         ubicacion_zona: zoneName,
         ubicacion_precision_m: Number.isFinite(precisionM) ? Math.round(precisionM * 10) / 10 : null,
         ubicacion_actualizada_en: new Date().toISOString(),
@@ -276,7 +285,7 @@ export async function onRequest(context) {
         .update({
           latitud: null,
           longitud: null,
-          ubicacion_modo: 'GPS',
+          ubicacion_modo: 'INACTIVO',
           ubicacion_zona: null,
           ubicacion_precision_m: null,
           ubicacion_actualizada_en: null,
@@ -358,7 +367,7 @@ export async function onRequest(context) {
       if (truncated.lat !== null && truncated.lon !== null) {
         record.latitud = truncated.lat;
         record.longitud = truncated.lon;
-        record.ubicacion_modo = String(location.modo || 'GPS').toUpperCase() === 'ZONA' ? 'ZONA' : 'GPS';
+        record.ubicacion_modo = normalizeLocationMode(location.modo || location.mode || 'GPS');
         record.ubicacion_zona = location.zona ? String(location.zona).slice(0, 64).trim() : null;
         record.ubicacion_precision_m = Number.isFinite(Number(location.precision_m))
           ? Math.round(Number(location.precision_m) * 10) / 10
