@@ -2966,7 +2966,7 @@
             await fetch('/api/push-subscribe', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint })
+              body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint, client_token: localStorage.getItem(tokKey) || '' })
             });
           } catch (e) {}
           localStorage.removeItem(tokKey);
@@ -2980,7 +2980,7 @@
               await fetch('/api/push-subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint })
+                body: JSON.stringify({ action: 'unsubscribe', endpoint: currentSub.endpoint, client_token: localStorage.getItem(tokKey) || '' })
               });
             } catch (e) {}
             if (tokKey) localStorage.removeItem(tokKey);
@@ -3005,7 +3005,7 @@
           const subRes = await fetch('/api/push-subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'subscribe', subscription: newSub })
+            body: JSON.stringify({ action: 'subscribe', subscription: newSub, client_token: (tokKey ? localStorage.getItem(tokKey) : null) || undefined })
           });
           const subData = await subRes.json();
           if (!subRes.ok || !subData.ok) {

@@ -77,13 +77,13 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     }
   });
 
-  await t.test('3. build.gradle de app tiene versión 1.0.8, versionCode 9 y dependencias Firebase', () => {
+  await t.test('3. build.gradle de app tiene versión 1.0.9, versionCode 10 y dependencias Firebase', () => {
     const gradlePath = path.join(rootDir, 'android-twa/app/build.gradle');
     assert.ok(fs.existsSync(gradlePath), 'app/build.gradle debe existir');
     const content = fs.readFileSync(gradlePath, 'utf8');
 
-    assert.ok(content.includes('versionCode 9'), 'versionCode debe ser 9');
-    assert.ok(content.includes('versionName "1.0.8"'), 'versionName debe ser 1.0.8');
+    assert.ok(content.includes('versionCode 10'), 'versionCode debe ser 9');
+    assert.ok(content.includes('versionName "1.0.9"'), 'versionName debe ser 1.0.8');
     assert.ok(content.includes("id 'com.google.gms.google-services'"), 'Debe aplicar plugin com.google.gms.google-services');
     assert.ok(content.includes('firebase-bom'), 'Debe incluir Firebase BoM');
     assert.ok(content.includes('firebase-messaging'), 'Debe incluir firebase-messaging');

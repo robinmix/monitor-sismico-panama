@@ -6,7 +6,7 @@
  * de desarrollo sin difundir al topic general 'sismos_panama'.
  *
  * Uso:
- *   node scripts/send_fcm_direct_test.js --token <DEVICE_FCM_TOKEN> [--sa <PATH_TO_SERVICE_ACCOUNT_JSON>]
+ *   node scripts/send_fcm_direct_test.js --token <DEVICE_FCM_TOKEN> [--sa <PATH_TO_SERVICE_ACCOUNT_JSON>] [--mag 3.5] [--lat 7.560] [--lon -80.760] [--lugar "60 km al sureste de Soná"] [--prof 12]
  */
 
 const fs = require('fs');
@@ -17,6 +17,11 @@ function parseArgs() {
   const options = {
     token: null,
     saPath: null,
+    mag: '3.5',
+    lat: '7.560',
+    lon: '-80.760',
+    lugar: '60 km al sureste de Soná',
+    prof: '12',
     title: '[PRUEBA TÉCNICA] sismoPA',
     body: 'Verificación de notificaciones nativas Android. NO ES UN SISMO REAL.',
     sourceUid: 'test_dev_' + Date.now()
@@ -31,6 +36,16 @@ function parseArgs() {
       options.title = args[++i];
     } else if (args[i] === '--body' && args[i + 1]) {
       options.body = args[++i];
+    } else if (args[i] === '--mag' && args[i + 1]) {
+      options.mag = args[++i];
+    } else if (args[i] === '--lat' && args[i + 1]) {
+      options.lat = args[++i];
+    } else if (args[i] === '--lon' && args[i + 1]) {
+      options.lon = args[++i];
+    } else if (args[i] === '--lugar' && args[i + 1]) {
+      options.lugar = args[++i];
+    } else if (args[i] === '--prof' && args[i + 1]) {
+      options.prof = args[++i];
     }
   }
 
@@ -40,11 +55,11 @@ function parseArgs() {
 async function main() {
   const opts = parseArgs();
 
-  console.log('=== PRUEBA DE ENVÍO DIRECTO FCM (HTTP v1 DATA-ONLY) ===');
+  console.log('=== PRUEBA DE ENVÍO DIRECTO FCM (HTTP v1 DATA-ONLY PERSONALIZADO) ===');
 
   if (!opts.token) {
     console.error('ERROR: Debes proporcionar el token de registro del dispositivo.');
-    console.error('Ejemplo: node scripts/send_fcm_direct_test.js --token <DEVICE_FCM_TOKEN>');
+    console.error('Ejemplo: node scripts/send_fcm_direct_test.js --token <DEVICE_FCM_TOKEN> [--sa ./fcm-sa.json]');
     console.error('Puedes obtener el token desde la pantalla "Alertas Sísmicas" de la app sismoPA (botón "Copiar Token").');
     process.exit(1);
   }
@@ -69,7 +84,13 @@ async function main() {
     body: opts.body,
     url: 'https://sismopa.pages.dev/?sismo=' + encodeURIComponent(opts.sourceUid),
     source_uid: opts.sourceUid,
-    magnitude: '4.8',
+    magnitud: opts.mag,
+    magnitude: opts.mag,
+    latitud: opts.lat,
+    longitud: opts.lon,
+    lugar: opts.lugar,
+    ubicacion: opts.lugar,
+    profundidad: opts.prof,
     sent_at: new Date().toISOString()
   };
 
