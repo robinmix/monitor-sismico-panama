@@ -49,7 +49,26 @@ export function pointInPolygon(x, y, ring) {
   return inside;
 }
 
-export function pointInBBox(x, y, bbox) {
+export 
+/**
+ * Evaluación Point-in-Polygon conforme a OGC SFS y GeoJSON RFC 7946:
+ * poly es [ outerRing, hole1, hole2, ... ]
+ * Retorna true solo si el punto está dentro del anillo exterior y fuera de todos los agujeros.
+ */
+function pointInPolygonWithHoles(x, y, poly) {
+  if (!poly || poly.length === 0) return false;
+  if (typeof poly[0][0] === 'number') {
+    return pointInPolygon(x, y, poly);
+  }
+  const outer = poly[0];
+  if (!pointInPolygon(x, y, outer)) return false;
+  for (let h = 1; h < poly.length; h++) {
+    if (pointInPolygon(x, y, poly[h])) return false;
+  }
+  return true;
+}
+
+function pointInBBox(x, y, bbox) {
   return x >= bbox[0] && y >= bbox[1] && x <= bbox[2] && y <= bbox[3];
 }
 
@@ -162,7 +181,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     for (const c of sortedCorregimientos) {
       if (pointInBBox(lon, lat, c.bbox)) {
         for (const poly of c.coordinates) {
-          if (pointInPolygon(lon, lat, poly)) {
+          if (pointInPolygonWithHoles(lon, lat, poly)) {
             onLand = true;
             break;
           }
@@ -301,7 +320,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
   for (const corr of sortedCorregimientos) {
     if (pointInBBox(lon, lat, corr.bbox)) {
       for (const poly of corr.coordinates) {
-        if (pointInPolygon(lon, lat, poly)) {
+        if (pointInPolygonWithHoles(lon, lat, poly)) {
           matchedCorr = corr;
           break;
         }
@@ -318,7 +337,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     for (const dist of sortedDistritos) {
       if (pointInBBox(lon, lat, dist.bbox)) {
         for (const poly of dist.coordinates) {
-          if (pointInPolygon(lon, lat, poly)) {
+          if (pointInPolygonWithHoles(lon, lat, poly)) {
             matchedDist = dist;
             break;
           }
@@ -336,7 +355,7 @@ export function resolveLocation(latInput, lonInput, igcDescription = '') {
     for (const prov of sortedProvincias) {
       if (pointInBBox(lon, lat, prov.bbox)) {
         for (const poly of prov.coordinates) {
-          if (pointInPolygon(lon, lat, poly)) {
+          if (pointInPolygonWithHoles(lon, lat, poly)) {
             matchedProv = prov;
             break;
           }

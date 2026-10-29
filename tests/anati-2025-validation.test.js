@@ -14,6 +14,7 @@ const { resolveLocation, enrichEvent } = require('../lib/geo-resolver.js');
 const { provincias } = require('../lib/geo-data/panama-provincias.js');
 const { distritos } = require('../lib/geo-data/panama-distritos.js');
 const { corregimientos } = require('../lib/geo-data/panama-corregimientos.js');
+const { lugares } = require('../lib/geo-data/panama-lugares-poblados.js');
 const mascara = require('../lib/geo-data/panama-mascara.js');
 const { zonas: maritimo } = require('../lib/geo-data/panama-maritimo.js');
 
@@ -25,6 +26,7 @@ test('ANATI 2025: 1. Conteos oficiales y estructura cartográfica', () => {
   // Máscara y marítimo preservados de la línea base estable
   assert.equal(mascara.poligonos.length, 481, 'panama-mascara.js debe conservar 481 polígonos');
   assert.equal(maritimo.length, 11, 'panama-maritimo.js debe conservar 11 zonas marítimas');
+  assert.equal(lugares.length, 576, 'panama-lugares-poblados.js debe conservar exactamente 576 localidades');
 });
 
 test('ANATI 2025: 2. Preservación de códigos con ceros a la izquierda (strings)', () => {
@@ -38,11 +40,14 @@ test('ANATI 2025: 2. Preservación de códigos con ceros a la izquierda (strings
   assert.ok(distritos.every(d => typeof d.id === 'string' && d.id.length === 4));
   assert.equal(distritos.find(d => d.nombre === 'Pedasí').id, '0705');
   assert.equal(distritos.find(d => d.nombre === 'Tierras Altas').id, '0414');
+  assert.equal(distritos.find(d => d.nombre === 'Almirante').id, '0104', 'Almirante debe ser 0104 oficialmente');
+  assert.equal(distritos.find(d => d.nombre === 'Changuinola').id, '0102', 'Changuinola debe ser 0102');
 
   // Corregimientos
   assert.ok(corregimientos.every(c => typeof c.id === 'string' && c.id.length === 6));
   assert.equal(corregimientos.find(c => c.nombre === 'Pedasí' && c.distrito_id === '0705').id, '070501');
   assert.equal(corregimientos.find(c => c.nombre === 'Los Asientos' && c.distrito_id === '0705').id, '070502');
+  assert.equal(corregimientos.find(c => c.nombre === 'Almirante' && c.distrito_id === '0104').id, '010401');
 });
 
 test('ANATI 2025: 3. Cobertura de las 10 provincias y 3 comarcas mayores', () => {
@@ -81,7 +86,7 @@ test('ANATI 2025: 4. Nuevos distritos creados o segregados (2014-2024)', () => {
   assert.equal(oth.geo_distrito, 'Omar Torrijos Herrera');
   assert.equal(oth.geo_provincia, 'Colón');
 
-  // 3. Almirante (Bocas del Toro, Ley 39 de 2015)
+  // 3. Almirante (Bocas del Toro, Ley 39 de 2015, cod 0104)
   const alm = resolveLocation(9.300, -82.400);
   assert.equal(alm.geo_distrito, 'Almirante');
   assert.equal(alm.geo_provincia, 'Bocas del Toro');
@@ -125,7 +130,58 @@ test('ANATI 2025: 6. Exclusión estricta de masas de agua como corregimientos', 
   }
 });
 
-test('ANATI 2025: 7. Paridad estricta ESM vs CJS para todos los casos DPA 2025', async () => {
+test('ANATI 2025: 7. Topología OGC de agujeros interiores (Holes), enclaves y límites compartidos', () => {
+  // Helper Point-in-polygon
+  function pip(x, y, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function inEntityWithHoles(x, y, polygons) {
+    for (const poly of polygons) {
+      const outer = poly[0];
+      if (pip(x, y, outer)) {
+        let inHole = false;
+        for (let h = 1; h < poly.length; h++) {
+          if (pip(x, y, poly[h])) { inHole = true; break; }
+        }
+        if (!inHole) return true;
+      }
+    }
+    return false;
+  }
+
+  // 1. Enclave San Miguelito vs Distrito de Panamá:
+  // Punto en San Miguelito: lat 9.0435, lon -79.4975
+  const distPanama = distritos.find(d => d.id === '0808');
+  const distSM = distritos.find(d => d.id === '0810');
+  
+  assert.equal(inEntityWithHoles(-79.4975, 9.0435, distPanama.coordinates), false, 'Punto en San Miguelito debe dar FALSE en Distrito Panamá por sustracción de agujero');
+  assert.equal(inEntityWithHoles(-79.4975, 9.0435, distSM.coordinates), true, 'Punto en San Miguelito debe dar TRUE en Distrito San Miguelito');
+
+  // 2. Agujero de agua interior (Laguna de La Yeguada en Corregimiento La Yeguada):
+  // Punto en el centro del lago: lat 8.4562, lon -80.8560
+  const corrYeguada = corregimientos.find(c => c.nombre.includes('Yeguada'));
+  assert.equal(corrYeguada.coordinates[0].length, 2, 'Corregimiento La Yeguada debe tener exactamente 2 anillos (1 exterior, 1 agujero)');
+  assert.equal(pip(-80.8560, 8.4562, corrYeguada.coordinates[0][0]), true, 'Punto centro del lago está dentro del exterior');
+  assert.equal(pip(-80.8560, 8.4562, corrYeguada.coordinates[0][1]), true, 'Punto centro del lago está dentro del agujero');
+  assert.equal(inEntityWithHoles(-80.8560, 8.4562, corrYeguada.coordinates), false, 'Punto dentro del lago no debe pertenecer a tierra de La Yeguada');
+
+  // 3. Punto en tierra firme de La Yeguada (fuera del lago): lat 8.4500, lon -80.8400
+  assert.equal(inEntityWithHoles(-80.8400, 8.4500, corrYeguada.coordinates), true, 'Punto en tierra debe ser TRUE');
+
+  // 4. Punto en mar abierto (fuera de toda geometría): lat 7.000, lon -80.000
+  const resMar = resolveLocation(7.000, -80.000);
+  assert.equal(resMar.geo_tipo, 'MARITIMO');
+});
+
+test('ANATI 2025: 8. Paridad estricta ESM vs CJS para todos los casos DPA 2025', async () => {
   const esm = await import('../cloudflare/lib/geo-resolver.mjs');
 
   const checkPoints = [
