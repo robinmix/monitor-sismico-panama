@@ -284,7 +284,7 @@ test('Web Push Security & Delivery Suite (con Diagnósticos por Fases)', async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/device1', test_token: '123' })
     });
-    const res = await testMod.onRequest({ request: req, env: {} });
+    const res = await testMod.onRequest({ request: req, env: { CF_PAGES_BRANCH: 'main' } });
     assert.equal(res.status, 503);
     const data = await res.json();
     assert.equal(data.diagnostico.fase, 'SERVER_CONFIG');
@@ -298,5 +298,59 @@ test('Web Push Security & Delivery Suite (con Diagnósticos por Fases)', async (
     assert.ok(swContent.includes('showNotification'), 'SW muestra notificación con opciones');
     assert.ok(swContent.includes('client.focus()'), 'SW enfoca ventana abierta al pulsar');
     assert.ok(swContent.includes('clients.openWindow'), 'SW abre ventana si no existe');
+  });
+  await t.test('11. Protección Fail-Closed: rechaza ausente, desconocido, contradictorio y preview en push-subscribe y push-test', async () => {
+    const modules = [
+      { name: 'push-subscribe', mod: subMod, url: 'https://sismopa.pages.dev/api/push-subscribe' },
+      { name: 'push-test', mod: testMod, url: 'https://sismopa.pages.dev/api/push-test' }
+    ];
+
+    for (const { name, mod, url } of modules) {
+      // 1. Variable Ausente: env = {} -> Debe rechazar con 403
+      const reqAusente = new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const resAusente = await mod.onRequest({ request: reqAusente, env: {} });
+      assert.equal(resAusente.status, 403, `${name} debe rechazar con 403 ante env ausente`);
+      const bodyAusente = await resAusente.json();
+      assert.match(bodyAusente.error, /no está verificado explícitamente como Producción/);
+
+      // 2. Variable Ausente: env = undefined -> Debe rechazar con 403
+      const reqUndef = new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const resUndef = await mod.onRequest({ request: reqUndef, env: undefined });
+      assert.equal(resUndef.status, 403, `${name} debe rechazar con 403 ante env undefined`);
+
+      // 3. Entorno Desconocido: CF_PAGES_BRANCH = 'staging' -> Debe rechazar con 403
+      const reqStaging = new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const resStaging = await mod.onRequest({ request: reqStaging, env: { CF_PAGES_BRANCH: 'staging' } });
+      assert.equal(resStaging.status, 403, `${name} debe rechazar con 403 ante entorno desconocido`);
+
+      // 4. Entorno Preview: CF_PAGES_BRANCH = 'feat/anati-2025' -> Debe rechazar con 403
+      const reqPreview = new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const resPreview = await mod.onRequest({ request: reqPreview, env: { CF_PAGES_BRANCH: 'feat/anati-2025-geographic-update' } });
+      assert.equal(resPreview.status, 403, `${name} debe rechazar con 403 ante rama Preview`);
+
+      // 5. Configuración Contradictoria: branch=main pero host=preview -> Debe rechazar con 403
+      const reqContradict = new Request('https://86fe5e61.sismopa.pages.dev/api/push-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Host': '86fe5e61.sismopa.pages.dev' },
+        body: '{}'
+      });
+      const resContradict = await mod.onRequest({ request: reqContradict, env: { CF_PAGES_BRANCH: 'main' } });
+      assert.equal(resContradict.status, 403, `${name} debe rechazar con 403 ante host contradictorio de Preview`);
+
+      // 6. Configuración Contradictoria: branch=main pero ENVIRONMENT=preview -> Debe rechazar con 403
+      const reqContradict2 = new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const resContradict2 = await mod.onRequest({ request: reqContradict2, env: { CF_PAGES_BRANCH: 'main', ENVIRONMENT: 'preview' } });
+      assert.equal(resContradict2.status, 403, `${name} debe rechazar con 403 ante variables contradictorias`);
+
+      // 7. Producción Explícita: CF_PAGES_BRANCH = 'main' con host legítimo -> NO debe bloquear con 403 de entorno
+      const reqProd = new Request(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Host': 'sismopa.pages.dev' },
+        body: '{}'
+      });
+      const resProd = await mod.onRequest({ request: reqProd, env: { CF_PAGES_BRANCH: 'main' } });
+      // Debe superar la guarda de entorno (avanzando a validación de body o credenciales, sin ser 403 de entorno)
+      assert.notEqual(resProd.status, 403, `${name} debe permitir continuar la ejecución en producción explícita`);
+    }
   });
 });

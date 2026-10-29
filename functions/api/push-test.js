@@ -1,3 +1,47 @@
+/**
+ * Validador de entorno Fail-Closed: solo permite operaciones si el entorno
+ * está explícitamente verificado y no presenta contradicciones.
+ */
+export function isExplicitProduction(env, request) {
+  if (!env || typeof env !== 'object') return false;
+
+  // 1. Detección de rama o indicador explícito de Preview / no-producción (Bloqueo prioritario)
+  const branchName = env.CF_PAGES_BRANCH;
+  if (typeof branchName === 'string' && branchName !== 'main') {
+    return false; // Preview explícito por rama
+  }
+
+  // 2. Comprobación de host en solicitud si está presente (para evitar colisiones o spoofing)
+  if (request && typeof request.headers?.get === 'function') {
+    const host = request.headers.get('host') || '';
+    if (host.endsWith('.sismopa.pages.dev') && host !== 'sismopa.pages.dev') {
+      return false; // Host de Preview
+    }
+  }
+
+  // 3. Comprobación de configuración explícita de Producción (Fail-Closed)
+  const isProdBranch = (branchName === 'main');
+  const isProdEnv = (env.ENVIRONMENT === 'production' || env.NODE_ENV === 'production' || env.SISMOPA_ENV === 'production');
+
+  // Si no hay ningún indicador positivo verificable -> AUSENTE o DESCONOCIDO -> Bloquear
+  if (!isProdBranch && !isProdEnv) {
+    return false;
+  }
+
+  // 4. Verificación de no contradicción: si coexisten variables, no deben contradecirse
+  if (isProdBranch && env.ENVIRONMENT && env.ENVIRONMENT !== 'production') {
+    return false; // Contradictorio
+  }
+  if (isProdBranch && env.SISMOPA_ENV && env.SISMOPA_ENV !== 'production') {
+    return false; // Contradictorio
+  }
+  if (isProdEnv && branchName && branchName !== 'main') {
+    return false; // Contradictorio
+  }
+
+  return true;
+}
+
 import { sendWebPush, isValidPushEndpoint } from '../../cloudflare/lib/web-push.mjs';
 import { createClient } from '@supabase/supabase-js';
 
@@ -34,11 +78,11 @@ export async function onRequest(context) {
     return Response.json({ ok: false, error: 'Método no permitido' }, { status: 405 });
   }
 
-  const branchName = env?.CF_PAGES_BRANCH;
-  if (branchName && branchName !== 'main') {
+  // Protección Fail-Closed: rechazar ante entorno no verificado explícitamente como producción
+  if (!isExplicitProduction(env, request)) {
     return Response.json({
       ok: false,
-      error: 'Envío de notificaciones de prueba desactivado en entorno Preview de Cloudflare Pages.'
+      error: 'Operación no permitida: el entorno actual no está verificado explícitamente como Producción.'
     }, { status: 403 });
   }
 
