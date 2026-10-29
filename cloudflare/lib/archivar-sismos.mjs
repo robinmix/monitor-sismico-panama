@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import { requestSource, dateFromLocal, classifyRegion } from './sismos.mjs';
 import { resolveLocation } from './geo-resolver.mjs';
 import { sendWebPush } from './web-push.mjs';
+import { formatSeismicNotification } from './distance-formatter.mjs';
 
 const CRON_SCHEDULE = '*/30 * * * *';
 const FUENTE_NOMBRE = 'IGC-UP';
@@ -854,7 +855,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
       try {
         let pageQuery = supabase
           .from('push_subscriptions')
-          .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after');
+          .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after, latitud, longitud, ubicacion_actualizada_en, ubicacion_modo, ubicacion_zona, personalizacion_distancia_activa');
 
         if (typeof pageQuery.order === 'function') {
           pageQuery = pageQuery.order('created_at', { ascending: true });
@@ -983,7 +984,7 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         try {
           let sweepQuery = supabase
             .from('push_subscriptions')
-            .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after');
+            .select('endpoint, p256dh, auth, vapid_key_hash, failures, created_at, retry_after, latitud, longitud, ubicacion_actualizada_en, ubicacion_modo, ubicacion_zona, personalizacion_distancia_activa');
           if (typeof sweepQuery.order === 'function') sweepQuery = sweepQuery.order('created_at', { ascending: true });
           if (typeof sweepQuery.limit === 'function') sweepQuery = sweepQuery.limit(PAGE_SIZE);
           const { data: sweepBatch } = await sweepQuery;
@@ -1133,9 +1134,46 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
         // 2. Envío Web Push
         try {
           if (pushSubrequestsCount < 48) pushSubrequestsCount++;
+          const userLocation = (sub && sub.latitud !== null && sub.latitud !== undefined && sub.longitud !== null && sub.longitud !== undefined) ? {
+            latitud: sub.latitud,
+            longitud: sub.longitud,
+            modo: sub.ubicacion_modo || 'GPS',
+            ubicacion_actualizada_en: sub.ubicacion_actualizada_en,
+            personalizacion_distancia_activa: sub.personalizacion_distancia_activa
+          } : null;
+
+          const notif = formatSeismicNotification({
+            sismo: {
+              source_uid: ev.source_uid,
+              magnitud: ev.magnitud,
+              latitud: ev.latitud,
+              longitud: ev.longitud,
+              ubicacion_texto: geoTexto,
+              profundidad_km: ev.profundidad_km
+            },
+            userLocation,
+            now
+          });
+
+          const subPayload = {
+            title: notif.title,
+            body: notif.body,
+            url: `./#/sismo/${encodeURIComponent(ev.source_uid)}`,
+            tag: `sismo-${ev.source_uid}`,
+            data: {
+              source_uid: ev.source_uid,
+              magnitud: String(ev.magnitud || ''),
+              latitud: String(ev.latitud || ''),
+              longitud: String(ev.longitud || ''),
+              ubicacion: geoTexto,
+              profundidad: String(ev.profundidad_km || ''),
+              url: `./#/sismo/${encodeURIComponent(ev.source_uid)}`
+            }
+          };
+
           const res = await sendWebPush(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload,
+            subPayload,
             env
           );
 

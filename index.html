@@ -1027,6 +1027,33 @@
             <a href="sismopa://notifications" id="btnNativeSettingsDeepLink" class="btn-push-toggle active" style="text-decoration:none; display:none;" aria-label="Abrir panel nativo de alertas">Abrir alertas sismoPA</a>
             <button type="button" id="btnTestPush" class="btn-push-test" hidden>Probar en este dispositivo</button>
           </div>
+                    <!-- OPCIONES DE DISTANCIA EN NOTIFICACIONES WEB PUSH -->
+          <div class="notif-distance-panel" id="webPushDistancePanel" style="display: none;">
+            <div class="notification-status-row">
+              <span class="notif-label">Distancia en alertas:</span>
+              <span id="webPushDistanceBadge" class="notif-status-badge inactive">Desactivada</span>
+            </div>
+            <p id="webPushDistanceDetail" class="notif-detail-text">
+              Muestra qué tan lejos ocurrió el sismo de ti (ej. <em>M3.5 · 42 km de ti</em>). Tus coordenadas se truncan a 3 decimales (~110m) para proteger tu privacidad.
+            </p>
+            <div class="distance-actions">
+              <button type="button" id="btnWebPushGps" class="btn-dist-opt">📍 Usar mi ubicación actual (GPS)</button>
+              <select id="selectWebPushZone" class="select-dist-zone" aria-label="Elegir provincia fija">
+                <option value="">🗺️ Elegir provincia fija…</option>
+                <option value="Panamá|8.983|-79.520">Panamá (Centro)</option>
+                <option value="Panamá Oeste|8.880|-79.780">Panamá Oeste</option>
+                <option value="Chiriquí|8.430|-82.430">Chiriquí</option>
+                <option value="Bocas del Toro|9.333|-82.250">Bocas del Toro</option>
+                <option value="Coclé|8.500|-80.350">Coclé</option>
+                <option value="Colón|9.350|-79.900">Colón</option>
+                <option value="Herrera|7.960|-80.430">Herrera</option>
+                <option value="Los Santos|7.700|-80.300">Los Santos</option>
+                <option value="Veraguas|8.100|-80.980">Veraguas</option>
+                <option value="Darién|8.350|-77.950">Darién</option>
+              </select>
+              <button type="button" id="btnWebPushClearDist" class="btn-dist-clear" style="display: none;">Desactivar distancia</button>
+            </div>
+          </div>
           <small class="notifications-disclaimer">Servicio informativo voluntario mediante Web Push. No representa alerta sísmica temprana ni predicción de eventos.</small>
         </div>
 
