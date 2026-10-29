@@ -41,6 +41,14 @@ export async function onRequest(context) {
     return Response.json({ ok: false, error: 'Método no permitido' }, { status: 405 });
   }
 
+  const branchName = env?.CF_PAGES_BRANCH;
+  if (branchName && branchName !== 'main') {
+    return Response.json({
+      ok: false,
+      error: 'Operaciones de suscripción desactivadas en entorno Preview de Cloudflare Pages.'
+    }, { status: 403 });
+  }
+
   try {
     const body = await request.json().catch(() => null);
     if (!body) {
