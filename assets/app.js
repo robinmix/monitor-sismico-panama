@@ -2191,7 +2191,7 @@
       ui.histPeriodLabel.textContent = `${periodName} · Período sin registros`;
       ui.histDataOrigin.textContent = 'ℹ️ Sin registros';
       ui.histTotal.textContent = '0';
-      ui.histCoverageDetail.textContent = 'El archivo histórico inició el 12 de octubre de 2026';
+      ui.histCoverageDetail.textContent = 'Sin eventos archivados en este período';
       ui.histMagMax.textContent = '—';
       ui.histMagMin.textContent = '—';
       ui.histMagAvg.textContent = '—';
@@ -2206,6 +2206,22 @@
     }
 
     ui.histPeriodLabel.textContent = `Mostrando: ${periodName}`;
+
+    // Actualizar aviso contextual de cobertura según el año consultado
+    if (ui.histCoverageNoticeText) {
+      const yNum = Number(filters.anio);
+      if (yNum === 2013) {
+        ui.histCoverageNoticeText.innerHTML = 'Catálogo digital instrumental IGC iniciado en <strong>octubre de 2013</strong> (cobertura parcial oct–dic: 275 sismos registrados).';
+      } else if (yNum >= 2014 && yNum <= 2023) {
+        ui.histCoverageNoticeText.innerHTML = `Catálogo histórico consolidado IGC-UP curado por ISC (cobertura anual completa: <strong>${num(stats.total)} eventos</strong>).`;
+      } else if (yNum === 2024 || yNum === 2025) {
+        ui.histCoverageNoticeText.innerHTML = `Período de transición y revisión operativa IGC/EMSC (cobertura parcial: <strong>${num(stats.total)} eventos</strong> archivados).`;
+      } else if (yNum === 2026) {
+        ui.histCoverageNoticeText.innerHTML = `Cobertura mixta 2026: Recuperación histórica IGC-EMSC hasta octubre (<strong>${num(stats.total)} eventos</strong>) + monitoreo activo en tiempo real.`;
+      } else {
+        ui.histCoverageNoticeText.innerHTML = `Catálogo instrumental completo IGC-UP (<strong>octubre 2013 a 2026</strong>): ${num(stats.total)} eventos registrados.`;
+      }
+    }
 
     ui.histTotal.textContent = num(stats.total);
     ui.histCoverageDetail.textContent = stats.total === 1 ? '1 evento registrado' : `${num(stats.total)} eventos registrados`;
@@ -2243,9 +2259,9 @@
       const mKey = `${year}-${String(m).padStart(2, '0')}`;
       const val = dist[mKey] || 0;
       totalInYear += val;
-      // Para 2026, el archivado inició en Octubre (mes 10) con datos acumulados desde el 12 de octubre.
-      // Meses 1 a 9 no disponen de cobertura histórica archivada.
-      const hasCoverage = !(year === 2026 && m < 10);
+      // Cobertura mensual:
+      // - Para 2013: el catálogo instrumental inició en Octubre (meses 1 a 9 sin cobertura instrumental digital).
+      const hasCoverage = !(year === 2013 && m < 10);
       bins.push({
         month: m,
         key: mKey,
@@ -2287,7 +2303,7 @@
           height: plotH,
           rx: 2
         });
-        rect.append(svgNode('title', {}, `${b.label} ${year}: Sin cobertura histórica archivada en este observatorio`));
+        rect.append(svgNode('title', {}, `${b.label} ${year}: Sin cobertura instrumental digital registrada`));
         svg.append(rect);
       } else {
         const rect = svgNode('rect', {

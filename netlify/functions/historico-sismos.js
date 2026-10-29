@@ -471,9 +471,17 @@ function calculateStatistics(rows) {
       }
     }
 
-    let regKey = (r.region || 'Sin especificar').trim();
-    if (r.latitud != null && r.longitud != null && !isNaN(Number(r.latitud)) && !isNaN(Number(r.longitud))) {
-      const geo = r.geo_provincia ? r : resolveLocation(r.latitud, r.longitud);
+    let regKey = (r.region || '').trim();
+    if (r.geo_provincia) {
+      if (r.geo_tipo === 'MARITIMO') {
+        regKey = r.geo_zona_maritima ? 'Marítimo (' + r.geo_zona_maritima + ')' : 'Marítimo (ZEE)';
+      } else if (r.geo_tipo === 'FRONTERIZO') {
+        regKey = r.geo_provincia || 'Región Fronteriza';
+      } else {
+        regKey = r.geo_provincia;
+      }
+    } else if (!regKey && r.latitud != null && r.longitud != null && !isNaN(Number(r.latitud)) && !isNaN(Number(r.longitud))) {
+      const geo = resolveLocation(r.latitud, r.longitud);
       if (geo.geo_tipo === 'MARITIMO') {
         regKey = geo.geo_zona_maritima ? 'Marítimo (' + geo.geo_zona_maritima + ')' : 'Marítimo (ZEE)';
       } else if (geo.geo_tipo === 'FRONTERIZO') {
@@ -482,9 +490,8 @@ function calculateStatistics(rows) {
         regKey = geo.geo_provincia;
       }
     }
-    if (regKey) {
-      regionCounts[regKey] = (regionCounts[regKey] || 0) + 1;
-    }
+    if (!regKey) regKey = 'Sin especificar';
+    regionCounts[regKey] = (regionCounts[regKey] || 0) + 1;
   }
 
   // Ordenar regiones por frecuencia descendente
