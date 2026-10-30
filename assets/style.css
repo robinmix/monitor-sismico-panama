@@ -6915,3 +6915,110 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
   color: #EF4444;
   border-color: rgba(239, 68, 68, 0.4);
 }
+
+
+/* --------------------------------------------------------------------------
+   MEJORA 2: CONCENTRACIÓN TERRITORIAL (IGNTG / ANATI DPA-2025)
+   -------------------------------------------------------------------------- */
+.territory-concentration-panel {
+  margin-top: 18px;
+}
+
+.territory-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.territory-view-selector {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-surface-2, rgba(255, 255, 255, 0.05));
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+}
+
+.territory-tab-btn {
+  background: transparent;
+  color: var(--text-dim, #94a3b8);
+  border: none;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.territory-tab-btn:hover {
+  color: var(--text-primary, #f8fafc);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.territory-tab-btn.active {
+  background: var(--accent, #31e8d0);
+  color: #0b0f19;
+  font-weight: 700;
+}
+
+.bar-row.is-maritime .bar-fill {
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+}
+
+.bar-row.is-maritime .bar-labels span {
+  color: #7dd3fc;
+}
+
+.territory-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+}
+
+.territory-more-btn {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--accent, #31e8d0);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.territory-more-btn:hover {
+  background: rgba(49, 232, 208, 0.12);
+}
+
+/* --------------------------------------------------------------------------
+   MEJORA 3: ÚLTIMOS 10 SISMOS EN TAB SISMOS
+   -------------------------------------------------------------------------- */
+[data-active-tab="sismos"] #recordActions,
+:root:not([data-active-tab]) #recordActions {
+  display: none !important;
+}
+
+[data-active-tab="sismos"] #tableFooter,
+:root:not([data-active-tab]) #tableFooter {
+  display: none !important;
+}
+
+[data-active-tab="historial"] #recordActions {
+  display: flex !important;
+}
+
+[data-active-tab="historial"] #tableFooter {
+  display: flex !important;
+}

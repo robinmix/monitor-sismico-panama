@@ -79,9 +79,9 @@ test('Suite Integral de Distancia y Formato de Notificaciones Sísmicas', async 
   });
 
   await t.test('formatDistanceString: redondeo a entero y distancia < 1 km', () => {
-    assert.strictEqual(formatDistanceString(42.3, 'de ti'), '42 km de ti');
-    assert.strictEqual(formatDistanceString(41.8, 'de tu zona'), '42 km de tu zona');
-    assert.strictEqual(formatDistanceString(0.3, 'de ti'), 'a menos de 1 km de ti');
+    assert.strictEqual(formatDistanceString(42.3, 'de ti'), 'A 42 km de ti');
+    assert.strictEqual(formatDistanceString(41.8, 'de tu zona'), 'A 42 km de tu zona');
+    assert.strictEqual(formatDistanceString(0.3, 'de ti'), 'A menos de 1 km de ti');
     assert.strictEqual(formatDistanceString(null, 'de ti'), null);
   });
 
@@ -106,8 +106,8 @@ test('Suite Integral de Distancia y Formato de Notificaciones Sísmicas', async 
     const res = formatSeismicNotification({ sismo, userLocation, now });
 
     assert.strictEqual(res.is_personalized, true);
-    assert.strictEqual(res.title, 'M3.5 · 41 km de ti');
-    assert.strictEqual(res.body, 'M3.5 · 41 km de ti · 60 km al sureste de Soná · 12 km prof.');
+    assert.strictEqual(res.title, 'sismoPA · Nuevo sismo');
+    assert.strictEqual(res.body, 'M3.5 · A 41 km de ti · 60 km al sureste de Soná · 12 km prof.');
     assert.strictEqual(res.suffix, 'de ti');
   });
 
@@ -133,8 +133,8 @@ test('Suite Integral de Distancia y Formato de Notificaciones Sísmicas', async 
     const res = formatSeismicNotification({ sismo, userLocation, now });
 
     assert.strictEqual(res.is_personalized, true);
-    assert.strictEqual(res.title, 'M4.2 · 47 km de tu zona');
-    assert.strictEqual(res.body, 'M4.2 · 47 km de tu zona · Golfo de Montijo · 10 km prof.');
+    assert.strictEqual(res.title, 'sismoPA · Nuevo sismo');
+    assert.strictEqual(res.body, 'M4.2 · A 47 km de tu zona · Golfo de Montijo · 10 km prof.');
     assert.strictEqual(res.suffix, 'de tu zona');
   });
 
@@ -151,7 +151,7 @@ test('Suite Integral de Distancia y Formato de Notificaciones Sísmicas', async 
     // Sin userLocation
     const res1 = formatSeismicNotification({ sismo, userLocation: null });
     assert.strictEqual(res1.is_personalized, false);
-    assert.strictEqual(res1.title, 'M3.5 · Nuevo sismo');
+    assert.strictEqual(res1.title, 'sismoPA · Nuevo sismo');
     assert.strictEqual(res1.body, 'M3.5 · 60 km al sureste de Soná · 12 km prof.');
 
     // Con personalizacion_distancia_activa = false
@@ -164,7 +164,7 @@ test('Suite Integral de Distancia y Formato de Notificaciones Sísmicas', async 
       }
     });
     assert.strictEqual(res2.is_personalized, false);
-    assert.strictEqual(res2.title, 'M3.5 · Nuevo sismo');
+    assert.strictEqual(res2.title, 'sismoPA · Nuevo sismo');
     assert.strictEqual(res2.body, 'M3.5 · 60 km al sureste de Soná · 12 km prof.');
   });
 
@@ -186,8 +186,8 @@ test('Suite Integral de Distancia y Formato de Notificaciones Sísmicas', async 
 
     const res = formatSeismicNotification({ sismo, userLocation, now, options: { includeDepth: false } });
 
-    assert.strictEqual(res.title, 'M5.0 · 4 km de ti');
-    assert.strictEqual(res.body, 'M5.0 · 4 km de ti · 15 km al sur de David');
-    assert.ok(res.body.startsWith('M5.0 · 4 km de ti · 15 km al sur de David'));
+    assert.strictEqual(res.title, 'sismoPA · Nuevo sismo');
+    assert.strictEqual(res.body, 'M5.0 · A 4 km de ti · 15 km al sur de David');
+    assert.ok(res.body.startsWith('M5.0 · A 4 km de ti · 15 km al sur de David'));
   });
 });
