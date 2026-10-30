@@ -2,8 +2,8 @@
  * sismoPA — Suite de Pruebas Automatizadas de Geolocalización Secuencial con Fallback
  * 
  * Verifica:
- * 1. Éxito inicial (intento 1 bajo consumo / red con timeout 4s, maximumAge 60s).
- * 2. Éxito tras fallback por error 2 (POSITION_UNAVAILABLE -> intento 2 alta precisión con timeout 8s, maximumAge 0).
+ * 1. Éxito inicial (intento 1 bajo consumo / red con timeout 8s, maximumAge 300s).
+ * 2. Éxito tras fallback por error 2 (POSITION_UNAVAILABLE -> intento 2 alta precisión con timeout 20s, maximumAge 60s).
  * 3. Éxito tras fallback por error 3 (TIMEOUT -> intento 2 alta precisión).
  * 4. Permiso denegado (error 1 PERMISSION_DENIED -> no se reintenta).
  * 5. Fallo de ambos intentos (error 2 seguido de error 2 -> mensaje final correcto).
@@ -92,7 +92,7 @@ function createGeoTestHarness() {
       }
     };
 
-    logs.push('[Geo] Iniciando intento 1 (bajo consumo / red: timeout 4s)...');
+    logs.push('[Geo] Iniciando intento 1 (bajo consumo / red: timeout 20s)...');
     navigator.geolocation.getCurrentPosition(
       (pos) => onLocationSuccess(pos, 'red_coarse'),
       (err1) => {
@@ -101,7 +101,7 @@ function createGeoTestHarness() {
           return;
         }
 
-        logs.push(`[Geo] Intento 1 no completado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 8s)...`);
+        logs.push(`[Geo] Intento 1 no completado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 20s)...`);
         if (ui.distStatus) {
           ui.distStatus.textContent = 'Buscando señal GPS de alta precisión…';
         }
@@ -109,10 +109,10 @@ function createGeoTestHarness() {
         navigator.geolocation.getCurrentPosition(
           (pos) => onLocationSuccess(pos, 'gps_alta_precision'),
           (err2) => onLocationFinalError(err2),
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
         );
       },
-      { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
   }
 
@@ -141,8 +141,8 @@ test('Geolocalización sismoPA — Intento Secuencial y Fallback', async (t) => 
     const appJsPath = path.join(ROOT_DIR, 'assets/app.js');
     const content = fs.readFileSync(appJsPath, 'utf8');
 
-    assert.ok(content.includes('enableHighAccuracy: false, timeout: 4000, maximumAge: 60000'), 'Intento 1 debe usar timeout 4000 y maximumAge 60000');
-    assert.ok(content.includes('enableHighAccuracy: true, timeout: 8000, maximumAge: 0'), 'Intento 2 debe usar timeout 8000 y maximumAge 0');
+    assert.ok(content.includes('enableHighAccuracy: false, timeout: 8000, maximumAge: 300000'), 'Intento 1 debe usar timeout 8000 y maximumAge 300000');
+    assert.ok(content.includes('enableHighAccuracy: true, timeout: 20000, maximumAge: 60000'), 'Intento 2 debe usar timeout 20000 y maximumAge 60000');
     assert.ok(content.includes('isRequestingLocation'), 'Debe existir guardia de concurrencia');
     assert.ok(content.includes('err1.code === 1'), 'Debe abortar sin reintento si el permiso fue denegado');
   });
@@ -157,8 +157,8 @@ test('Geolocalización sismoPA — Intento Secuencial y Fallback', async (t) => 
 
     assert.equal(harness.calls.length, 1, 'Solo debe haber 1 intento');
     assert.equal(harness.calls[0].options.enableHighAccuracy, false, 'Intento 1 debe ser enableHighAccuracy: false');
-    assert.equal(harness.calls[0].options.timeout, 4000);
-    assert.equal(harness.calls[0].options.maximumAge, 60000);
+    assert.equal(harness.calls[0].options.timeout, 8000);
+    assert.equal(harness.calls[0].options.maximumAge, 300000);
     assert.deepEqual(harness.state.userCoords, { lat: 8.982, lon: -79.519 }, 'Coordenadas deben quedar guardadas en memoria de sesión');
     assert.equal(harness.ui.distStatus.hidden, true, 'distStatus debe ocultarse en éxito');
     assert.equal(harness.isRequesting(), false, 'Guardia de concurrencia debe quedar liberada');
@@ -178,8 +178,8 @@ test('Geolocalización sismoPA — Intento Secuencial y Fallback', async (t) => 
     assert.equal(harness.calls.length, 2, 'Deben ejecutarse exactamente 2 intentos');
     assert.equal(harness.calls[0].options.enableHighAccuracy, false, 'Intento 1 fue false');
     assert.equal(harness.calls[1].options.enableHighAccuracy, true, 'Intento 2 debe ser true (GPS satelital)');
-    assert.equal(harness.calls[1].options.timeout, 8000, 'Intento 2 timeout debe ser 8000');
-    assert.equal(harness.calls[1].options.maximumAge, 0, 'Intento 2 maximumAge debe ser 0 para forzar fix nuevo');
+    assert.equal(harness.calls[1].options.timeout, 20000, 'Intento 2 timeout debe ser 20000');
+    assert.equal(harness.calls[1].options.maximumAge, 60000, 'Intento 2 maximumAge debe ser 60000 para aceptar fix reciente');
     assert.deepEqual(harness.state.userCoords, { lat: 8.421, lon: -82.431 });
     assert.equal(harness.ui.distStatus.hidden, true);
     assert.equal(harness.isRequesting(), false);

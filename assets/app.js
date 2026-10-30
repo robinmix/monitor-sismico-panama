@@ -214,8 +214,8 @@
       }
     };
 
-    // Intento 1: Bajo consumo / red (rápido, timeout 4000ms, maximumAge 60000ms)
-    console.debug('[Geo] Iniciando intento 1 (bajo consumo / red: timeout 4s)...');
+    // Intento 1: Bajo consumo / red (rápido, timeout 8000ms, maximumAge 300000ms)
+    console.debug('[Geo] Iniciando intento 1 (bajo consumo / red: timeout 8s)...');
     navigator.geolocation.getCurrentPosition(
       (pos) => onLocationSuccess(pos, 'red_coarse'),
       (err1) => {
@@ -226,7 +226,7 @@
         }
 
         // Intento 2 (Fallback): Alta precisión / GNSS satelital ante error 2 (POSITION_UNAVAILABLE) o 3 (TIMEOUT)
-        console.info(`[Geo] Intento 1 no completado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 8s)...`);
+        console.info(`[Geo] Intento 1 no completado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 20s)...`);
         if (ui.distStatus) {
           ui.distStatus.textContent = 'Buscando señal GPS de alta precisión…';
         }
@@ -234,10 +234,10 @@
         navigator.geolocation.getCurrentPosition(
           (pos) => onLocationSuccess(pos, 'gps_alta_precision'),
           (err2) => onLocationFinalError(err2),
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
         );
       },
-      { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
   }
 
