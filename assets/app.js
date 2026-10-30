@@ -255,7 +255,46 @@
     );
   }
 
-  function requestUserLocation() {
+  async function requestUserLocation() {
+    // Si estamos en entorno Android TWA y el permiso aún no ha sido solicitado/concedido a nivel de sistema,
+    // lanzar el puente explícito en primer plano mediante LocationPermissionActivity para evitar bloqueos BAL
+    if (typeof checkIsTwa === 'function' && checkIsTwa() && 'permissions' in navigator) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'geolocation' });
+        if (perm && perm.state === 'prompt') {
+          console.info('[Geo] En TWA con estado "prompt": solicitando permiso nativo Android mediante puente visible...');
+          let resumed = false;
+          const onResumeFromBridge = () => {
+            if (resumed) return;
+            resumed = true;
+            window.removeEventListener('focus', onResumeFromBridge);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            setTimeout(() => {
+              requestUserLocationCore();
+            }, 300);
+          };
+          const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+              onResumeFromBridge();
+            }
+          };
+
+          window.addEventListener('focus', onResumeFromBridge);
+          document.addEventListener('visibilitychange', onVisibilityChange);
+
+          // Disparar Intent nativo en primer plano hacia LocationPermissionActivity
+          window.location.href = 'sismopa://request-location';
+          return;
+        }
+      } catch (e) {
+        console.debug('[Geo] permissions.query no soportado o error:', e);
+      }
+    }
+
+    requestUserLocationCore();
+  }
+
+  function requestUserLocationCore() {
     if (ui.distStatus) {
       ui.distStatus.textContent = 'Consultando ubicación del dispositivo…';
       ui.distStatus.hidden = false;
