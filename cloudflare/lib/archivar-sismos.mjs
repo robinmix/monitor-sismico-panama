@@ -12,6 +12,7 @@ import { requestSource, dateFromLocal, classifyRegion } from './sismos.mjs';
 import { resolveLocation } from './geo-resolver.mjs';
 import { sendWebPush } from './web-push.mjs';
 import { formatSeismicNotification } from './distance-formatter.mjs';
+import { sendFcmTopicMessage } from './fcm-dispatch.mjs';
 
 const CRON_SCHEDULE = '*/30 * * * *';
 const FUENTE_NOMBRE = 'IGC-UP';
@@ -603,7 +604,48 @@ function calculateRetryAfterDate(retryAfterHeader, failures, now = new Date()) {
  * Protegido contra ráfagas (lote masivo > 3) y duplicados mediante notificaciones_enviadas.
  * Requiere explícitamente AUTO_PUSH_ENABLED=true para enviar notificaciones reales.
  */
-async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date(), options = {}) {
+/**
+ * Filtra eventos sísmicos recientes y aplica control de ráfagas/enjambres para notificaciones.
+ */
+function filterEligibleSeismicEvents(nuevosRecords, now = new Date()) {
+  if (!Array.isArray(nuevosRecords) || nuevosRecords.length === 0) {
+    return { eligible: [], motivo: 'SIN_EVENTOS_NUEVOS' };
+  }
+
+  const MAX_AGE_MS = 45 * 60 * 1000; // 45 minutos (tolera demoras de revisión del IGC)
+  const MAX_FUTURE_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutos de tolerancia hacia el futuro
+  const nowTime = now.getTime();
+
+  // 1. Filtrar eventos por antigüedad real primero
+  const recentEvents = nuevosRecords.filter(e => {
+    const ts = new Date(e.fecha_hora).getTime();
+    if (!Number.isFinite(ts)) return false;
+    const diff = nowTime - ts;
+    return diff >= -MAX_FUTURE_TOLERANCE_MS && diff <= MAX_AGE_MS;
+  });
+
+  if (!recentEvents.length) {
+    return { eligible: [], omitidosPorAntiguedad: nuevosRecords.length };
+  }
+
+  // 2. Protección contra ráfagas anómalas / cold start / backfill masivo:
+  // Si en la ventana reciente aparecen más de 6 eventos, se considera importación masiva y se omite.
+  if (recentEvents.length > 6) {
+    console.warn(`[Alertas] Despacho omitido por lote masivo (${recentEvents.length} eventos recientes). Protección contra ráfagas activa.`);
+    return { eligible: [], omitidosPorLoteMasivo: recentEvents.length };
+  }
+
+  // 3. Manejo inteligente de enjambres sísmicos (1 a 6 eventos):
+  // Ordenar por magnitud descendente y notificar los 3 más significativos para no saturar al usuario
+  const sortedEvents = [...recentEvents].sort((a, b) => Number(b.magnitud || 0) - Number(a.magnitud || 0));
+  const eligibleEvents = sortedEvents.slice(0, 3);
+  return { eligible: eligibleEvents };
+}
+
+/**
+ * Distribuye notificaciones Web Push para sismos verdaderamente nuevos.
+ */
+async function dispatchWebPushNotifications(nuevosRecords, supabase, env = {}, now = new Date(), options = {}) {
   const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
   if (!autoPushEnabled) {
     return { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
@@ -1327,6 +1369,272 @@ async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now 
   return returnObj;
 }
 
+
+/**
+ * Despacha alertas sísmicas automáticas al topic oficial de Firebase FCM ('sismos_panama')
+ * para usuarios de la APK nativa sismoPA.
+ * Incluye reserva atómica distribuida en fcm_notificaciones_enviadas para evitar duplicados concurrentes.
+ */
+async function dispatchFcmTopicNotifications(eligibleEvents, supabase, env = {}, now = new Date(), options = {}) {
+  const killSwitch = Boolean(env && (env.FCM_KILL_SWITCH === 'true' || env.FCM_KILL_SWITCH === true));
+  if (killSwitch) {
+    console.warn('[FCM] Despacho detenido por corte de emergencia (FCM_KILL_SWITCH activo)');
+    return { fcmEnviados: 0, omitidos: 'FCM_KILL_SWITCH_ACTIVE' };
+  }
+
+  const autoFcmEnabled = Boolean(env && (env.AUTO_FCM_ENABLED === 'true' || env.AUTO_FCM_ENABLED === true));
+  if (!autoFcmEnabled) {
+    return { fcmEnviados: 0, omitidos: 'AUTO_FCM_DISABLED' };
+  }
+
+  if (!supabase || !Array.isArray(eligibleEvents) || eligibleEvents.length === 0) {
+    return { fcmEnviados: 0, motivo: 'SIN_EVENTOS_ELEGIBLES' };
+  }
+
+  let fcmServiceAccount = null;
+  try {
+    if (env.FIREBASE_SERVICE_ACCOUNT) {
+      fcmServiceAccount = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string'
+        ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT)
+        : env.FIREBASE_SERVICE_ACCOUNT;
+    } else if ((env.FIREBASE_PROJECT_ID || env.FIREBASE_CLIENT_EMAIL) && env.FIREBASE_PRIVATE_KEY) {
+      fcmServiceAccount = {
+        project_id: env.FIREBASE_PROJECT_ID || 'sismopa-notificaciones',
+        client_email: env.FIREBASE_CLIENT_EMAIL,
+        private_key: env.FIREBASE_PRIVATE_KEY
+      };
+    }
+  } catch (parseErr) {
+    console.warn('[FCM] Error parseando credenciales de Firebase en env:', parseErr.message);
+  }
+
+  if (!fcmServiceAccount || !fcmServiceAccount.client_email || !fcmServiceAccount.private_key) {
+    console.warn('[FCM] Despacho omitido: Faltan credenciales válidas de Firebase Service Account');
+    return { fcmEnviados: 0, omitidos: 'SIN_CREDENCIALES_FCM' };
+  }
+
+  const target = 'topic:sismos_panama';
+  let fcmEnviados = 0;
+  const LEASE_SECONDS = 60;
+  const MAX_INTENTOS = 3;
+
+  // Validación estricta: RPC en Supabase es obligatoria para el despacho FCM.
+  // Sin la función RPC atómica, no se despacha para garantizar exclusión mutua pesimista.
+  if (typeof supabase?.rpc !== 'function') {
+    console.warn('[FCM] Despacho omitido: supabase.rpc no disponible. La migración atómica es obligatoria para FCM.');
+    return { fcmEnviados: 0, omitidos: 'RPC_NOT_AVAILABLE' };
+  }
+
+  for (const ev of eligibleEvents) {
+    // 1. Fencing Token único por intento de ejecución para garantizar exclusión mutua
+    const ownerToken = crypto.randomUUID();
+    let leaseAcquired = false;
+
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('acquire_fcm_lease', {
+        p_source_uid: ev.source_uid,
+        p_target: target,
+        p_owner_token: ownerToken,
+        p_lease_seconds: LEASE_SECONDS,
+        p_max_intentos: MAX_INTENTOS
+      });
+
+      if (rpcErr) {
+        console.warn(`[FCM] Error adquiriendo lease atómico para ${ev.source_uid}:`, rpcErr.message);
+        continue;
+      }
+
+      if (rpcRes && rpcRes.acquired) {
+        leaseAcquired = true;
+      } else {
+        continue;
+      }
+    } catch (acquireEx) {
+      console.warn(`[FCM] Excepción al invocar acquire_fcm_lease para ${ev.source_uid}:`, acquireEx.message);
+      continue;
+    }
+
+    if (!leaseAcquired) {
+      continue;
+    }
+
+    // 2. Formatear payload FCM Data-Only oficial
+    const geo = resolveLocation(ev.latitud, ev.longitud, ev.ubicacion || ev.region);
+    const geoTexto = geo?.ubicacion_texto || ev.ubicacion || ev.region || 'Panamá';
+    const magStr = Number(ev.magnitud).toFixed(1);
+    const estadoStr = ev.estado && String(ev.estado).toUpperCase() === 'REVISADO' ? 'Revisado' : 'Preliminar';
+
+    let horaPanama = '';
+    try {
+      const d = new Date(ev.fecha_hora);
+      if (Number.isFinite(d.getTime())) {
+        horaPanama = d.toLocaleTimeString('es-PA', {
+          timeZone: 'America/Panama',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    } catch {}
+
+    const bodyParts = [geoTexto];
+    if (Number.isFinite(Number(ev.profundidad_km))) {
+      bodyParts.push(`Prof. ${Math.round(Number(ev.profundidad_km))} km`);
+    }
+    if (horaPanama) {
+      bodyParts.push(horaPanama);
+    }
+    if (estadoStr) {
+      bodyParts.push(estadoStr);
+    }
+
+    const fcmPayload = {
+      source_uid: ev.source_uid,
+      magnitud: magStr,
+      latitud: String(ev.latitud || ''),
+      longitud: String(ev.longitud || ''),
+      lugar: geoTexto,
+      ubicacion: geoTexto,
+      profundidad: Number.isFinite(Number(ev.profundidad_km)) ? String(Math.round(Number(ev.profundidad_km))) : '',
+      hora_local: horaPanama || ev.fecha_hora_texto || ev.fecha_hora,
+      title: `sismoPA · Nuevo sismo M${magStr}`,
+      body: bodyParts.join(' · '),
+      url: `https://sismopa.pages.dev/?sismo=${encodeURIComponent(ev.source_uid)}`
+    };
+
+    // 3. Despacho a Google FCM HTTP v1 con control estricto de ambigüedad
+    let fcmRes;
+    try {
+      fcmRes = await sendFcmTopicMessage(
+        fcmServiceAccount,
+        'sismos_panama',
+        fcmPayload,
+        env.fetch || fetch
+      );
+    } catch (unexpectedErr) {
+      fcmRes = {
+        ok: false,
+        status: 0,
+        ambiguous: true,
+        retryable: false,
+        error: unexpectedErr.message
+      };
+    }
+
+    // 4. Gestión de resultados condicionada estrictamente al Fencing Token (ownerToken)
+    if (fcmRes && fcmRes.ok) {
+      try {
+        const { data: confRes, error: confErr } = await supabase.rpc('confirm_fcm_dispatch', {
+          p_source_uid: ev.source_uid,
+          p_target: target,
+          p_owner_token: ownerToken,
+          p_message_id: fcmRes.messageId || null
+        });
+
+        if (confErr) {
+          console.error(`[FCM] Error crítico en confirm_fcm_dispatch para ${ev.source_uid}: ${confErr.message}`);
+        } else if (!confRes || !confRes.confirmed) {
+          console.error(`[FCM] Advertencia de Fencing: confirm_fcm_dispatch rechazado para ${ev.source_uid}: ${confRes?.reason || 'CONFIRMACION_RECHAZADA'}`);
+        } else {
+          fcmEnviados++;
+        }
+      } catch (errConfirm) {
+        console.error(`[FCM] Excepción al ejecutar confirm_fcm_dispatch para ${ev.source_uid}:`, errConfirm.message);
+      }
+    } else if (fcmRes && fcmRes.ambiguous) {
+      console.warn(`[FCM] Resultado ambiguo para ${ev.source_uid}. Se marca AMBIGUO para inhibir duplicados al topic general.`);
+      try {
+        const { data: failRes, error: failErr } = await supabase.rpc('fail_fcm_dispatch', {
+          p_source_uid: ev.source_uid,
+          p_target: target,
+          p_owner_token: ownerToken,
+          p_is_ambiguous: true,
+          p_is_retryable: false,
+          p_error_details: fcmRes.error || 'Entrega ambigua (caída de red/timeout)'
+        });
+        if (failErr) {
+          console.warn(`[FCM] Error en fail_fcm_dispatch (ambiguo) para ${ev.source_uid}:`, failErr.message);
+        } else if (!failRes || !failRes.updated) {
+          console.warn(`[FCM] Advertencia de Fencing: fail_fcm_dispatch (ambiguo) no aplicado para ${ev.source_uid}:`, failRes?.reason);
+        }
+      } catch (errFail) {
+        console.warn(`[FCM] Excepción en fail_fcm_dispatch (ambiguo) para ${ev.source_uid}:`, errFail.message);
+      }
+    } else {
+      const isRetryable = Boolean(fcmRes?.retryable);
+      try {
+        const { data: failRes, error: failErr } = await supabase.rpc('fail_fcm_dispatch', {
+          p_source_uid: ev.source_uid,
+          p_target: target,
+          p_owner_token: ownerToken,
+          p_is_ambiguous: false,
+          p_is_retryable: isRetryable,
+          p_error_details: fcmRes?.error || 'Fallo HTTP'
+        });
+        if (failErr) {
+          console.warn(`[FCM] Error en fail_fcm_dispatch para ${ev.source_uid}:`, failErr.message);
+        } else if (!failRes || !failRes.updated) {
+          console.warn(`[FCM] Advertencia de Fencing: fail_fcm_dispatch no aplicado para ${ev.source_uid}:`, failRes?.reason);
+        }
+      } catch (errFail) {
+        console.warn(`[FCM] Excepción en fail_fcm_dispatch para ${ev.source_uid}:`, errFail.message);
+      }
+      console.warn(`[FCM] Despacho fallido para ${ev.source_uid}: ${fcmRes?.error} (Reintentable: ${isRetryable})`);
+    }
+  }
+
+  return { fcmEnviados, sismosNotificados: eligibleEvents.length };
+}
+
+/**
+ * Orquestador principal de despacho de notificaciones automáticas (Web Push + Android FCM).
+ * Preserva compatibilidad total con la firma existente (nuevosRecords, supabase, env, now, options).
+ */
+async function dispatchPushNotifications(nuevosRecords, supabase, env = {}, now = new Date(), options = {}) {
+  const autoPushEnabled = Boolean(env && (env.AUTO_PUSH_ENABLED === 'true' || env.AUTO_PUSH_ENABLED === true));
+  const autoFcmEnabled = Boolean(env && (env.AUTO_FCM_ENABLED === 'true' || env.AUTO_FCM_ENABLED === true));
+
+  if (!autoPushEnabled && !autoFcmEnabled) {
+    return { enviados: 0, fcmEnviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
+  }
+
+  if (!supabase || !Array.isArray(nuevosRecords) || nuevosRecords.length === 0) {
+    return { enviados: 0, fcmEnviados: 0, motivo: 'SIN_EVENTOS_NUEVOS' };
+  }
+
+  let webPushResult = { enviados: 0, omitidos: 'AUTO_PUSH_DISABLED' };
+  if (autoPushEnabled) {
+    webPushResult = await dispatchWebPushNotifications(nuevosRecords, supabase, env, now, options);
+  }
+
+  let fcmResult = { fcmEnviados: 0, omitidos: 'AUTO_FCM_DISABLED' };
+  if (autoFcmEnabled) {
+    const filterResult = filterEligibleSeismicEvents(nuevosRecords, now);
+    if (filterResult.omitidosPorAntiguedad) {
+      fcmResult = { fcmEnviados: 0, omitidosPorAntiguedad: filterResult.omitidosPorAntiguedad };
+    } else if (filterResult.omitidosPorLoteMasivo) {
+      fcmResult = { fcmEnviados: 0, omitidosPorLoteMasivo: filterResult.omitidosPorLoteMasivo };
+    } else if (filterResult.eligible && filterResult.eligible.length > 0) {
+      fcmResult = await dispatchFcmTopicNotifications(filterResult.eligible, supabase, env, now, options);
+    } else {
+      fcmResult = { fcmEnviados: 0, motivo: filterResult.motivo || 'SIN_EVENTOS_ELEGIBLES' };
+    }
+  }
+
+  const res = {
+    ...webPushResult,
+    enviados: webPushResult.enviados || 0,
+    fcmEnviados: fcmResult.fcmEnviados || 0,
+    sismosNotificados: webPushResult.sismosNotificados || fcmResult.sismosNotificados || 0,
+    webPush: webPushResult,
+    fcm: fcmResult
+  };
+  if (webPushResult.motivo && !res.enviados && !res.fcmEnviados) {
+    res.motivo = webPushResult.motivo;
+  }
+  return res;
+}
+
 export {
   rawHandler as handler,
   rawHandler,
@@ -1335,6 +1643,9 @@ export {
   buildNormalizedRecord,
   generateSourceUid,
   syncEventsToSupabase,
+  filterEligibleSeismicEvents,
+  dispatchWebPushNotifications,
+  dispatchFcmTopicNotifications,
   dispatchPushNotifications,
   anonymizeEndpoint,
   calculateRetryAfterDate,
