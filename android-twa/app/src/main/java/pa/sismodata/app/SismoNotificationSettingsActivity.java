@@ -475,12 +475,6 @@ public class SismoNotificationSettingsActivity extends Activity {
                 FcmPreferences.setDecidedConsent(this, true);
                 updateUi();
             }
-        } else if (requestCode == RC_LOCATION) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                captureDeviceLocation();
-            } else {
-                Toast.makeText(this, "Permiso GPS no concedido. Puedes elegir una provincia fija sin dar permisos.", Toast.LENGTH_LONG).show();
-            }
         }
     }
 
@@ -654,46 +648,21 @@ public class SismoNotificationSettingsActivity extends Activity {
     }
 
     private void onGpsLocationClicked() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                requestPermissions(new String[]{
-                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                }, RC_LOCATION);
-            }
-            return;
+        // En la arquitectura TWA oficial de sismoPA, la ubicación GPS se adquiere
+        // de forma interactiva en el monitor web del navegador, protegiendo la privacidad
+        // y sin exigir permisos nativos peligrosos en el sistema operativo Android.
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://sismopa.pages.dev/#alertas"));
+            intent.setPackage(getPackageName());
+            startActivity(intent);
+            finish();
+        } catch (Exception e) {
+            Toast.makeText(this, "Abre sismoPA para configurar tu distancia por GPS.", Toast.LENGTH_LONG).show();
         }
-        captureDeviceLocation();
     }
 
     private void captureDeviceLocation() {
-        try {
-            LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            if (lm == null) {
-                Toast.makeText(this, "Servicio de ubicación no disponible", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            Location loc = null;
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                loc = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
-                if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                if (loc == null) loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            }
-
-            if (loc != null) {
-                FcmPreferences.setUserLocation(this, loc.getLatitude(), loc.getLongitude(), "GPS", null);
-                updateUi();
-                Toast.makeText(this, "Ubicación GPS registrada (3 decimales). Notificaciones personalizadas activas.", Toast.LENGTH_LONG).show();
-            } else {
-                Toast.makeText(this, "No se pudo obtener la posición actual. Puedes elegir una provincia fija.", Toast.LENGTH_LONG).show();
-            }
-        } catch (SecurityException se) {
-            Toast.makeText(this, "Permiso de ubicación denegado", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "Error al obtener ubicación: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-        }
+        // Obsoleto: gestionado dinámicamente desde el origen web de la TWA
     }
 
 
