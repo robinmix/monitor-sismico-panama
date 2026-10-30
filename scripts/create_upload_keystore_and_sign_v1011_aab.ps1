@@ -4,7 +4,7 @@
 # - Version:          Alpha 1.0.11 (versionCode 12) - GPS Compacto & Delegacion TWA
 # - Keystore Oficial: C:\Users\robin\.android\sismopa-upload-keystore.jks
 # - Alias:            sismopa-upload
-# - SHA-256 Oficial:  CC:39:25:F5:4F:1E:8B:B5:77:B9:F0:AD:3C:95:CE:28:10:44:06:D7:A8:7C:3D:1A:30:00:35:5C:7E:4A:24:DC
+# - SHA-256 Oficial:  D2:59:B7:64:52:58:C0:EB:78:7D:5C:F5:5B:05:E4:04:00:64:B7:78:5B:9A:ED:FE:E5:46:00:B6:DD:CC:A0:FE
 # - AAB Entrada:      android-twa\app\build\outputs\bundle\release\app-release.aab
 # - AAB Salida:       android-twa\app\build\outputs\bundle\release\sismopa-v1.0.11-upload-signed.aab
 #
@@ -29,7 +29,7 @@ $jarsigner = Join-Path $jdkDir "bin\jarsigner.exe"
 $androidHome = "C:\Users\robin\.android"
 $keystorePath = Join-Path $androidHome "sismopa-upload-keystore.jks"
 $alias = "sismopa-upload"
-$expectedSha256 = "CC:39:25:F5:4F:1E:8B:B5:77:B9:F0:AD:3C:95:CE:28:10:44:06:D7:A8:7C:3D:1A:30:00:35:5C:7E:4A:24:DC"
+$expectedSha256 = "D2:59:B7:64:52:58:C0:EB:78:7D:5C:F5:5B:05:E4:04:00:64:B7:78:5B:9A:ED:FE:E5:46:00:B6:DD:CC:A0:FE"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $bundleReleaseDir = Join-Path $projectRoot "android-twa\app\build\outputs\bundle\release"
