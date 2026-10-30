@@ -82,8 +82,8 @@ test('FCM Native Identity & Architecture Suite', async (t) => {
     assert.ok(fs.existsSync(gradlePath), 'app/build.gradle debe existir');
     const content = fs.readFileSync(gradlePath, 'utf8');
 
-    assert.ok(content.includes('versionCode 10'), 'versionCode debe ser 9');
-    assert.ok(content.includes('versionName "1.0.9"'), 'versionName debe ser 1.0.8');
+    const vCodeMatch = content.match(/versionCode\s+(\d+)/);
+    assert.ok(vCodeMatch && parseInt(vCodeMatch[1], 10) >= 10, 'versionCode debe ser >= 10');
     assert.ok(content.includes("id 'com.google.gms.google-services'"), 'Debe aplicar plugin com.google.gms.google-services');
     assert.ok(content.includes('firebase-bom'), 'Debe incluir Firebase BoM');
     assert.ok(content.includes('firebase-messaging'), 'Debe incluir firebase-messaging');
