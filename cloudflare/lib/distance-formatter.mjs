@@ -119,15 +119,28 @@ export function getDistanceSuffix(userLocation, now = Date.now()) {
  * Formatea una distancia en km con su sufijo correspondiente.
  * Si la distancia redondeada es 0, expresa 'a menos de 1 km [sufijo]'.
  */
+/**
+ * Limpia la referencia geográfica eliminando la expresión «Localizado en»
+ * y prefijos redundantes reportados por el IGC-UP.
+ */
+export function cleanLocationReference(lugar) {
+  if (!lugar || typeof lugar !== 'string') return 'Panamá';
+  let clean = lugar.trim();
+  clean = clean.replace(/^Localizado\s+en\s+.*?\s+a\s+(?=\d+\s*km)/i, '');
+  clean = clean.replace(/^Localizado\s+en\s+/i, '');
+  clean = clean.replace(/^(\d+)\s*km\b/i, '$1 km');
+  return clean.trim() || 'Panamá';
+}
+
 export function formatDistanceString(distKm, suffix) {
   if (distKm === null || distKm === undefined || !Number.isFinite(distKm) || !suffix) {
     return null;
   }
   const rounded = Math.round(distKm);
   if (rounded <= 0) {
-    return `a menos de 1 km ${suffix}`;
+    return `A menos de 1 km ${suffix}`;
   }
-  return `${rounded} km ${suffix}`;
+  return `A ${rounded} km ${suffix}`;
 }
 
 /**
@@ -141,23 +154,35 @@ export function formatDistanceString(distKm, suffix) {
  *    - Título: M3.5 · Nuevo sismo
  *    - Cuerpo: M3.5 · 60 km al sureste de Soná (más profundidad si existe)
  */
-export function formatSeismicNotification({
-  sismo = {},
-  userLocation = null,
-  now = Date.now(),
-  options = {}
-} = {}) {
-  const rawMag = Number(sismo.magnitud);
+export function formatSeismicNotification(arg1 = {}, maybeUserLoc = null, maybeNow = Date.now(), maybeOptions = {}) {
+  let sismo;
+  let userLocation;
+  let now;
+  let options;
+
+  if (arg1 && (arg1.sismo !== undefined || arg1.userLocation !== undefined || arg1.options !== undefined)) {
+    sismo = arg1.sismo || {};
+    userLocation = arg1.userLocation || null;
+    now = arg1.now || Date.now();
+    options = arg1.options || {};
+  } else {
+    sismo = arg1 || {};
+    userLocation = maybeUserLoc;
+    now = maybeNow || Date.now();
+    options = maybeOptions || {};
+  }
+
+  const rawMag = Number(sismo.magnitud ?? sismo.mag);
   const magStr = Number.isFinite(rawMag) ? `M${rawMag.toFixed(1)}` : 'Sismo';
 
-  const lugar = String(
+  const rawLugar = String(
     sismo.ubicacion_texto || sismo.ubicacion || sismo.lugar || sismo.region || 'Panamá'
   ).trim();
+  const lugar = options.skipCleanLocation ? rawLugar : cleanLocationReference(rawLugar);
 
-  const profKm = Number(sismo.profundidad_km ?? sismo.profundidad);
+  const profKm = Number(sismo.profundidad_km ?? sismo.profundidad ?? sismo.prof);
   const profStr = Number.isFinite(profKm) && profKm >= 0 ? `${Math.round(profKm)} km prof.` : null;
 
-  // Evaluar personalización por distancia
   let personalizedDistStr = null;
   let distanceKm = null;
   let suffix = null;
@@ -184,26 +209,19 @@ export function formatSeismicNotification({
     }
   }
 
-  let title;
+  // Título uniforme: sismoPA · Nuevo sismo
+  const title = options.title || 'sismoPA · Nuevo sismo';
   let body;
 
   if (personalizedDistStr) {
-    // FORMATO PERSONALIZADO:
-    // Título: M3.5 · 42 km de ti
-    title = `${magStr} · ${personalizedDistStr}`;
-
-    // Cuerpo: M3.5 · 42 km de ti · 60 km al sureste de Soná [· 12 km prof.]
+    // M3.5 · A 125 km de ti · 36 km al este de Tonosí · 7 km prof.
     const bodyParts = [magStr, personalizedDistStr, lugar];
     if (profStr && options.includeDepth !== false) {
       bodyParts.push(profStr);
     }
     body = bodyParts.join(' · ');
   } else {
-    // FORMATO GENERAL (FALLBACK SEGURO):
-    // Título: M3.5 · Nuevo sismo
-    title = `${magStr} · Nuevo sismo`;
-
-    // Cuerpo: M3.5 · 60 km al sureste de Soná [· 12 km prof.]
+    // Fallback: M3.5 · 36 km al este de Tonosí · 7 km prof.
     const bodyParts = [magStr, lugar];
     if (profStr && options.includeDepth !== false) {
       bodyParts.push(profStr);
@@ -214,17 +232,17 @@ export function formatSeismicNotification({
   return {
     title,
     body,
-    distance_km: distanceKm,
-    distance_formatted: personalizedDistStr,
-    suffix,
     is_personalized: Boolean(personalizedDistStr),
+    distance_km: distanceKm,
+    suffix,
     data: {
-      source_uid: sismo.source_uid || '',
-      magnitud: String(sismo.magnitud || ''),
-      latitud: String(sismo.latitud || ''),
-      longitud: String(sismo.longitud || ''),
-      ubicacion: lugar,
-      profundidad: String(sismo.profundidad_km ?? sismo.profundidad ?? '')
+      sismo_id: sismo.id || sismo.source_uid,
+      lat: sismo.latitud ?? sismo.lat,
+      lon: sismo.longitud ?? sismo.lon,
+      mag: sismo.magnitud ?? sismo.mag,
+      lugar,
+      distance_km: distanceKm,
+      is_personalized: Boolean(personalizedDistStr)
     }
   };
 }

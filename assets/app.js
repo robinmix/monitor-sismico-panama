@@ -54,7 +54,9 @@
     historicalCatalogEvents: [],
     historicalPagination: null,
     histPage: 1,
-    activeCatalogRequestId: 0
+    activeCatalogRequestId: 0,
+    territoryLevel: 'provincia',
+    territoryShowAll: false
   };
   const f = {
     period: ui.filterPeriod, zone: ui.filterZone, town: ui.filterTown, mag: ui.filterMag,
@@ -455,7 +457,8 @@
       populateChoices();
       renderLatest();
       render();
-      handleRouting();
+      updateHistDays();
+    handleRouting();
       status(payload.desactualizado ? 'loading':'ok', payload.desactualizado ? 'Lectura anterior' : 'Datos actualizados');
       if (payload.desactualizado) message('Lectura anterior', payload.aviso || 'No fue posible actualizar la consulta.');
       else hideMessage();
@@ -1096,14 +1099,14 @@
     if (ui.recordsBody) {
       ui.recordsBody.replaceChildren();
       const row = el('tr');
-      const td = el('td', 'empty-table', 'Consultando archivo histórico permanente en Supabase…');
+      const td = el('td', 'empty-table', 'Consultando archivo histórico permanente…');
       td.colSpan = ui.colDistanceTh && !ui.colDistanceTh.hidden ? 7 : 6;
       row.append(td);
       ui.recordsBody.append(row);
     }
     if (ui.mobileRecordsList) {
       ui.mobileRecordsList.replaceChildren();
-      ui.mobileRecordsList.append(el('div', 'empty-cards', 'Consultando archivo histórico permanente en Supabase…'));
+      ui.mobileRecordsList.append(el('div', 'empty-cards', 'Consultando archivo histórico permanente…'));
     }
     set('paginationText', 'Consultando archivo permanente…');
 
@@ -1172,8 +1175,17 @@
     if (state.activeMobileTab === 'historial' && f.period.value !== '0' && !f.from.value && !f.to.value) {
       const histY = ui.histYear?.value;
       const histM = ui.histMonth?.value;
+      const histD = ui.histDay?.value;
       if (histY && histY !== 'all') params.set('anio', histY);
       if (histM && histM !== 'all') params.set('mes', histM);
+      if (histY && histM && histD) {
+        const yStr = String(histY);
+        const mStr = String(histM).padStart(2, '0');
+        const dStr = String(histD).padStart(2, '0');
+        const dateIso = `${yStr}-${mStr}-${dStr}`;
+        params.set('desde', dateIso);
+        params.set('hasta', dateIso);
+      }
     }
 
     try {
@@ -1213,6 +1225,8 @@
 
   function drawTable(data, pagination = null) {
     let total, pages, begin, entries;
+    const isMainRecentTab = (!state.isHistoricalMode && (state.activeMobileTab === 'sismos' || !state.activeMobileTab));
+
     if (pagination) {
       total = pagination.total_registros || 0;
       pages = Math.max(1, pagination.total_paginas || 1);
@@ -1221,6 +1235,23 @@
       entries = data;
       set('histRecordCount', `${num(total)} registros`);
       set('recordCount', num(total));
+      if (ui.tableFooter) ui.tableFooter.hidden = false;
+      if (ui.recordActions) ui.recordActions.hidden = false;
+    } else if (isMainRecentTab) {
+      // MEJORA 3: En pestaña principal "Sismos", mostrar exclusivamente los 10 más recientes
+      const sortedRecent = [...data].sort((a, b) => {
+        const tsA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tsB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return tsB - tsA;
+      });
+      entries = sortedRecent.slice(0, 10);
+      total = entries.length;
+      pages = 1;
+      state.page = 1;
+      begin = 0;
+      set('recordCount', num(total));
+      if (ui.tableFooter) ui.tableFooter.hidden = true;
+      if (ui.recordActions) ui.recordActions.hidden = true;
     } else {
       total = data.length;
       pages = Math.max(1, Math.ceil(total / LIMIT));
@@ -1229,6 +1260,8 @@
       entries = data.slice(begin, begin + LIMIT);
       set('recordCount', num(total));
       set('histRecordCount', `${num(total)} eventos`);
+      if (ui.tableFooter) ui.tableFooter.hidden = false;
+      if (ui.recordActions) ui.recordActions.hidden = false;
     }
     ui.recordsBody.replaceChildren();
     if (ui.mobileRecordsList) ui.mobileRecordsList.replaceChildren();
@@ -1391,6 +1424,120 @@
     ui.pageNext.disabled = pagination ? !pagination.tiene_siguiente : state.page >= pages;
   }
 
+
+  /* ------------------------------------------------------------------------
+     MEJORA 2: CONCENTRACIÓN TERRITORIAL (IGNTG / ANATI DPA-2025)
+     ------------------------------------------------------------------------ */
+  function renderTerritoryBars(data) {
+    if (!ui.territoryBars) return;
+    ui.territoryBars.replaceChildren();
+
+    if (!Array.isArray(data) || !data.length) {
+      ui.territoryBars.append(el('div', 'empty-plot', 'No hay sismos en el período actual.'));
+      if (ui.territoryMetaCount) ui.territoryMetaCount.textContent = '0 eventos analizados';
+      if (ui.territoryToggleMoreBtn) ui.territoryToggleMoreBtn.style.display = 'none';
+      return;
+    }
+
+    const level = state.territoryLevel || 'provincia';
+    const counter = new Map(); // key -> { count, isMaritime }
+
+    data.forEach(e => {
+      let key;
+      let isMaritime = false;
+      if (e.geo_tipo === 'MARITIMO') {
+        const seaZone = e.geo_zona_maritima ? e.geo_zona_maritima.split('(')[0].trim() : 'Mar abierto';
+        key = 'Zona Marítima (' + seaZone + ')';
+        isMaritime = true;
+      } else if (level === 'provincia') {
+        key = e.geo_provincia || e.geo_comarca || (e.zona ? 'Zona ' + e.zona : 'Sin clasificar');
+      } else if (level === 'distrito') {
+        key = e.geo_distrito
+          ? (e.geo_distrito + (e.geo_provincia ? ' (' + e.geo_provincia + ')' : ''))
+          : 'Sin distrito clasificado';
+      } else {
+        key = e.geo_corregimiento
+          ? (e.geo_corregimiento + (e.geo_distrito ? ', ' + e.geo_distrito : (e.geo_provincia ? ' (' + e.geo_provincia + ')' : '')))
+          : 'Sin corregimiento clasificado';
+      }
+
+      const current = counter.get(key) || { count: 0, isMaritime };
+      current.count += 1;
+      counter.set(key, current);
+    });
+
+    const sorted = [...counter.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'es'));
+    if (!sorted.length) {
+      ui.territoryBars.append(el('div', 'empty-plot', 'No hay sismos clasificados.'));
+      if (ui.territoryMetaCount) ui.territoryMetaCount.textContent = '0 eventos analizados';
+      if (ui.territoryToggleMoreBtn) ui.territoryToggleMoreBtn.style.display = 'none';
+      return;
+    }
+
+    const maxCount = Math.max(...sorted.map(x => x[1].count), 1);
+    const limit = state.territoryShowAll ? sorted.length : Math.min(10, sorted.length);
+    const displayList = sorted.slice(0, limit);
+
+    displayList.forEach(([name, item]) => {
+      const row = el('div', 'bar-row' + (item.isMaritime ? ' is-maritime' : ''));
+      const labels = el('div', 'bar-labels');
+      const labelText = item.isMaritime ? ('🌊 ' + name) : name;
+      labels.append(el('span', '', labelText), el('strong', '', num(item.count)));
+      const track = el('div', 'bar-track');
+      const fill = el('div', 'bar-fill');
+      fill.style.width = `${Math.max(2, item.count / maxCount * 100)}%`;
+      track.append(fill);
+      row.append(labels, track);
+      ui.territoryBars.append(row);
+    });
+
+    if (ui.territoryMetaCount) {
+      ui.territoryMetaCount.textContent = `${num(data.length)} sismos analizados en el período`;
+    }
+
+    if (ui.territoryToggleMoreBtn) {
+      if (sorted.length > 10) {
+        ui.territoryToggleMoreBtn.style.display = 'inline-block';
+        ui.territoryToggleMoreBtn.textContent = state.territoryShowAll ? 'Ver Top 10' : `Ver todos (${sorted.length})`;
+      } else {
+        ui.territoryToggleMoreBtn.style.display = 'none';
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------------------
+     MEJORA 4: UTILIDAD DE DÍAS EN HISTORIAL
+     ------------------------------------------------------------------------ */
+  function getDaysInMonth(year, month) {
+    if (!year || !month) return 31;
+    return new Date(Number(year), Number(month), 0).getDate();
+  }
+
+  function updateHistDays() {
+    if (!ui.histDay || !ui.histMonth) return;
+    const year = ui.histYear?.value || '2026';
+    const month = ui.histMonth?.value;
+    if (!month || month === 'all' || month === '0') {
+      ui.histDay.disabled = true;
+      ui.histDay.value = '';
+      ui.histDay.replaceChildren(new Option('Todos los días del mes', ''));
+      return;
+    }
+    ui.histDay.disabled = false;
+    const daysCount = getDaysInMonth(year, month);
+    const prevVal = ui.histDay.value;
+    const opts = [new Option('Todos los días del mes', '')];
+    for (let d = 1; d <= daysCount; d++) {
+      opts.push(new Option(String(d), String(d)));
+    }
+    ui.histDay.replaceChildren(...opts);
+    if (prevVal && Number(prevVal) <= daysCount) {
+      ui.histDay.value = prevVal;
+    } else {
+      ui.histDay.value = '';
+    }
+  }
+
   function render() {
     if(!state.events.length)return;
     const base=state.events.filter(e=>passesBase(e));
@@ -1399,6 +1546,7 @@
     drawTimeline(filtered);
     makeBars('townBars',filtered,0,9);
     makeBars('regionBars',filtered,0,9);
+    renderTerritoryBars(filtered);
     drawMap(filtered);
 
     if (isHistoricalModeActive()) {
@@ -2132,7 +2280,8 @@
   async function loadHistoricalData(force = false) {
     const year = ui.histYear.value || '2026';
     const month = ui.histMonth.value || '';
-    const queryKey = `${year}-${month}`;
+    const day = ui.histDay?.value || '';
+    const queryKey = `${year}-${month}-${day}`;
 
     // Evitar peticiones duplicadas idénticas si ya está cargando o ya se cargó sin cambios
     if (state.historicalLoading && state.lastHistoricalKey === queryKey && !force) {
@@ -2152,13 +2301,20 @@
     const currentRequestId = ++state.historicalRequestId;
     state.historicalLoading = true;
     state.lastHistoricalKey = queryKey;
-    ui.histPeriodLabel.textContent = 'Consultando base de datos histórica…';
+    ui.histPeriodLabel.textContent = 'Consultando archivo histórico…';
     ui.histDataOrigin.textContent = '';
     ui.histFilterBtn.disabled = true;
 
     let url = `${HISTORICO_API}?anio=${encodeURIComponent(year)}&include_events=false`;
     if (month) {
       url += `&mes=${encodeURIComponent(month)}`;
+    }
+    if (month && day) {
+      const yStr = String(year);
+      const mStr = String(month).padStart(2, '0');
+      const dStr = String(day).padStart(2, '0');
+      const dateIso = `${yStr}-${mStr}-${dStr}`;
+      url += `&desde=${dateIso}&hasta=${dateIso}`;
     }
 
     try {
@@ -2179,7 +2335,7 @@
 
       state.historicalData = data;
       renderHistoricalDashboard(data);
-      ui.histDataOrigin.textContent = data.origen_datos === 'cache' ? '⚡ Caché' : '● Supabase';
+      ui.histDataOrigin.textContent = data.origen_datos === 'cache' ? '⚡ Caché local' : '';
     } catch (err) {
       if (err.name === 'AbortError') {
         // Petición cancelada intencionalmente por un cambio de filtro más reciente
@@ -2224,7 +2380,17 @@
     const filters = data.filtros_aplicados;
 
     const monthNames = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    const periodName = filters.mes ? `${monthNames[filters.mes]} de ${filters.anio}` : `Año completo ${filters.anio}`;
+    let periodName;
+    if (filters.desde && filters.hasta && filters.desde === filters.hasta) {
+      const p = filters.desde.split('-');
+      const dNum = Number(p[2]);
+      const mNum = Number(p[1]);
+      periodName = `${dNum} de ${monthNames[mNum]} de ${p[0]} · Archivo histórico`;
+    } else if (filters.mes) {
+      periodName = `${monthNames[filters.mes]} de ${filters.anio} · Archivo histórico`;
+    } else {
+      periodName = `Año completo ${filters.anio} · Archivo histórico`;
+    }
 
     if (!stats || stats.total === 0) {
       ui.histPeriodLabel.textContent = `${periodName} · Período sin registros`;
@@ -2244,7 +2410,7 @@
       return;
     }
 
-    ui.histPeriodLabel.textContent = `Mostrando: ${periodName}`;
+    ui.histPeriodLabel.textContent = `Mostrando: ${periodName}`; ui.histDataOrigin.textContent = data.origen_datos === 'cache' ? '⚡ Caché local' : '';
 
     // Actualizar aviso contextual de cobertura según el año consultado
     if (ui.histCoverageNoticeText) {
@@ -2517,16 +2683,18 @@
       }, 120);
     } else if (tabId === 'historial') {
       if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Consultar archivo';
+      if (ui.recordActions) ui.recordActions.hidden = false;
+      if (ui.tableFooter) ui.tableFooter.hidden = false;
       if (!state.historicalData) {
         loadHistoricalData();
       }
       fetchHistoricalCatalogPage(state.histPage || 1);
     } else if (tabId === 'sismos') {
       if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Actualizar';
-      if (f.period && f.period.value !== '0') {
-        state.isHistoricalMode = false;
-        drawTable(sortedData());
-      }
+      if (ui.recordActions) ui.recordActions.hidden = true;
+      if (ui.tableFooter) ui.tableFooter.hidden = true;
+      state.isHistoricalMode = false;
+      drawTable(sortedData());
     } else {
       if (ui.refreshBtn) ui.refreshBtn.textContent = '↻ Actualizar';
     }
@@ -2669,19 +2837,51 @@
       }
     });
 
-    // Acciones del Dashboard Histórico
+    // Acciones del Dashboard Histórico (Mejora 4)
     ui.histFilterBtn.addEventListener('click', () => {
       loadHistoricalData(true);
       fetchHistoricalCatalogPage(1, true);
     });
     ui.histYear.addEventListener('change', () => {
+      updateHistDays();
       loadHistoricalData(true);
       fetchHistoricalCatalogPage(1, true);
     });
     ui.histMonth.addEventListener('change', () => {
+      updateHistDays();
       loadHistoricalData(true);
       fetchHistoricalCatalogPage(1, true);
     });
+    if (ui.histDay) {
+      ui.histDay.addEventListener('change', () => {
+        loadHistoricalData(true);
+        fetchHistoricalCatalogPage(1, true);
+      });
+    }
+
+    // Acciones de Concentración Territorial (Mejora 2)
+    const territoryBtns = [ui.btnTerritoryProvincia, ui.btnTerritoryDistrito, ui.btnTerritoryCorregimiento];
+    territoryBtns.forEach(btn => {
+      if (btn) {
+        btn.addEventListener('click', () => {
+          territoryBtns.forEach(b => {
+            if (b) {
+              b.classList.toggle('active', b === btn);
+              b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+            }
+          });
+          state.territoryLevel = btn.dataset.level || 'provincia';
+          renderTerritoryBars(sortedData());
+        });
+      }
+    });
+
+    if (ui.territoryToggleMoreBtn) {
+      ui.territoryToggleMoreBtn.addEventListener('click', () => {
+        state.territoryShowAll = !state.territoryShowAll;
+        renderTerritoryBars(sortedData());
+      });
+    }
 
     ui.navHistorico.addEventListener('click', () => {
       if (!state.historicalData) loadHistoricalData();

@@ -104,7 +104,7 @@
         <div id="sismoNotFound" class="sismo-status-box not-found" hidden>
           <span class="warning-icon" aria-hidden="true">⚠</span>
           <strong>Evento sísmico no encontrado</strong>
-          <p>El identificador especificado no corresponde a ningún evento registrado en la lista reciente ni en el archivo histórico de Supabase.</p>
+          <p>El identificador especificado no corresponde a ningún evento registrado en la lista reciente ni en el archivo histórico permanente.</p>
           <button type="button" class="sismo-return-btn" id="sismoNotFoundBackBtn">← Volver al observatorio</button>
         </div>
 
@@ -655,6 +655,29 @@
             <div class="empty-plot">Esperando registros…</div>
           </div>
         </article>
+
+        <!-- CONCENTRACIÓN TERRITORIAL (IGNTG / ANATI DPA-2025) -->
+        <article class="panel locations territory-concentration-panel" id="territoryPanel">
+          <div class="panel-head territory-head">
+            <div>
+              <span class="section-kicker">05B / CONCENTRACIÓN TERRITORIAL</span>
+              <h2>Concentración territorial de sismos</h2>
+            </div>
+            <div class="territory-view-selector" role="tablist" aria-label="Nivel territorial">
+              <button type="button" class="territory-tab-btn active" id="btnTerritoryProvincia" data-level="provincia" role="tab" aria-selected="true">Por provincia</button>
+              <button type="button" class="territory-tab-btn" id="btnTerritoryDistrito" data-level="distrito" role="tab" aria-selected="false">Por distrito</button>
+              <button type="button" class="territory-tab-btn" id="btnTerritoryCorregimiento" data-level="corregimiento" role="tab" aria-selected="false">Por corregimiento</button>
+            </div>
+          </div>
+          <p class="help-text" id="territoryHelpText">Epicentros clasificados por límites territoriales oficiales (IGNTG/ANATI DPA-2025). Los sismos marítimos se computan por separado.</p>
+          <div id="territoryBars" class="bar-rows">
+            <div class="empty-plot">Esperando registros…</div>
+          </div>
+          <div class="territory-footer" id="territoryFooter">
+            <span id="territoryMetaCount" class="mono">— eventos analizados</span>
+            <button type="button" id="territoryToggleMoreBtn" class="territory-more-btn" style="display: none;">Ver más registros</button>
+          </div>
+        </article>
       </section>
 
       <!-- REGIONES REPORTADAS -->
@@ -675,12 +698,12 @@
       <section id="registros" class="panel records-section">
         <div class="panel-head records-head">
           <div>
-            <span class="section-kicker kicker-recent">07 / EVENTOS DETALLADOS</span>
+            <span class="section-kicker kicker-recent">07 / ÚLTIMOS EVENTOS</span>
             <span class="section-kicker kicker-hist" style="display: none;">ARCHIVO HISTÓRICO PERMANENTE</span>
-            <h2 class="title-recent">Catálogo sísmico <small id="recordCount" class="mono">—</small></h2>
+            <h2 class="title-recent">Últimos 10 sismos</h2>
             <h2 class="title-hist" style="display: none;">Registros del archivo <small id="histRecordCount" class="mono">—</small></h2>
           </div>
-          <div class="record-actions">
+          <div class="record-actions" id="recordActions">
             <label class="sort-wrap">
               <span>ORDEN</span>
               <select id="filterSort">
@@ -721,7 +744,7 @@
           <div class="empty-cards">Cargando registros oficiales del IGC-UP…</div>
         </div>
 
-        <div class="table-footer">
+        <div class="table-footer" id="tableFooter">
           <span id="paginationText" class="mono">—</span>
           <div class="pagination">
             <button id="pagePrev" type="button">← Anterior</button>
@@ -791,6 +814,13 @@
                 <option value="10">Octubre</option>
                 <option value="11">Noviembre</option>
                 <option value="12">Diciembre</option>
+              </select>
+            </label>
+
+            <label class="field compact" id="fieldHistDay">
+              <span>DÍA (OPCIONAL)</span>
+              <select id="histDay" disabled>
+                <option value="">Todos los días del mes</option>
               </select>
             </label>
 
