@@ -12,6 +12,8 @@
 # - Se ejecuta interactivamente en PowerShell / Windows Terminal por el usuario.
 # - La contrasena se introduce con Read-Host -AsSecureString (oculta en pantalla).
 # - NUNCA se escribe en disco, NUNCA se muestra en consola ni en logs.
+# - PROTECCION DE ARGUMENTOS: Utiliza -storepass:env para evitar exponer la contrasena
+#   en la linea de comandos o lista de procesos del sistema operativo.
 # - PROTECCION TOTAL: Reutiliza exclusivamente el Keystore oficial registrado.
 #   NO crea, NO sobrescribe ni regenera claves.
 # - Limpieza garantizada de memoria inmediatamente al finalizar o en caso de error.
@@ -72,16 +74,18 @@ $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass
 $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
 
 try {
-    # 3. Validar contrasena y certificado SHA-256 con keytool
+    # 3. Validar contrasena y certificado SHA-256 con keytool (usando storepass:env para proteger argumentos de proceso)
     Write-Host ""
     Write-Host "[2/4] Verificando credenciales y huella SHA-256 contra el Keystore..." -ForegroundColor Cyan
+
+    $env:SISMO_KEY_PASS = $plainPassword
 
     $keytoolArgs = @(
         "-list",
         "-v",
         "-keystore", $keystorePath,
         "-alias", $alias,
-        "-storepass", $plainPassword
+        "-storepass:env", "SISMO_KEY_PASS"
     )
 
     $keytoolProcess = Start-Process -FilePath $keytool -ArgumentList $keytoolArgs -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:TEMP\keytool_out.txt" -RedirectStandardError "$env:TEMP\keytool_err.txt"
@@ -109,14 +113,14 @@ try {
 
     Write-Host "      Huella digital CONFIRMADA: 100% coincidente con Google Play." -ForegroundColor Green
 
-    # 4. Copiar AAB base al destino final y firmar con jarsigner
+    # 4. Copiar AAB base al destino final y firmar con jarsigner (usando storepass:env)
     Write-Host ""
     Write-Host "[3/4] Firmando AAB Alpha 1.0.13..." -ForegroundColor Cyan
     Copy-Item -Path $aabRelease -Destination $aabSigned -Force
 
     $jarsignerArgs = @(
         "-keystore", $keystorePath,
-        "-storepass", $plainPassword,
+        "-storepass:env", "SISMO_KEY_PASS",
         "-sigalg", "SHA256withRSA",
         "-digestalg", "SHA-256",
         $aabSigned,
@@ -164,7 +168,8 @@ try {
     Write-Host ""
 }
 finally {
-    # 6. Limpieza garantizada de memoria
+    # 6. Limpieza garantizada de memoria y entorno
+    Remove-Item env:SISMO_KEY_PASS -ErrorAction SilentlyContinue
     if ($bstr -ne [IntPtr]::Zero) {
         [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     }
