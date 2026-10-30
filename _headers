@@ -22,8 +22,11 @@
 /assets/style.css
   Cache-Control: public, max-age=0, must-revalidate
 
-/assets/*
+/assets/data/*
   Cache-Control: public, max-age=3600, must-revalidate
+
+/assets/icons/*
+  Cache-Control: public, max-age=86400, must-revalidate
 
 /.well-known/assetlinks.json
   Content-Type: application/json; charset=utf-8
