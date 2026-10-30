@@ -70,24 +70,27 @@ if (fs.existsSync(mergedManifest)) {
   const hasCoarseLoc = xml.includes('android.permission.ACCESS_COARSE_LOCATION');
   const hasFineLoc = xml.includes('android.permission.ACCESS_FINE_LOCATION');
   const noBgLoc = !xml.includes('android.permission.ACCESS_BACKGROUND_LOCATION');
+  const hasPermActivity = xml.includes('PermissionRequestActivity');
   const hasFcm = xml.includes('pa.sismodata.app.SismoFirebaseMessagingService');
 
   console.log(`      Paquete: pa.sismodata.app (${pkgOk ? 'OK' : 'FALLÓ'})`);
   console.log(`      versionCode: ${vCodeMatch ? vCodeMatch[1] : 'No detectado'} (Esperado: 11)`);
   console.log(`      versionName: ${vNameMatch ? vNameMatch[1] : 'No detectado'} (Esperado: 1.0.10)`);
   console.log(`      POST_NOTIFICATIONS: ${hasPostNotif ? 'DECLARADO (OK)' : 'FALTA'}`);
-  console.log(`      ACCESS_COARSE_LOCATION: ${hasCoarseLoc ? 'DECLARADO (ADVERTENCIA)' : 'EXCLUIDO (CORRECTO - Restaura GPS Web)'}`);
-  console.log(`      ACCESS_FINE_LOCATION: ${hasFineLoc ? 'DECLARADO (ADVERTENCIA)' : 'EXCLUIDO (CORRECTO - Restaura GPS Web)'}`);
+  console.log(`      ACCESS_COARSE_LOCATION: ${hasCoarseLoc ? 'DECLARADO (OK - Permite GPS nativo)' : 'FALTA'}`);
+  console.log(`      ACCESS_FINE_LOCATION: ${hasFineLoc ? 'DECLARADO (OK - Permite GPS nativo)' : 'FALTA'}`);
   console.log(`      ACCESS_BACKGROUND_LOCATION EXCLUIDO: ${noBgLoc ? 'CONFIRMADO (Cumple Google Play)' : 'ADVERTENCIA'}`);
+  console.log(`      PermissionRequestActivity: ${hasPermActivity ? 'REGISTRADO (OK - Delegación Chromium TWA)' : 'FALTA'}`);
   console.log(`      SismoFirebaseMessagingService: ${hasFcm ? 'REGISTRADO (OK)' : 'FALTA'}`);
 
   const passed = pkgOk &&
     vCodeMatch && vCodeMatch[1] === '11' &&
     vNameMatch && vNameMatch[1] === '1.0.10' &&
     hasPostNotif &&
-    !hasFineLoc &&
-    !hasCoarseLoc &&
+    hasFineLoc &&
+    hasCoarseLoc &&
     noBgLoc &&
+    hasPermActivity &&
     hasFcm;
 
   if (passed) {

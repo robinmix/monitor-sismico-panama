@@ -23,6 +23,8 @@
 >
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
         
     <application
         android:name="Application"
@@ -229,5 +231,8 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="sismo_alertas_channel" />
 
+            <activity
+            android:name="com.google.androidbrowserhelper.locationdelegation.PermissionRequestActivity"
+            android:exported="false" />
     </application>
 </manifest>

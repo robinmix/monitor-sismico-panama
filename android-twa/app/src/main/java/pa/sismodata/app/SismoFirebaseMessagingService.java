@@ -82,84 +82,51 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
         String urlString = data.get("url");
 
         String magStr = (rawMag != null && !rawMag.isEmpty()) ? ("M" + rawMag) : "Sismo";
-        String personalizedDistStr = null;
+        Long personalizedDistKm = null;
 
         // Evaluación de personalización local por distancia en el dispositivo (100% privacidad)
         if (FcmPreferences.isDistancePersonalizationActive(this)) {
             Double userLat = FcmPreferences.getUserLatitude(this);
             Double userLon = FcmPreferences.getUserLongitude(this);
             long updatedAt = FcmPreferences.getUserLocationUpdatedAt(this);
-            String mode = FcmPreferences.getUserLocationMode(this);
             long now = System.currentTimeMillis();
             long ageMs = now - updatedAt;
 
-            // Vigencia máxima de 30 días
+            // Vigencia máxima de 30 días para ubicación GPS guardada
             if (ageMs <= 30L * 24 * 3600 * 1000L && userLat != null && userLon != null) {
-                String suffix = null;
-                if ("ZONA".equalsIgnoreCase(mode)) {
-                    suffix = "de tu zona";
-                } else if ("GPS".equalsIgnoreCase(mode)) {
-                    if (ageMs <= 48L * 3600 * 1000L) {
-                        suffix = "de ti";
-                    } else {
-                        suffix = "de tu zona";
-                    }
-                }
-
-                if (suffix != null && rawLat != null && rawLon != null) {
+                if (rawLat != null && rawLon != null) {
                     try {
                         double sismoLat = Double.parseDouble(rawLat);
                         double sismoLon = Double.parseDouble(rawLon);
                         double dist = FcmPreferences.haversineKm(userLat, userLon, sismoLat, sismoLon);
-                        long roundedDist = Math.round(dist);
-                        if (roundedDist <= 0) {
-                            personalizedDistStr = "a menos de 1 km " + suffix;
-                        } else {
-                            personalizedDistStr = roundedDist + " km " + suffix;
-                        }
+                        personalizedDistKm = Math.round(dist);
                     } catch (NumberFormatException ignored) {}
                 }
             }
         }
 
-        String title;
-        String body;
+        // TÍTULO LIMPIO ESTÁNDAR: M3.5 · Nuevo sismo
+        String title = (data.get("title") != null && !data.get("title").isEmpty())
+                ? data.get("title")
+                : (magStr + " · Nuevo sismo");
 
-        if (personalizedDistStr != null) {
-            // FORMATO PERSONALIZADO ESTRICTO:
-            // Título: M3.5 · 42 km de ti
-            title = magStr + " · " + personalizedDistStr;
-
-            // Cuerpo: M3.5 · 42 km de ti · 60 km al sureste de Soná [· 12 km prof.]
-            StringBuilder sb = new StringBuilder();
-            sb.append(magStr).append(" · ").append(personalizedDistStr).append(" · ").append(lugar);
-            if (profKm != null && !profKm.isEmpty()) {
-                try {
-                    int p = Math.round(Float.parseFloat(profKm));
-                    sb.append(" · ").append(p).append(" km prof.");
-                } catch (Exception ignored) {}
-            }
-            body = sb.toString();
-        } else {
-            // FORMATO GENERAL DE FALLBACK:
-            title = (data.get("title") != null && !data.get("title").isEmpty())
-                    ? data.get("title")
-                    : (magStr + " · Nuevo sismo");
-
-            if (data.get("body") != null && !data.get("body").isEmpty()) {
-                body = data.get("body");
+        // CUERPO: M3.5 · 60 km al sureste de Soná · 12 km prof. [· A 85 km de ti]
+        StringBuilder sb = new StringBuilder();
+        sb.append(magStr).append(" · ").append(lugar);
+        if (profKm != null && !profKm.isEmpty()) {
+            try {
+                int p = Math.round(Float.parseFloat(profKm));
+                sb.append(" · ").append(p).append(" km prof.");
+            } catch (Exception ignored) {}
+        }
+        if (personalizedDistKm != null) {
+            if (personalizedDistKm <= 0) {
+                sb.append(" · A menos de 1 km de ti");
             } else {
-                StringBuilder sb = new StringBuilder();
-                sb.append(magStr).append(" · ").append(lugar);
-                if (profKm != null && !profKm.isEmpty()) {
-                    try {
-                        int p = Math.round(Float.parseFloat(profKm));
-                        sb.append(" · ").append(p).append(" km prof.");
-                    } catch (Exception ignored) {}
-                }
-                body = sb.toString();
+                sb.append(" · A ").append(personalizedDistKm).append(" km de ti");
             }
         }
+        String body = sb.toString();
 
         Intent intent = new Intent(this, LauncherActivity.class);
         intent.setAction(Intent.ACTION_VIEW);

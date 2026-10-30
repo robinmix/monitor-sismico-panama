@@ -82,11 +82,7 @@ public final class SismoNotificationHelper {
         String testBody = "M3.5 · 60 km al sureste de Soná · 12 km prof.";
 
         if (FcmPreferences.isDistancePersonalizationActive(context)) {
-            String mode = FcmPreferences.getUserLocationMode(context);
-            long ageMs = System.currentTimeMillis() - FcmPreferences.getUserLocationUpdatedAt(context);
-            String suffix = ("GPS".equalsIgnoreCase(mode) && ageMs <= 48L * 3600 * 1000L) ? "de ti" : "de tu zona";
-            testTitle = "M3.5 · 42 km " + suffix;
-            testBody = "M3.5 · 42 km " + suffix + " · 60 km al sureste de Soná · 12 km prof.";
+            testBody = "M3.5 · 60 km al sureste de Soná · 12 km prof. · A 42 km de ti";
         }
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)

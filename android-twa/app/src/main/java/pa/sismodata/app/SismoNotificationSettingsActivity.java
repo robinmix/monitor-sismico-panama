@@ -2,9 +2,6 @@ package pa.sismodata.app;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.location.Location;
-import android.location.LocationManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -13,9 +10,13 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -34,13 +35,13 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 /**
  * Pantalla nativa oficial de consentimiento y configuración de notificaciones sismoPA.
- * Proporciona una interfaz Android directa independiente del navegador web (Chrome/Brave),
- * garantizando que ninguna autorización se base en parámetros de URL manipulables.
- * Versión 1.0.8: Interfaz limpia de producción, sin exposición técnica de tokens en pantalla.
+ * Proporciona una interfaz Android directa independiente del navegador web,
+ * con gestión compacta de distancia por GPS y recepción nativa FCM.
  */
 public class SismoNotificationSettingsActivity extends Activity {
     private static final String TAG = "SismoSettingsActivity";
     private static final int RC_PERMISSION = 3001;
+    private static final int RC_LOCATION = 3002;
 
     private TextView mStatusBadge;
     private TextView mStatusDesc;
@@ -49,14 +50,13 @@ public class SismoNotificationSettingsActivity extends Activity {
     private Button mBtnTest;
     private Button mBtnDismiss;
 
-    // Elementos de la tarjeta de Distancia en Notificaciones
+    // Elementos de la tarjeta compacta de Distancia en Notificaciones
     private LinearLayout mDistCard;
-    private TextView mDistBadge;
-    private TextView mDistDesc;
+    private TextView mDistStatus;
     private Button mBtnGps;
-    private Button mBtnZone;
+    private LinearLayout mActiveActionRow;
+    private Button mBtnUpdateGps;
     private Button mBtnClearLoc;
-    private static final int RC_LOCATION = 3002;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,16 +77,15 @@ public class SismoNotificationSettingsActivity extends Activity {
 
     private View buildView() {
         ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(Color.parseColor("#05070B"));
-        scrollView.setFillViewport(true);
+        scrollView.setBackgroundColor(Color.BLACK); // AMOLED puro
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(20), dp(24), dp(20), dp(24));
+        layout.setPadding(dp(20), dp(24), dp(20), dp(32));
 
-        // Título de la aplicación
+        // Título de la pantalla
         TextView title = new TextView(this);
-        title.setText("sismoPA — Alertas Sísmicas");
+        title.setText("Notificaciones Sísmicas");
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -99,7 +98,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         subtitle.setPadding(0, dp(4), 0, dp(16));
         layout.addView(subtitle);
 
-        // Tarjeta de Estado
+        // Tarjeta de Estado FCM
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -120,7 +119,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         badgeParams.bottomMargin = dp(12);
         card.addView(mStatusBadge, badgeParams);
 
-        // Soporte técnico discreto (pulsación prolongada para copiar token solo si soporte técnico lo requiere)
+        // Soporte técnico discreto (pulsación prolongada para copiar token si es necesario)
         mStatusBadge.setOnLongClickListener(v -> {
             onCopyTokenClicked();
             return true;
@@ -141,7 +140,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         mErrorDesc.setVisibility(View.GONE);
         card.addView(mErrorDesc);
 
-        // Botón principal de acción
+        // Botón principal de acción FCM
         mBtnAction = new Button(this);
         mBtnAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         mBtnAction.setTypeface(Typeface.DEFAULT_BOLD);
@@ -165,48 +164,43 @@ public class SismoNotificationSettingsActivity extends Activity {
         mBtnTest.setBackground(testBg);
         LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        testParams.topMargin = dp(14);
-                // Tarjeta de Personalización por Distancia (sismoPA)
+        testParams.topMargin = dp(12);
+
+        // =====================================================================
+        // TARJETA COMPACTA: DISTANCIA EN NOTIFICACIONES (DISEÑO SOLICITADO)
+        // =====================================================================
         mDistCard = new LinearLayout(this);
         mDistCard.setOrientation(LinearLayout.VERTICAL);
-        mDistCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        mDistCard.setPadding(dp(14), dp(12), dp(14), dp(12));
         GradientDrawable distCardBg = new GradientDrawable();
         distCardBg.setColor(Color.parseColor("#10141D"));
-        distCardBg.setCornerRadius(dp(12));
+        distCardBg.setCornerRadius(dp(10));
         distCardBg.setStroke(dp(1), Color.parseColor("#1E2536"));
         mDistCard.setBackground(distCardBg);
 
         LinearLayout.LayoutParams distCardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        distCardParams.topMargin = dp(14);
+        distCardParams.topMargin = dp(12);
 
+        // Título breve: Distancia en notificaciones
         TextView distTitle = new TextView(this);
-        distTitle.setText("Distancia en mis notificaciones");
+        distTitle.setText("Distancia en notificaciones");
         distTitle.setTextColor(Color.WHITE);
-        distTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        distTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         distTitle.setTypeface(Typeface.DEFAULT_BOLD);
         mDistCard.addView(distTitle);
 
-        mDistBadge = new TextView(this);
-        mDistBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        mDistBadge.setTypeface(Typeface.DEFAULT_BOLD);
-        mDistBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-        LinearLayout.LayoutParams distBadgeParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        distBadgeParams.topMargin = dp(8);
-        distBadgeParams.bottomMargin = dp(8);
-        mDistCard.addView(mDistBadge, distBadgeParams);
+        // Estado: Desactivada / GPS activado
+        mDistStatus = new TextView(this);
+        mDistStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mDistStatus.setPadding(0, dp(4), 0, dp(10));
+        mDistCard.addView(mDistStatus);
 
-        mDistDesc = new TextView(this);
-        mDistDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        mDistDesc.setTextColor(Color.parseColor("#CFD8DC"));
-        mDistDesc.setLineSpacing(dp(2), 1.15f);
-        mDistCard.addView(mDistDesc);
-
-        // Botón GPS
+        // Botón cuando está desactivada: [ACTIVAR GPS]
         mBtnGps = new Button(this);
-        mBtnGps.setText("Usar mi ubicación actual (GPS)");
+        mBtnGps.setText("ACTIVAR GPS");
         mBtnGps.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mBtnGps.setTypeface(Typeface.DEFAULT_BOLD);
         mBtnGps.setTextColor(Color.WHITE);
         GradientDrawable gpsBg = new GradientDrawable();
         gpsBg.setColor(Color.parseColor("#1B5E20"));
@@ -214,40 +208,49 @@ public class SismoNotificationSettingsActivity extends Activity {
         mBtnGps.setBackground(gpsBg);
         LinearLayout.LayoutParams gpsParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        gpsParams.topMargin = dp(12);
         mDistCard.addView(mBtnGps, gpsParams);
 
-        // Botón Zona Fija
-        mBtnZone = new Button(this);
-        mBtnZone.setText("Elegir provincia o zona fija");
-        mBtnZone.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        mBtnZone.setTextColor(Color.parseColor("#90CAF9"));
-        GradientDrawable zoneBg = new GradientDrawable();
-        zoneBg.setColor(Color.parseColor("#152238"));
-        zoneBg.setCornerRadius(dp(8));
-        zoneBg.setStroke(dp(1), Color.parseColor("#1E3A5F"));
-        mBtnZone.setBackground(zoneBg);
-        LinearLayout.LayoutParams zoneParams = new LinearLayout.LayoutParams(
+        // Fila de botones cuando está activa: [ACTUALIZAR GPS]  [DESACTIVAR]
+        mActiveActionRow = new LinearLayout(this);
+        mActiveActionRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        zoneParams.topMargin = dp(8);
-        mDistCard.addView(mBtnZone, zoneParams);
+        mActiveActionRow.setVisibility(View.GONE);
 
-        // Botón Desactivar
+        mBtnUpdateGps = new Button(this);
+        mBtnUpdateGps.setText("ACTUALIZAR GPS");
+        mBtnUpdateGps.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        mBtnUpdateGps.setTypeface(Typeface.DEFAULT_BOLD);
+        mBtnUpdateGps.setTextColor(Color.WHITE);
+        GradientDrawable updateBg = new GradientDrawable();
+        updateBg.setColor(Color.parseColor("#1B5E20"));
+        updateBg.setCornerRadius(dp(8));
+        mBtnUpdateGps.setBackground(updateBg);
+        LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        mActiveActionRow.addView(mBtnUpdateGps, updateParams);
+
         mBtnClearLoc = new Button(this);
-        mBtnClearLoc.setText("Desactivar distancia (formato general)");
+        mBtnClearLoc.setText("DESACTIVAR");
         mBtnClearLoc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        mBtnClearLoc.setTextColor(Color.parseColor("#90A4AE"));
-        mBtnClearLoc.setBackgroundColor(Color.TRANSPARENT);
+        mBtnClearLoc.setTypeface(Typeface.DEFAULT_BOLD);
+        mBtnClearLoc.setTextColor(Color.parseColor("#EF5350"));
+        GradientDrawable clearBg = new GradientDrawable();
+        clearBg.setColor(Color.parseColor("#261C1F"));
+        clearBg.setCornerRadius(dp(8));
+        clearBg.setStroke(dp(1), Color.parseColor("#5C2028"));
+        mBtnClearLoc.setBackground(clearBg);
         LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        clearParams.topMargin = dp(6);
-        mDistCard.addView(mBtnClearLoc, clearParams);
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        clearParams.leftMargin = dp(8);
+        mActiveActionRow.addView(mBtnClearLoc, clearParams);
+
+        mDistCard.addView(mActiveActionRow, rowParams);
 
         layout.addView(mDistCard, distCardParams);
-
         layout.addView(mBtnTest, testParams);
 
-        // Tarjeta informativa y de transparencia (producción limpia)
+        // Tarjeta informativa y de transparencia
         LinearLayout infoCard = new LinearLayout(this);
         infoCard.setOrientation(LinearLayout.VERTICAL);
         infoCard.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -269,7 +272,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         infoCard.addView(infoTitle);
 
         TextView infoText = new TextView(this);
-        infoText.setText("• Fuente de datos: Instituto de Geociencias de la Universidad de Panamá (IGC-UP).\n\n• sismoPA es una iniciativa comunitaria de monitoreo y divulgación sísmica. No es una entidad gubernamental oficial ni un sistema de alerta temprana ante terremotos (no detecta movimientos con anticipación).\n\n• La entrega puntual depende de los servicios de Google, la conectividad del dispositivo y las configuraciones de ahorro de energía del sistema operativo.");
+        infoText.setText("• Fuente de datos: Instituto de Geociencias de la Universidad de Panamá (IGC-UP).\n\n• sismoPA es una iniciativa comunitaria de monitoreo y divulgación sísmica. No es un sistema de alerta temprana ante terremotos.\n\n• Las coordenadas de ubicación para distancia se procesan exclusivamente en este dispositivo y nunca se transmiten a servidores externos.");
         infoText.setTextColor(Color.parseColor("#90A4AE"));
         infoText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         infoText.setLineSpacing(dp(2), 1.2f);
@@ -296,7 +299,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         mBtnAction.setOnClickListener(v -> onActionClicked());
         mBtnTest.setOnClickListener(v -> onTestNotificationClicked());
         mBtnGps.setOnClickListener(v -> onGpsLocationClicked());
-        mBtnZone.setOnClickListener(v -> onZoneSelectClicked());
+        mBtnUpdateGps.setOnClickListener(v -> onGpsLocationClicked());
         mBtnClearLoc.setOnClickListener(v -> onClearLocationClicked());
         mBtnDismiss.setOnClickListener(v -> finish());
 
@@ -307,7 +310,6 @@ public class SismoNotificationSettingsActivity extends Activity {
         updateDistUi();
         FcmPreferences.State state = FcmPreferences.getState(this);
 
-        // Renderizado según estado
         GradientDrawable badgeBg = new GradientDrawable();
         badgeBg.setCornerRadius(dp(6));
 
@@ -316,8 +318,6 @@ public class SismoNotificationSettingsActivity extends Activity {
         switch (state) {
             case ACTIVO:
                 if (!isTrulyActive) {
-                    // Si el estado interno dice ACTIVO pero falta confirmación de topic o token de Firebase,
-                    // NUNCA indicar «ACTIVADAS». Mostrar «SINCRONIZANDO...» y confirmar con Firebase.
                     mStatusBadge.setText("SINCRONIZANDO...");
                     mStatusBadge.setTextColor(Color.WHITE);
                     badgeBg.setColor(Color.parseColor("#1565C0"));
@@ -328,7 +328,6 @@ public class SismoNotificationSettingsActivity extends Activity {
                     mBtnAction.setText("Sincronizando...");
                     mBtnAction.setEnabled(false);
 
-                    // Reintentar confirmación de suscripción
                     executeSubscription();
                     break;
                 }
@@ -379,34 +378,33 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setBackground(badgeBg);
                 boolean wasDeactivating = FcmPreferences.isTopicSubscribed(this);
                 if (wasDeactivating) {
-                    mStatusDesc.setText("No se pudo cancelar la suscripción con Firebase. Comprueba tu conexión e intenta nuevamente.");
+                    mStatusDesc.setText("Ocurrió un error al desactivar las alertas en los servidores.");
                     mBtnAction.setText("Reintentar Desactivación");
                 } else {
-                    mStatusDesc.setText("Ocurrió un inconveniente al conectar con el servicio sísmico. Puedes intentar nuevamente.");
+                    mStatusDesc.setText("No se pudo completar la activación de las notificaciones.");
                     mBtnAction.setText("Reintentar Activación");
                 }
                 String err = FcmPreferences.getLastError(this);
-                if (!err.isEmpty()) {
+                if (err != null && !err.isEmpty()) {
                     mErrorDesc.setText("Detalle: " + err);
                     mErrorDesc.setVisibility(View.VISIBLE);
                 } else {
                     mErrorDesc.setVisibility(View.GONE);
                 }
-
-                mBtnAction.setTextColor(Color.WHITE);
                 GradientDrawable btnErrBg = new GradientDrawable();
                 btnErrBg.setColor(Color.parseColor("#D32F2F"));
                 btnErrBg.setCornerRadius(dp(8));
                 mBtnAction.setBackground(btnErrBg);
+                mBtnAction.setTextColor(Color.WHITE);
                 mBtnAction.setEnabled(true);
                 break;
 
             case REVOCANDO:
                 mStatusBadge.setText("DESACTIVANDO...");
                 mStatusBadge.setTextColor(Color.WHITE);
-                badgeBg.setColor(Color.parseColor("#455A64"));
+                badgeBg.setColor(Color.parseColor("#546E7A"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Cancelando suscripción de alertas sísmicas...");
+                mStatusDesc.setText("Cancelando suscripción en los servidores...");
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Desactivando...");
@@ -415,17 +413,17 @@ public class SismoNotificationSettingsActivity extends Activity {
 
             case DESACTIVADO:
             default:
-                mStatusBadge.setText("DESACTIVADAS");
-                mStatusBadge.setTextColor(Color.parseColor("#ECEFF1"));
+                mStatusBadge.setText("ALERTAS DESACTIVADAS");
+                mStatusBadge.setTextColor(Color.parseColor("#CFD8DC"));
                 badgeBg.setColor(Color.parseColor("#37474F"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Activa las alertas informativas para recibir notificaciones cuando ocurra un evento sísmico en Panamá reportado por el IGC-UP.");
+                mStatusDesc.setText("Activa las alertas informativas para recibir notificaciones inmediatas de sismos en Panamá.");
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Activar Alertas Sísmicas");
                 mBtnAction.setTextColor(Color.WHITE);
                 GradientDrawable btnActBg = new GradientDrawable();
-                btnActBg.setColor(Color.parseColor("#D32F2F"));
+                btnActBg.setColor(Color.parseColor("#1565C0"));
                 btnActBg.setCornerRadius(dp(8));
                 mBtnAction.setBackground(btnActBg);
                 mBtnAction.setEnabled(true);
@@ -433,37 +431,172 @@ public class SismoNotificationSettingsActivity extends Activity {
         }
     }
 
-    private void onActionClicked() {
-        FcmPreferences.State current = FcmPreferences.getState(this);
-        if (current == FcmPreferences.State.ACTIVO) {
-            executeRevocation();
-        } else if (current == FcmPreferences.State.ERROR && FcmPreferences.isTopicSubscribed(this)) {
-            executeRevocation();
+    private void updateDistUi() {
+        if (mDistCard == null) return;
+        boolean isActive = FcmPreferences.isDistancePersonalizationActive(this);
+
+        if (!isActive) {
+            mDistStatus.setText("Estado: Desactivada");
+            mDistStatus.setTextColor(Color.parseColor("#90A4AE"));
+            mBtnGps.setVisibility(View.VISIBLE);
+            mActiveActionRow.setVisibility(View.GONE);
         } else {
-            initiateEnrollment();
+            mDistStatus.setText("Estado: GPS activado");
+            mDistStatus.setTextColor(Color.parseColor("#81C784"));
+            mBtnGps.setVisibility(View.GONE);
+            mActiveActionRow.setVisibility(View.VISIBLE);
         }
     }
 
-    private void initiateEnrollment() {
-        Log.i(TAG, "Iniciando proceso voluntario de activación de notificaciones");
-
-        // Android 13+ (API 33+): Comprobar permiso POST_NOTIFICATIONS
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                FcmPreferences.setState(this, FcmPreferences.State.SOLICITANDO_PERMISO);
-                updateUi();
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, RC_PERMISSION);
+    // =========================================================================
+    // FLUJO COMPLETO GPS (SOLICITUD DE PERMISO, CAPTURA Y PERSISTENCIA)
+    // =========================================================================
+    private void onGpsLocationClicked() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            boolean hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            if (!hasFine && !hasCoarse) {
+                requestPermissions(new String[]{
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                }, RC_LOCATION);
                 return;
             }
         }
+        acquireDeviceLocation();
+    }
 
-        executeSubscription();
+    private void acquireDeviceLocation() {
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) {
+            Toast.makeText(this, "Servicio de ubicación no disponible", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean gpsEnabled = false;
+        boolean networkEnabled = false;
+        try {
+            gpsEnabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+        } catch (Exception ignored) {}
+        try {
+            networkEnabled = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        } catch (Exception ignored) {}
+
+        if (!gpsEnabled && !networkEnabled) {
+            Toast.makeText(this, "Ubicación del dispositivo desactivada. Actívala en los Ajustes de Android.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        // 1. Probar última ubicación conocida
+        Location bestLoc = null;
+        try {
+            if (gpsEnabled) {
+                Location l = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (l != null) bestLoc = l;
+            }
+            if (networkEnabled) {
+                Location l = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                if (l != null && (bestLoc == null || l.getTime() > bestLoc.getTime())) {
+                    bestLoc = l;
+                }
+            }
+        } catch (SecurityException ignored) {}
+
+        long now = System.currentTimeMillis();
+        // Si hay una ubicación reciente (últimos 30 minutos), utilizarla directamente
+        if (bestLoc != null && (now - bestLoc.getTime()) < 30 * 60 * 1000L) {
+            saveAndApplyLocation(bestLoc);
+            return;
+        }
+
+        // 2. Solicitar fix de satélite / red
+        Toast.makeText(this, "Consultando señal GPS…", Toast.LENGTH_SHORT).show();
+        final Location fallbackLoc = bestLoc;
+        final LocationListener listener = new LocationListener() {
+            @Override
+            public void onLocationChanged(@NonNull Location location) {
+                try {
+                    lm.removeUpdates(this);
+                } catch (SecurityException ignored) {}
+                saveAndApplyLocation(location);
+            }
+
+            @Override
+            public void onStatusChanged(String provider, int status, Bundle extras) {}
+            @Override
+            public void onProviderEnabled(@NonNull String provider) {}
+            @Override
+            public void onProviderDisabled(@NonNull String provider) {}
+        };
+
+        try {
+            String provider = gpsEnabled ? LocationManager.GPS_PROVIDER : LocationManager.NETWORK_PROVIDER;
+            lm.requestSingleUpdate(provider, listener, Looper.getMainLooper());
+
+            // Timeout de seguridad de 8 segundos si la señal tarda
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    lm.removeUpdates(listener);
+                } catch (SecurityException ignored) {}
+                if (!FcmPreferences.isDistancePersonalizationActive(this)) {
+                    if (fallbackLoc != null) {
+                        saveAndApplyLocation(fallbackLoc);
+                    } else {
+                        Toast.makeText(this, "No se pudo obtener señal GPS satelital. Inténtalo al aire libre.", Toast.LENGTH_LONG).show();
+                    }
+                }
+            }, 8000);
+        } catch (SecurityException se) {
+            Toast.makeText(this, "Permiso de ubicación no disponible", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            if (fallbackLoc != null) {
+                saveAndApplyLocation(fallbackLoc);
+            } else {
+                Toast.makeText(this, "Error consultando GPS: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void saveAndApplyLocation(Location loc) {
+        if (loc == null) return;
+        double lat = loc.getLatitude();
+        double lon = loc.getLongitude();
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+            Toast.makeText(this, "Coordenadas recibidas inválidas", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        FcmPreferences.setUserLocation(this, lat, lon, "GPS", "");
+        updateDistUi();
+        Toast.makeText(this, "GPS activado. Distancia calculada localmente en tu teléfono.", Toast.LENGTH_SHORT).show();
+    }
+
+    private void onClearLocationClicked() {
+        FcmPreferences.clearUserLocation(this);
+        updateDistUi();
+        Toast.makeText(this, "Distancia por GPS desactivada", Toast.LENGTH_SHORT).show();
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == RC_LOCATION) {
+            boolean granted = false;
+            for (int res : grantResults) {
+                if (res == PackageManager.PERMISSION_GRANTED) {
+                    granted = true;
+                    break;
+                }
+            }
+            if (granted) {
+                acquireDeviceLocation();
+            } else {
+                Toast.makeText(this, "Permiso de ubicación no concedido", Toast.LENGTH_SHORT).show();
+                updateDistUi();
+            }
+            return;
+        }
+
         if (requestCode == RC_PERMISSION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.i(TAG, "Permiso POST_NOTIFICATIONS concedido por el usuario");
@@ -472,10 +605,32 @@ public class SismoNotificationSettingsActivity extends Activity {
                 Log.w(TAG, "Permiso POST_NOTIFICATIONS denegado por el usuario");
                 FcmPreferences.setState(this, FcmPreferences.State.ERROR);
                 FcmPreferences.setLastError(this, "Permiso de notificaciones denegado en ajustes de Android.");
-                FcmPreferences.setDecidedConsent(this, true);
                 updateUi();
+                Toast.makeText(this, "Permiso de notificaciones denegado. Puedes activarlo en los Ajustes del sistema.", Toast.LENGTH_LONG).show();
             }
         }
+    }
+
+    private void onActionClicked() {
+        FcmPreferences.State state = FcmPreferences.getState(this);
+        if (state == FcmPreferences.State.ACTIVO) {
+            executeRevocation();
+        } else {
+            startSubscriptionFlow();
+        }
+    }
+
+    private void startSubscriptionFlow() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            int permCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS);
+            if (permCheck != PackageManager.PERMISSION_GRANTED) {
+                FcmPreferences.setState(this, FcmPreferences.State.SOLICITANDO_PERMISO);
+                updateUi();
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, RC_PERMISSION);
+                return;
+            }
+        }
+        executeSubscription();
     }
 
     private void executeSubscription() {
@@ -484,15 +639,12 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         try {
             FirebaseMessaging.getInstance().setAutoInitEnabled(true);
-
-            // 1. Suscribirse al topic oficial sismos_panama
             FirebaseMessaging.getInstance().subscribeToTopic(LauncherActivity.FCM_TOPIC)
                     .addOnCompleteListener(this, subTask -> {
                         if (subTask.isSuccessful()) {
-                            Log.i(TAG, "Suscripción a topic FCM exitosa: " + LauncherActivity.FCM_TOPIC);
+                            Log.i(TAG, "Suscripción nativa al topic sismos_panama exitosa");
                             FcmPreferences.setTopicSubscribed(this, true);
 
-                            // 2. Obtener token del dispositivo internamente para enrollamiento en cliente
                             FirebaseMessaging.getInstance().getToken()
                                     .addOnCompleteListener(this, tokenTask -> {
                                         if (tokenTask.isSuccessful() && tokenTask.getResult() != null) {
@@ -602,100 +754,4 @@ public class SismoNotificationSettingsActivity extends Activity {
         return (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics());
     }
-
-    private void updateDistUi() {
-        if (mDistCard == null) return;
-        boolean isActive = FcmPreferences.isDistancePersonalizationActive(this);
-        GradientDrawable bBg = new GradientDrawable();
-        bBg.setCornerRadius(dp(6));
-
-        if (!isActive) {
-            mDistBadge.setText("DISTANCIA DESACTIVADA");
-            mDistBadge.setTextColor(Color.parseColor("#CFD8DC"));
-            bBg.setColor(Color.parseColor("#263238"));
-            mDistBadge.setBackground(bBg);
-            mDistDesc.setText("Recibirás el formato general (ej. M3.5 · Nuevo sismo · 60 km al sureste de Soná). Puedes activar la distancia aproximada para saber qué tan lejos ocurrió de ti.");
-            mBtnClearLoc.setVisibility(View.GONE);
-        } else {
-            String mode = FcmPreferences.getUserLocationMode(this);
-            long updatedAt = FcmPreferences.getUserLocationUpdatedAt(this);
-            long ageMs = System.currentTimeMillis() - updatedAt;
-            String zoneName = FcmPreferences.getUserLocationZoneName(this);
-
-            if ("ZONA".equalsIgnoreCase(mode)) {
-                mDistBadge.setText("ZONA: " + (zoneName.isEmpty() ? "SELECCIONADA" : zoneName.toUpperCase()));
-                mDistBadge.setTextColor(Color.parseColor("#E1F5FE"));
-                bBg.setColor(Color.parseColor("#0277BD"));
-                mDistBadge.setBackground(bBg);
-                mDistDesc.setText("Notificaciones mostrarán 'de tu zona' (ej. M3.5 · 42 km de tu zona). Las coordenadas de referencia están guardadas solo en este dispositivo.");
-            } else {
-                if (ageMs <= 48L * 3600 * 1000L) {
-                    mDistBadge.setText("GPS ACTIVO (DE TI)");
-                    mDistBadge.setTextColor(Color.parseColor("#E8F5E9"));
-                    bBg.setColor(Color.parseColor("#2E7D32"));
-                    mDistBadge.setBackground(bBg);
-                    mDistDesc.setText("Notificaciones mostrarán 'de ti' (ej. M3.5 · 42 km de ti). Las coordenadas están truncadas a 3 decimales (~110m) para proteger tu privacidad.");
-                } else {
-                    mDistBadge.setText("GPS ANTERIOR (DE TU ZONA)");
-                    mDistBadge.setTextColor(Color.parseColor("#FFF8E1"));
-                    bBg.setColor(Color.parseColor("#F57F17"));
-                    mDistBadge.setBackground(bBg);
-                    mDistDesc.setText("Tu última posición GPS tiene más de 48h. Las alertas mostrarán 'de tu zona'. Toca 'Usar mi ubicación actual' para actualizarla.");
-                }
-            }
-            mBtnClearLoc.setVisibility(View.VISIBLE);
-        }
-    }
-
-    private void onGpsLocationClicked() {
-        // En la arquitectura TWA oficial de sismoPA, la ubicación GPS se adquiere
-        // de forma interactiva en el monitor web del navegador, protegiendo la privacidad
-        // y sin exigir permisos nativos peligrosos en el sistema operativo Android.
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://sismopa.pages.dev/#alertas"));
-            intent.setPackage(getPackageName());
-            startActivity(intent);
-            finish();
-        } catch (Exception e) {
-            Toast.makeText(this, "Abre sismoPA para configurar tu distancia por GPS.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void captureDeviceLocation() {
-        // Obsoleto: gestionado dinámicamente desde el origen web de la TWA
-    }
-
-
-
-    private void onZoneSelectClicked() {
-        final String[] zonas = {
-            "Panamá (Centro)", "Panamá Oeste", "Chiriquí", "Bocas del Toro",
-            "Coclé", "Colón", "Herrera", "Los Santos", "Veraguas", "Darién"
-        };
-        final double[][] coords = {
-            {8.983, -79.520}, {8.880, -79.780}, {8.430, -82.430}, {9.333, -82.250},
-            {8.500, -80.350}, {9.350, -79.900}, {7.960, -80.430}, {7.700, -80.300},
-            {8.100, -80.980}, {8.350, -77.950}
-        };
-
-        new AlertDialog.Builder(this)
-            .setTitle("Elige tu provincia o zona de referencia")
-            .setItems(zonas, (dialog, which) -> {
-                String selectedZone = zonas[which];
-                double lat = coords[which][0];
-                double lon = coords[which][1];
-                FcmPreferences.setUserLocation(this, lat, lon, "ZONA", selectedZone);
-                updateUi();
-                Toast.makeText(this, "Zona fija establecida: " + selectedZone, Toast.LENGTH_SHORT).show();
-            })
-            .setNegativeButton("Cancelar", null)
-            .show();
-    }
-
-    private void onClearLocationClicked() {
-        FcmPreferences.clearUserLocation(this);
-        updateUi();
-        Toast.makeText(this, "Personalización por distancia desactivada", Toast.LENGTH_SHORT).show();
-    }
-
 }
