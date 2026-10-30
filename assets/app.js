@@ -161,7 +161,14 @@
     if (ui.distActive) ui.distActive.hidden = true;
   }
 
+  let isRequestingLocation = false;
+
   function requestUserLocation() {
+    if (isRequestingLocation) {
+      console.debug('[Geo] Solicitud de ubicación ignorada: ya existe una petición en curso.');
+      return;
+    }
+
     if (!('geolocation' in navigator)) {
       if (ui.distStatus) {
         ui.distStatus.textContent = 'Tu navegador no soporta geolocalización.';
@@ -169,41 +176,73 @@
       }
       return;
     }
+
+    isRequestingLocation = true;
     if (ui.distStatus) {
       ui.distStatus.textContent = 'Consultando ubicación del dispositivo…';
       ui.distStatus.hidden = false;
     }
+
+    const onLocationSuccess = (pos, modo) => {
+      isRequestingLocation = false;
+      // Almacenamiento EXCLUSIVO en memoria de sesión (sin persistencia en localStorage ni servidores)
+      state.userCoords = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude
+      };
+      console.info(`[Geo] Ubicación obtenida exitosamente (${modo}, precisión: ~${Math.round(pos.coords.accuracy || 0)}m).`);
+      if (ui.distStatus) ui.distStatus.hidden = true;
+      updateUserDistanceDisplay();
+      render();
+      updateUserLocationOnMap();
+      if (state.currentSismoId) {
+        updateFichaDistance();
+      }
+    };
+
+    const onLocationFinalError = (err) => {
+      isRequestingLocation = false;
+      let msg = 'No se pudo obtener tu ubicación.';
+      if (err.code === 1) msg = 'Permiso de ubicación no concedido.';
+      else if (err.code === 2) msg = 'Ubicación no disponible.';
+      else if (err.code === 3) msg = 'Tiempo de espera agotado al consultar ubicación.';
+      console.warn(`[Geo] Fallo final de geolocalización (código: ${err.code}, mensaje: ${err.message || 'desconocido'}).`);
+      if (ui.distStatus) {
+        ui.distStatus.textContent = msg;
+        ui.distStatus.hidden = false;
+        setTimeout(() => { if (!state.userCoords && ui.distStatus) ui.distStatus.hidden = true; }, 5000);
+      }
+    };
+
+    // Intento 1: Bajo consumo / red (rápido, timeout 4000ms, maximumAge 60000ms)
+    console.debug('[Geo] Iniciando intento 1 (bajo consumo / red: timeout 4s)...');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        // Almacenamiento EXCLUSIVO en memoria de sesión (sin persistencia en localStorage ni servidores)
-        state.userCoords = {
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude
-        };
-        if (ui.distStatus) ui.distStatus.hidden = true;
-        updateUserDistanceDisplay();
-        render();
-        updateUserLocationOnMap();
-        if (state.currentSismoId) {
-          updateFichaDistance();
+      (pos) => onLocationSuccess(pos, 'red_coarse'),
+      (err1) => {
+        // Si el usuario denegó expresamente el permiso (code 1: PERMISSION_DENIED), no reintentar
+        if (err1.code === 1) {
+          onLocationFinalError(err1);
+          return;
         }
-      },
-      (err) => {
-        let msg = 'No se pudo obtener tu ubicación.';
-        if (err.code === 1) msg = 'Permiso de ubicación no concedido.';
-        else if (err.code === 2) msg = 'Ubicación no disponible.';
-        else if (err.code === 3) msg = 'Tiempo de espera agotado al consultar ubicación.';
+
+        // Intento 2 (Fallback): Alta precisión / GNSS satelital ante error 2 (POSITION_UNAVAILABLE) o 3 (TIMEOUT)
+        console.info(`[Geo] Intento 1 no completado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 8s)...`);
         if (ui.distStatus) {
-          ui.distStatus.textContent = msg;
-          ui.distStatus.hidden = false;
-          setTimeout(() => { if (!state.userCoords && ui.distStatus) ui.distStatus.hidden = true; }, 5000);
+          ui.distStatus.textContent = 'Buscando señal GPS de alta precisión…';
         }
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => onLocationSuccess(pos, 'gps_alta_precision'),
+          (err2) => onLocationFinalError(err2),
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
     );
   }
 
   function disableUserLocation() {
+    isRequestingLocation = false;
     state.userCoords = null;
     if (ui.distActive) ui.distActive.hidden = true;
     if (ui.distUnprompted) ui.distUnprompted.hidden = false;
