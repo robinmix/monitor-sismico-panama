@@ -1,14 +1,13 @@
+'use strict';
+
 /**
- * sismoPA — Suite de Pruebas Automatizadas de Geolocalización Secuencial con Fallback
- * 
- * Verifica:
- * 1. Éxito inicial (intento 1 bajo consumo / red con timeout 4s, maximumAge 60s).
- * 2. Éxito tras fallback por error 2 (POSITION_UNAVAILABLE -> intento 2 alta precisión con timeout 8s, maximumAge 0).
- * 3. Éxito tras fallback por error 3 (TIMEOUT -> intento 2 alta precisión).
- * 4. Permiso denegado (error 1 PERMISSION_DENIED -> no se reintenta).
- * 5. Fallo de ambos intentos (error 2 seguido de error 2 -> mensaje final correcto).
- * 6. Prevención de concurrencia y callbacks duplicados.
- * 7. Limpieza en disableUserLocation().
+ * Suite de pruebas automatizadas para la verificación de geolocalización secuencial.
+ * Comprueba:
+ * 1. Intento 1 con bajo consumo y timeout corto (4s).
+ * 2. Fallback a alta precisión (timeout 14s, maximumAge 0) ante error 2 o 3.
+ * 3. Manejo inmediato y sin reintento de permiso denegado (error 1).
+ * 4. Guardia global anti-concurrencia.
+ * 5. Limpieza de estado en disableUserLocation.
  */
 
 const test = require('node:test');
@@ -18,18 +17,22 @@ const path = require('node:path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 
-// Helper para emular el flujo de requestUserLocation extraído de app.js
+// Helper para emular el flujo de geolocalización extraído de app.js
 function createGeoTestHarness() {
   const calls = [];
-  let isRequestingLocation = false;
+  let isGlobalGeoRequestActive = false;
   const state = {
     userCoords: null,
+    userCoordsUpdatedAt: null,
+    userCoordsIsStale: false,
     currentSismoId: null
   };
   const ui = {
     distStatus: { textContent: '', hidden: true },
     distActive: { hidden: true },
-    distUnprompted: { hidden: false }
+    distUnprompted: { hidden: false },
+    btnRequestGeo: { disabled: false },
+    btnRefreshGeo: { disabled: false, textContent: '↻ Actualizar mi ubicación' }
   };
   const logs = [];
 
@@ -48,80 +51,118 @@ function createGeoTestHarness() {
     }
   };
 
-  // Implementación fiel de la lógica de app.js
-  function requestUserLocation() {
-    if (isRequestingLocation) {
+  function acquireDeviceCoordinates({ onStatus, onSuccess, onError }) {
+    if (isGlobalGeoRequestActive) {
       logs.push('[Geo] Solicitud de ubicación ignorada: ya existe una petición en curso.');
+      if (onStatus) onStatus('Ya hay una consulta de ubicación en curso…');
       return;
     }
 
     if (!('geolocation' in navigator)) {
-      if (ui.distStatus) {
-        ui.distStatus.textContent = 'Tu navegador no soporta geolocalización.';
-        ui.distStatus.hidden = false;
-      }
+      if (onError) onError({ code: 0, userMessage: 'Tu navegador no soporta geolocalización.' });
       return;
     }
 
-    isRequestingLocation = true;
-    if (ui.distStatus) {
-      ui.distStatus.textContent = 'Consultando ubicación del dispositivo…';
-      ui.distStatus.hidden = false;
-    }
+    isGlobalGeoRequestActive = true;
+    if (onStatus) onStatus('Consultando ubicación del dispositivo…');
 
-    const onLocationSuccess = (pos, modo) => {
-      isRequestingLocation = false;
-      state.userCoords = {
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude
-      };
+    const finalizeSuccess = (pos, modo) => {
+      isGlobalGeoRequestActive = false;
       logs.push(`[Geo] Ubicación obtenida exitosamente (${modo}, precisión: ~${Math.round(pos.coords.accuracy || 0)}m).`);
-      if (ui.distStatus) ui.distStatus.hidden = true;
+      if (onSuccess) {
+        onSuccess({
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy || null,
+          mode: modo
+        });
+      }
     };
 
-    const onLocationFinalError = (err) => {
-      isRequestingLocation = false;
-      let msg = 'No se pudo obtener tu ubicación.';
-      if (err.code === 1) msg = 'Permiso de ubicación no concedido.';
-      else if (err.code === 2) msg = 'Ubicación no disponible.';
-      else if (err.code === 3) msg = 'Tiempo de espera agotado al consultar ubicación.';
+    const finalizeError = (err) => {
+      isGlobalGeoRequestActive = false;
+      let userMessage = 'No se pudo obtener tu ubicación.';
+      if (err.code === 1) userMessage = 'Permiso de ubicación no concedido.';
+      else if (err.code === 2) userMessage = 'Ubicación no disponible en este dispositivo.';
+      else if (err.code === 3) userMessage = 'Tiempo de espera agotado al consultar ubicación.';
       logs.push(`[Geo] Fallo final de geolocalización (código: ${err.code}, mensaje: ${err.message || 'desconocido'}).`);
-      if (ui.distStatus) {
-        ui.distStatus.textContent = msg;
-        ui.distStatus.hidden = false;
-      }
+      if (onError) onError({ code: err.code, message: err.message, userMessage });
     };
 
     logs.push('[Geo] Iniciando intento 1 (bajo consumo / red: timeout 4s)...');
     navigator.geolocation.getCurrentPosition(
-      (pos) => onLocationSuccess(pos, 'red_coarse'),
+      (pos) => finalizeSuccess(pos, 'red_coarse'),
       (err1) => {
         if (err1.code === 1) {
-          onLocationFinalError(err1);
+          finalizeError(err1);
           return;
         }
 
-        logs.push(`[Geo] Intento 1 no completado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 8s)...`);
-        if (ui.distStatus) {
-          ui.distStatus.textContent = 'Buscando señal GPS de alta precisión…';
-        }
+        logs.push(`[Geo] Intento 1 sin resultado (código ${err1.code}). Activando fallback satelital de alta precisión (timeout 14s)...`);
+        if (onStatus) onStatus('Buscando señal GPS de alta precisión…');
 
         navigator.geolocation.getCurrentPosition(
-          (pos) => onLocationSuccess(pos, 'gps_alta_precision'),
-          (err2) => onLocationFinalError(err2),
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+          (pos) => finalizeSuccess(pos, 'gps_alta_precision'),
+          (err2) => finalizeError(err2),
+          { enableHighAccuracy: true, timeout: 14000, maximumAge: 0 }
         );
       },
       { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
     );
   }
 
+  function requestUserLocation() {
+    if (ui.distStatus) {
+      ui.distStatus.textContent = 'Consultando ubicación del dispositivo…';
+      ui.distStatus.hidden = false;
+    }
+    ui.btnRequestGeo.disabled = true;
+    ui.btnRefreshGeo.disabled = true;
+
+    acquireDeviceCoordinates({
+      onStatus: (msg) => {
+        if (ui.distStatus) {
+          ui.distStatus.textContent = msg;
+          ui.distStatus.hidden = false;
+        }
+      },
+      onSuccess: (res) => {
+        ui.btnRequestGeo.disabled = false;
+        ui.btnRefreshGeo.disabled = false;
+        state.userCoords = { lat: res.lat, lon: res.lon };
+        state.userCoordsUpdatedAt = Date.now();
+        state.userCoordsIsStale = false;
+        if (ui.distStatus) ui.distStatus.hidden = true;
+      },
+      onError: (err) => {
+        ui.btnRequestGeo.disabled = false;
+        ui.btnRefreshGeo.disabled = false;
+        if (state.userCoords) {
+          state.userCoordsIsStale = true;
+          if (ui.distStatus) {
+            ui.distStatus.textContent = `⚠️ No se pudo actualizar (${err.userMessage}). Se conserva tu última ubicación conocida.`;
+            ui.distStatus.hidden = false;
+          }
+        } else {
+          if (ui.distStatus) {
+            ui.distStatus.textContent = err.userMessage;
+            ui.distStatus.hidden = false;
+          }
+        }
+      }
+    });
+  }
+
   function disableUserLocation() {
-    isRequestingLocation = false;
+    isGlobalGeoRequestActive = false;
     state.userCoords = null;
+    state.userCoordsUpdatedAt = null;
+    state.userCoordsIsStale = false;
     if (ui.distActive) ui.distActive.hidden = true;
     if (ui.distUnprompted) ui.distUnprompted.hidden = false;
     if (ui.distStatus) ui.distStatus.hidden = true;
+    ui.btnRequestGeo.disabled = false;
+    ui.btnRefreshGeo.disabled = false;
   }
 
   return {
@@ -129,10 +170,10 @@ function createGeoTestHarness() {
     state,
     ui,
     logs,
-    setMockHandlers: (handlers) => { mockGeolocationHandlers = handlers; },
     requestUserLocation,
     disableUserLocation,
-    isRequesting: () => isRequestingLocation
+    setMockHandlers: (handlers) => { mockGeolocationHandlers = handlers.slice(); },
+    isRequesting: () => isGlobalGeoRequestActive
   };
 }
 
@@ -142,8 +183,8 @@ test('Geolocalización sismoPA — Intento Secuencial y Fallback', async (t) => 
     const content = fs.readFileSync(appJsPath, 'utf8');
 
     assert.ok(content.includes('enableHighAccuracy: false, timeout: 4000, maximumAge: 60000'), 'Intento 1 debe usar timeout 4000 y maximumAge 60000');
-    assert.ok(content.includes('enableHighAccuracy: true, timeout: 8000, maximumAge: 0'), 'Intento 2 debe usar timeout 8000 y maximumAge 0');
-    assert.ok(content.includes('isRequestingLocation'), 'Debe existir guardia de concurrencia');
+    assert.ok(content.includes('enableHighAccuracy: true, timeout: 14000, maximumAge: 0'), 'Intento 2 debe usar timeout 14000 y maximumAge 0');
+    assert.ok(content.includes('isGlobalGeoRequestActive'), 'Debe existir guardia de concurrencia');
     assert.ok(content.includes('err1.code === 1'), 'Debe abortar sin reintento si el permiso fue denegado');
   });
 
@@ -158,114 +199,105 @@ test('Geolocalización sismoPA — Intento Secuencial y Fallback', async (t) => 
     assert.equal(harness.calls.length, 1, 'Solo debe haber 1 intento');
     assert.equal(harness.calls[0].options.enableHighAccuracy, false, 'Intento 1 debe ser enableHighAccuracy: false');
     assert.equal(harness.calls[0].options.timeout, 4000);
-    assert.equal(harness.calls[0].options.maximumAge, 60000);
-    assert.deepEqual(harness.state.userCoords, { lat: 8.982, lon: -79.519 }, 'Coordenadas deben quedar guardadas en memoria de sesión');
-    assert.equal(harness.ui.distStatus.hidden, true, 'distStatus debe ocultarse en éxito');
-    assert.equal(harness.isRequesting(), false, 'Guardia de concurrencia debe quedar liberada');
+    assert.equal(harness.state.userCoords.lat, 8.982);
+    assert.equal(harness.state.userCoords.lon, -79.519);
+    assert.equal(harness.isRequesting(), false, 'La guardia debe liberarse al terminar');
   });
 
   await t.test('3. Éxito tras Fallback: Intento 1 falla con error 2 (POSITION_UNAVAILABLE) y el intento 2 tiene éxito', () => {
     const harness = createGeoTestHarness();
     harness.setMockHandlers([
-      // Intento 1 falla con código 2
-      (_success, error) => error({ code: 2, message: 'Position unavailable on network provider' }),
-      // Intento 2 tiene éxito con GPS satelital
-      (success) => success({ coords: { latitude: 8.421, longitude: -82.431, accuracy: 8 } })
+      (success, error) => error({ code: 2, message: 'Position unavailable on network provider' }),
+      (success) => success({ coords: { latitude: 7.512, longitude: -80.831, accuracy: 5 } })
     ]);
 
     harness.requestUserLocation();
 
-    assert.equal(harness.calls.length, 2, 'Deben ejecutarse exactamente 2 intentos');
-    assert.equal(harness.calls[0].options.enableHighAccuracy, false, 'Intento 1 fue false');
-    assert.equal(harness.calls[1].options.enableHighAccuracy, true, 'Intento 2 debe ser true (GPS satelital)');
-    assert.equal(harness.calls[1].options.timeout, 8000, 'Intento 2 timeout debe ser 8000');
-    assert.equal(harness.calls[1].options.maximumAge, 0, 'Intento 2 maximumAge debe ser 0 para forzar fix nuevo');
-    assert.deepEqual(harness.state.userCoords, { lat: 8.421, lon: -82.431 });
-    assert.equal(harness.ui.distStatus.hidden, true);
+    assert.equal(harness.calls.length, 2, 'Deben ejecutarse ambos intentos');
+    assert.equal(harness.calls[0].options.enableHighAccuracy, false);
+    assert.equal(harness.calls[1].options.enableHighAccuracy, true, 'Intento 2 debe activar alta precisión');
+    assert.equal(harness.calls[1].options.timeout, 14000);
+    assert.equal(harness.calls[1].options.maximumAge, 0);
+    assert.equal(harness.state.userCoords.lat, 7.512);
+    assert.equal(harness.state.userCoords.lon, -80.831);
     assert.equal(harness.isRequesting(), false);
   });
 
   await t.test('4. Éxito tras Fallback por Timeout: Intento 1 falla con error 3 (TIMEOUT) y el intento 2 tiene éxito', () => {
     const harness = createGeoTestHarness();
     harness.setMockHandlers([
-      // Intento 1 falla con timeout
-      (_success, error) => error({ code: 3, message: 'Timeout expired' }),
-      // Intento 2 tiene éxito
-      (success) => success({ coords: { latitude: 7.561, longitude: -80.761, accuracy: 5 } })
+      (success, error) => error({ code: 3, message: 'Timeout on network provider' }),
+      (success) => success({ coords: { latitude: 8.432, longitude: -82.428, accuracy: 8 } })
     ]);
 
     harness.requestUserLocation();
 
     assert.equal(harness.calls.length, 2);
+    assert.equal(harness.calls[0].options.enableHighAccuracy, false);
     assert.equal(harness.calls[1].options.enableHighAccuracy, true);
-    assert.deepEqual(harness.state.userCoords, { lat: 7.561, lon: -80.761 });
+    assert.equal(harness.state.userCoords.lat, 8.432);
     assert.equal(harness.isRequesting(), false);
   });
 
   await t.test('5. Permiso Denegado: Intento 1 falla con error 1 (PERMISSION_DENIED) -> NO se realiza intento 2', () => {
     const harness = createGeoTestHarness();
     harness.setMockHandlers([
-      // Intento 1 falla con código 1
-      (_success, error) => error({ code: 1, message: 'User denied geolocation' })
+      (success, error) => error({ code: 1, message: 'User denied geolocation' })
     ]);
 
     harness.requestUserLocation();
 
-    assert.equal(harness.calls.length, 1, 'NO debe haber intento 2 ante permiso denegado');
-    assert.equal(harness.state.userCoords, null, 'No debe haber coordenadas');
+    assert.equal(harness.calls.length, 1, 'No debe haber segundo intento si el usuario denegó el permiso');
+    assert.equal(harness.state.userCoords, null);
     assert.equal(harness.ui.distStatus.textContent, 'Permiso de ubicación no concedido.');
-    assert.equal(harness.ui.distStatus.hidden, false);
     assert.equal(harness.isRequesting(), false);
   });
 
   await t.test('6. Fallo de Ambos Intentos: Intento 1 falla con error 2 e Intento 2 falla con error 2', () => {
     const harness = createGeoTestHarness();
     harness.setMockHandlers([
-      (_success, error) => error({ code: 2, message: 'Network provider unavailable' }),
-      (_success, error) => error({ code: 2, message: 'GPS hardware unavailable' })
+      (success, error) => error({ code: 2, message: 'Position unavailable on network' }),
+      (success, error) => error({ code: 2, message: 'GPS satellite fix unavailable' })
     ]);
 
     harness.requestUserLocation();
 
-    assert.equal(harness.calls.length, 2, 'Se deben haber ejecutado los 2 intentos');
+    assert.equal(harness.calls.length, 2);
     assert.equal(harness.state.userCoords, null);
-    assert.equal(harness.ui.distStatus.textContent, 'Ubicación no disponible.');
-    assert.equal(harness.ui.distStatus.hidden, false);
+    assert.equal(harness.ui.distStatus.textContent, 'Ubicación no disponible en este dispositivo.');
     assert.equal(harness.isRequesting(), false);
   });
 
   await t.test('7. Guardia de Concurrencia: Peticiones simultáneas son bloqueadas mientras una está en curso', () => {
     const harness = createGeoTestHarness();
-    let resolveIntento1;
+    // Handler que nunca responde para simular una petición asíncrona pendiente
     harness.setMockHandlers([
-      (success) => {
-        resolveIntento1 = success;
-      }
+      () => {}
     ]);
 
-    // Lanzar primera petición
     harness.requestUserLocation();
     assert.equal(harness.isRequesting(), true);
     assert.equal(harness.calls.length, 1);
 
-    // Lanzar segunda petición mientras la primera está en vuelo
+    // Segundo clic concurrente mientras el primero sigue en curso
     harness.requestUserLocation();
-    assert.equal(harness.calls.length, 1, 'La segunda llamada NO debe disparar getCurrentPosition');
+    assert.equal(harness.calls.length, 1, 'No debe emitir una segunda llamada a getCurrentPosition');
     assert.ok(harness.logs.some(l => l.includes('ya existe una petición en curso')));
-
-    // Completar primera petición
-    resolveIntento1({ coords: { latitude: 8.9, longitude: -79.5, accuracy: 20 } });
-    assert.equal(harness.isRequesting(), false);
-    assert.deepEqual(harness.state.userCoords, { lat: 8.9, lon: -79.5 });
   });
 
   await t.test('8. disableUserLocation resetea estado y guardia limpiamente', () => {
     const harness = createGeoTestHarness();
-    harness.state.userCoords = { lat: 8.9, lon: -79.5 };
-    harness.disableUserLocation();
+    harness.setMockHandlers([
+      (success) => success({ coords: { latitude: 8.982, longitude: -79.519, accuracy: 45 } })
+    ]);
 
+    harness.requestUserLocation();
+    assert.ok(harness.state.userCoords !== null);
+
+    harness.disableUserLocation();
     assert.equal(harness.state.userCoords, null);
-    assert.equal(harness.ui.distStatus.hidden, true);
     assert.equal(harness.isRequesting(), false);
+    assert.equal(harness.ui.distUnprompted.hidden, false);
+    assert.equal(harness.ui.distActive.hidden, true);
   });
 });

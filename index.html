@@ -29,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261028nav2">
+  <link rel="stylesheet" href="assets/style.css?v=20261029geo2">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261028nav2"></script>
+  <script defer src="assets/app.js?v=20261029geo2"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -318,11 +318,13 @@
                   <span class="dist-label">Tu distancia al epicentro:</span>
                   <strong id="distValue" class="dist-num mono">—</strong>
                 </div>
-                <small class="dist-note">Distancia aproximada en línea recta</small>
+                <small class="dist-note" id="distNote">Distancia aproximada en línea recta</small>
                 <div class="dist-actions">
-                  <button type="button" class="dist-action-link" id="btnRefreshGeo" title="Actualizar ubicación del navegador">↻ Actualizar mi ubicación</button>
+                  <button type="button" class="dist-refresh-btn" id="btnRefreshGeo" title="Actualizar ubicación del dispositivo" aria-label="Actualizar mi ubicación">
+                    <span>↻ Actualizar mi ubicación</span>
+                  </button>
                   <span class="dist-sep">·</span>
-                  <button type="button" class="dist-action-link danger" id="btnDisableGeo" title="Desactivar y borrar ubicación de la memoria">✕ Desactivar mi ubicación</button>
+                  <button type="button" class="dist-action-link danger" id="btnDisableGeo" title="Desactivar y borrar ubicación de la memoria">✕ Desactivar</button>
                 </div>
               </div>
               <div class="distance-status" id="distStatus" hidden></div>
@@ -1038,19 +1040,6 @@
             </p>
             <div class="distance-actions">
               <button type="button" id="btnWebPushGps" class="btn-dist-opt">📍 Usar mi ubicación actual (GPS)</button>
-              <select id="selectWebPushZone" class="select-dist-zone" aria-label="Elegir provincia fija">
-                <option value="">🗺️ Elegir provincia fija…</option>
-                <option value="Panamá|8.983|-79.520">Panamá (Centro)</option>
-                <option value="Panamá Oeste|8.880|-79.780">Panamá Oeste</option>
-                <option value="Chiriquí|8.430|-82.430">Chiriquí</option>
-                <option value="Bocas del Toro|9.333|-82.250">Bocas del Toro</option>
-                <option value="Coclé|8.500|-80.350">Coclé</option>
-                <option value="Colón|9.350|-79.900">Colón</option>
-                <option value="Herrera|7.960|-80.430">Herrera</option>
-                <option value="Los Santos|7.700|-80.300">Los Santos</option>
-                <option value="Veraguas|8.100|-80.980">Veraguas</option>
-                <option value="Darién|8.350|-77.950">Darién</option>
-              </select>
               <button type="button" id="btnWebPushClearDist" class="btn-dist-clear" style="display: none;">Desactivar distancia</button>
             </div>
           </div>

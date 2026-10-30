@@ -880,6 +880,32 @@ a {
   border-top: 1px solid var(--border-default);
 }
 
+.dist-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(233, 230, 216, 0.08);
+  border: 1px solid rgba(233, 230, 216, 0.35);
+  color: #E9E6D8;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dist-refresh-btn:hover {
+  background: rgba(233, 230, 216, 0.16);
+  border-color: #E9E6D8;
+}
+
+.dist-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .dist-action-link {
   background: none;
   border: none;
