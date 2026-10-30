@@ -16,6 +16,12 @@
   Content-Type: application/manifest+json; charset=utf-8
   Cache-Control: public, max-age=0, must-revalidate
 
+/assets/app.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/assets/style.css
+  Cache-Control: public, max-age=0, must-revalidate
+
 /assets/*
   Cache-Control: public, max-age=3600, must-revalidate
 
