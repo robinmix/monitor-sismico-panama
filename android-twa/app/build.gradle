@@ -58,8 +58,8 @@ android {
         applicationId "pa.sismodata.app"
         minSdkVersion 24
         targetSdkVersion 36
-        versionCode 13
-        versionName "1.0.12"
+        versionCode 14
+        versionName "1.0.13"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name

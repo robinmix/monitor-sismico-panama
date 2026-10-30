@@ -105,26 +105,31 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
             }
         }
 
-        // TÍTULO LIMPIO ESTÁNDAR: M3.5 · Nuevo sismo
-        String title = (data.get("title") != null && !data.get("title").isEmpty())
-                ? data.get("title")
-                : (magStr + " · Nuevo sismo");
+        // TÍTULO LIMPIO ESTÁNDAR: sismoPA · Nuevo sismo
+        String title = "sismoPA · Nuevo sismo";
 
-        // CUERPO: M3.5 · 60 km al sureste de Soná · 12 km prof. [· A 85 km de ti]
+        String cleanPlace = cleanLocationReference(lugar);
+
+        // CUERPO: 1. Magnitud, 2. Distancia personalizada, 3. Referencia limpia, 4. Profundidad
+        // Ejemplo: M3.5 · A 125 km de ti · 36 km al este de Tonosí · 7 km prof.
         StringBuilder sb = new StringBuilder();
-        sb.append(magStr).append(" · ").append(lugar);
-        if (profKm != null && !profKm.isEmpty()) {
-            try {
-                int p = Math.round(Float.parseFloat(profKm));
-                sb.append(" · ").append(p).append(" km prof.");
-            } catch (Exception ignored) {}
-        }
+        sb.append(magStr);
+
         if (personalizedDistKm != null) {
             if (personalizedDistKm <= 0) {
                 sb.append(" · A menos de 1 km de ti");
             } else {
                 sb.append(" · A ").append(personalizedDistKm).append(" km de ti");
             }
+        }
+
+        sb.append(" · ").append(cleanPlace);
+
+        if (profKm != null && !profKm.isEmpty()) {
+            try {
+                int p = Math.round(Float.parseFloat(profKm));
+                sb.append(" · ").append(p).append(" km prof.");
+            } catch (Exception ignored) {}
         }
         String body = sb.toString();
 
@@ -181,5 +186,20 @@ public class SismoFirebaseMessagingService extends FirebaseMessagingService {
     @Deprecated
     public static void syncTokenWithServer(Context context, String token, boolean subscribe) {
         // No-op seguro: el despacho se realiza a nivel de topic general sin almacenar tokens individuales.
+    }
+
+    /**
+     * Limpia la referencia geográfica eliminando la expresión «Localizado en»
+     * y prefijos redundantes reportados por el IGC-UP.
+     */
+    public static String cleanLocationReference(String lugar) {
+        if (lugar == null || lugar.trim().isEmpty()) {
+            return "Panamá";
+        }
+        String clean = lugar.trim();
+        clean = clean.replaceFirst("(?i)^Localizado\\s+en\\s+.*?\\s+a\\s+(?=\\d+\\s*km)", "");
+        clean = clean.replaceFirst("(?i)^Localizado\\s+en\\s+", "");
+        clean = clean.replaceFirst("(?i)^(\\d+)\\s*km\\b", "$1 km");
+        return clean.trim().isEmpty() ? "Panamá" : clean.trim();
     }
 }
