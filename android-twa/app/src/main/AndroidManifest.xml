@@ -233,6 +233,26 @@
 
             <activity
             android:name="com.google.androidbrowserhelper.locationdelegation.PermissionRequestActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".LocationPermissionActivity"
+            android:label="Permiso de ubicación sismoPA"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sismopa" android:host="request-location" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sismopa" android:host="location" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

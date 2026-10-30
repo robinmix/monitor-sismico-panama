@@ -104,10 +104,15 @@ public class LauncherActivity
 
         Log.i(TAG, "Intent recibido con URI: " + data);
 
-        // Si es un enlace nativo de sismoPA para ajustes de notificaciones
+        // Si es un enlace nativo de sismoPA
         if ("sismopa".equalsIgnoreCase(scheme)) {
-            Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
-            startActivity(settingsIntent);
+            if ("request-location".equalsIgnoreCase(host) || "location".equalsIgnoreCase(host)) {
+                Intent permIntent = new Intent(this, LocationPermissionActivity.class);
+                startActivity(permIntent);
+            } else {
+                Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
+                startActivity(settingsIntent);
+            }
         }
     }
 
@@ -187,6 +192,9 @@ public class LauncherActivity
         } else if (message.contains("OPEN_SETTINGS") || message.contains("OPEN_NOTIFICATIONS")) {
             Intent settingsIntent = new Intent(this, SismoNotificationSettingsActivity.class);
             startActivity(settingsIntent);
+        } else if (message.contains("REQUEST_LOCATION_PERMISSION")) {
+            Intent permIntent = new Intent(this, LocationPermissionActivity.class);
+            startActivity(permIntent);
         }
     }
 
