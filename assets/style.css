@@ -7119,12 +7119,88 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
 }
 
 /* Asegurar que todos los contenidos permanezcan al frente con legibilidad óptima */
+/* Asegurar que todos los contenidos permanezcan al frente con legibilidad óptima tanto en escritorio como en móvil.
+   Nota crítica: En escritorio, .hero-center-row y .hero-actions-grid usan 'display: contents', por lo que
+   sus elementos hijos (.hero-info-stack, .hero-circle-container, .hero-btn-primary, .user-distance-card)
+   deben tener 'position: relative; z-index: 2' explícito para no quedar debajo de .last-event::before */
 .last-top,
 .hero-center-row,
+.hero-circle-container,
+.hero-info-stack,
+.hero-region-title,
+.hero-params-line,
 .hero-actions-grid,
+.hero-btn-primary,
+.user-distance-card,
 .timer-box {
-  position: relative;
-  z-index: 1;
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+/* Refuerzo de contraste de alto impacto para botones y enlaces dentro de la tarjeta */
+.hero-btn-primary {
+  background: #E9E6D8 !important;
+  color: #161716 !important;
+  border: 1px solid rgba(22, 23, 22, 0.15) !important;
+}
+
+.hero-btn-primary:hover {
+  background: #DCD7C3 !important;
+  color: #161716 !important;
+}
+
+.hero-btn-primary:active {
+  background: #D0CAB4 !important;
+  color: #161716 !important;
+}
+
+.hero-btn-primary:focus-visible {
+  outline: 2px solid #E9E6D8 !important;
+  outline-offset: 2px !important;
+}
+
+.hero-btn-primary .hero-btn-arrow {
+  stroke: #161716 !important;
+}
+
+.geo-dist-btn {
+  color: #E9E6D8 !important;
+  border-color: #CFC9B5 !important;
+}
+
+.geo-dist-btn:hover {
+  background: rgba(233, 230, 216, 0.10) !important;
+  border-color: #E9E6D8 !important;
+  color: #E9E6D8 !important;
+}
+
+.geo-dist-btn:focus-visible {
+  outline: 2px solid #E9E6D8 !important;
+  outline-offset: 2px !important;
+}
+
+.geo-dist-icon {
+  color: #E9E6D8 !important;
+}
+
+.dist-label {
+  color: var(--text-secondary) !important;
+}
+
+.dist-num {
+  color: var(--color-cyan) !important;
+}
+
+.dist-action-link {
+  color: var(--color-cyan) !important;
+}
+
+.dist-action-link:hover {
+  opacity: 0.8 !important;
+}
+
+.dist-action-link.danger {
+  color: var(--color-coral) !important;
 }
 
 /* En tema claro: desactivar el fondo geológico oscuro para preservar contraste y legibilidad */
