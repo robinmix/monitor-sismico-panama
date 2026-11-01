@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261030v14';
+  const APP_BUILD_VERSION = '20261031v1';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&
@@ -574,7 +574,23 @@
     const vals = [low,three,four,five];
     ['Below3','3','4','5'].forEach((k,i) => {set('stat'+k,num(vals[i]));set('pct'+k,pct(vals[i],all));set('legend'+k,num(vals[i]));});
     set('statTotal',num(all));
-    set('statTotalHint',`${num(state.events.length)} en la lista de la fuente`);
+    set('statTotalHint', `${num(state.events.length)} en la lista de la fuente`);
+    const periodHours = f.period ? Number(f.period.value) : 168;
+    let periodTitle = 'SISMOS EN PERÍODO';
+    if (periodHours === 168) {
+      periodTitle = 'SISMOS EN LOS ÚLTIMOS 7 DÍAS';
+    } else if (periodHours === 72) {
+      periodTitle = 'SISMOS EN LAS ÚLTIMAS 72 HORAS';
+    } else if (periodHours === 48) {
+      periodTitle = 'SISMOS EN LAS ÚLTIMAS 48 HORAS';
+    } else if (periodHours === 24) {
+      periodTitle = 'SISMOS EN LAS ÚLTIMAS 24 HORAS';
+    } else if (periodHours === 12) {
+      periodTitle = 'SISMOS EN LAS ÚLTIMAS 12 HORAS';
+    } else if (periodHours === 0) {
+      periodTitle = 'SISMOS EN TODO EL HISTORIAL';
+    }
+    set('statTotalTitle', periodTitle);
     if (all) {
       const pLow = (low / all * 100);
       const p3 = (three / all * 100);

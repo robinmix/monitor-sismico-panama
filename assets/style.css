@@ -921,55 +921,60 @@ a {
 .timer-box {
   background: var(--bg-surface-2);
   border: 1px solid var(--border-default);
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
+  text-align: center;
 }
 
 .timer-label {
   font-family: var(--font-sans);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--text-muted);
-  letter-spacing: 0.4px;
-  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
   text-transform: uppercase;
+  text-align: center;
 }
 
 .live-counter {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  justify-content: center;
+  gap: 8px;
 }
 
 .counter-unit {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 40px;
+  min-width: 44px;
 }
 
 .counter-unit strong {
   font-family: var(--font-mono);
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   color: var(--text-main);
   line-height: 1;
 }
 
 .counter-unit small {
   font-family: var(--font-sans);
-  font-size: 8.5px;
+  font-size: 9px;
   font-weight: 700;
   color: var(--text-muted);
-  letter-spacing: 0.3px;
-  margin-top: 2px;
+  letter-spacing: 0.4px;
+  margin-top: 3px;
+  text-align: center;
 }
 
 .counter-sep {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--color-cyan);
   position: relative;
   top: -4px;
@@ -977,16 +982,11 @@ a {
 }
 
 .last-foot {
-  grid-column: 1 / -1;
-  grid-row: 4;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: var(--sp-2);
-  font-size: 11px;
-  color: var(--text-dim);
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
+  display: none !important;
+}
+
+#statTotalHint {
+  display: none !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -7021,4 +7021,11 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
 
 [data-active-tab="historial"] #tableFooter {
   display: flex !important;
+}
+
+
+@media (max-width: 360px) {
+  .live-counter { gap: 4px; }
+  .counter-unit { min-width: 36px; }
+  .counter-unit strong { font-size: 20px; }
 }

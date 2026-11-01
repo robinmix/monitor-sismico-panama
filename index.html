@@ -29,10 +29,10 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
-  <link rel="stylesheet" href="assets/style.css?v=20261030v14">
+  <link rel="stylesheet" href="assets/style.css?v=20261031v1">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
-  <script defer src="assets/app.js?v=20261030v14"></script>
+  <script defer src="assets/app.js?v=20261031v1"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -343,7 +343,7 @@
             </div>
           </div>
 
-          <div class="last-foot">
+          <div class="last-foot" style="display: none;">
             <span id="snapshotStatus">Esperando primera lectura…</span>
           </div>
         </div>
@@ -354,8 +354,8 @@
       <section class="metrics" aria-label="Estadísticas por rango de magnitud">
         <div class="metric primary">
           <div class="metric-tag">
-            <span>TOTAL EN PERÍODO</span>
-            <span id="statTotalHint">Eventos registrados</span>
+            <span id="statTotalTitle">SISMOS EN LOS ÚLTIMOS 7 DÍAS</span>
+            <span id="statTotalHint" style="display: none;">Eventos registrados</span>
           </div>
           <strong id="statTotal">—</strong>
           <div class="stat-dist-bar" id="statDistributionBar" aria-hidden="true">
