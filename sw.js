@@ -13,8 +13,8 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261031v2`,
-  static: `${CACHE_PREFIX}static-v20261031v2`,
+  core: `${CACHE_PREFIX}core-v20261031strata1`,
+  static: `${CACHE_PREFIX}static-v20261031strata1`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
 
@@ -29,6 +29,7 @@ const CORE_ASSETS = [
 // Activos estáticos locales
 const STATIC_ASSETS = [
   './manifest.webmanifest',
+  './assets/hero-strata.jpg',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/badge-96.png',

@@ -7092,3 +7092,47 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
   .counter-unit { min-width: 36px !important; }
   .counter-unit strong { font-size: 20px !important; }
 }
+
+/* --------------------------------------------------------------------------
+   FONDO DE CAPAS GEOLÓGICAS OSCURAS (TARJETA ÚLTIMO SISMO)
+   -------------------------------------------------------------------------- */
+.last-event {
+  position: relative !important;
+  overflow: hidden !important;
+  background-color: #0b0d12 !important;
+}
+
+.last-event::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(to bottom, rgba(5, 7, 11, 0.40) 0%, rgba(5, 7, 11, 0.15) 45%, rgba(0, 0, 0, 0.65) 100%),
+    url("hero-strata.jpg");
+  background-size: cover;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  opacity: 0.90;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 0.25s ease;
+}
+
+/* Asegurar que todos los contenidos permanezcan al frente con legibilidad óptima */
+.last-top,
+.hero-center-row,
+.hero-actions-grid,
+.timer-box {
+  position: relative;
+  z-index: 1;
+}
+
+/* En tema claro: desactivar el fondo geológico oscuro para preservar contraste y legibilidad */
+html[data-theme="light"] .last-event::before {
+  display: none !important;
+}
+
+html[data-theme="light"] .last-event,
+html[data-theme="light"] #lastEventPanel {
+  background: #FFFFFF !important;
+}

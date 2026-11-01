@@ -53,4 +53,18 @@ test('Suite Visual Improvements — Pantalla Principal Sismos', async (t) => {
     assert.ok(js.includes('timeout: 8000') && js.includes('maximumAge: 300000'), 'GPS Intento 1 intacto');
     assert.ok(js.includes('timeout: 20000') && js.includes('maximumAge: 60000'), 'GPS Intento 2 intacto');
   });
+  await t.test('6. Fondo de capas geológicas oscuras en tarjeta principal (.last-event)', () => {
+    // Check image file exists and size < 30KB
+    const imgPath = path.join(root, 'assets/hero-strata.jpg');
+    assert.ok(fs.existsSync(imgPath), 'hero-strata.jpg debe existir en assets/');
+    const stat = fs.statSync(imgPath);
+    assert.ok(stat.size > 0 && stat.size < 30000, 'hero-strata.jpg debe estar optimizado (< 30KB)');
+
+    // Check CSS rules
+    assert.ok(css.includes('url("hero-strata.jpg")'), 'Debe aplicar hero-strata.jpg en .last-event::before');
+    assert.ok(css.includes('.last-event::before'), 'Debe existir regla .last-event::before');
+    assert.match(css, /\.last-event::before\s*\{[^}]*pointer-events:\s*none;/, 'Debe tener pointer-events: none para no interferir con clicks');
+    assert.match(css, /\.last-event::before\s*\{[^}]*z-index:\s*0;/, 'Debe situarse en z-index: 0 detrás de los elementos');
+    assert.match(css, /html\[data-theme="light"\]\s+\.last-event::before\s*\{\s*display:\s*none\s*!important;\s*\}/, 'En tema claro debe desactivarse el fondo oscuro');
+  });
 });
