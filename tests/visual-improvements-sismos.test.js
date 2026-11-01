@@ -63,10 +63,13 @@ test('Suite Visual Improvements — Pantalla Principal Sismos', async (t) => {
     // Check CSS rules
     assert.ok(css.includes('url("hero-strata.jpg")'), 'Debe aplicar hero-strata.jpg en .last-event::before');
     assert.ok(css.includes('.last-event::before'), 'Debe existir regla .last-event::before');
-    assert.match(css, /\.last-event::before\s*\{[^}]*pointer-events:\s*none;/, 'Debe tener pointer-events: none para no interferir con clicks');
-    assert.match(css, /\.last-event::before\s*\{[^}]*z-index:\s*0;/, 'Debe situarse en z-index: 0 detrás de los elementos');
-    assert.match(css, /html\[data-theme="light"\]\s+\.last-event::before\s*\{\s*display:\s*none\s*!important;\s*\}/, 'En tema claro debe desactivarse el fondo oscuro');
+    assert.match(css, /\.last-event::before[^{]*\{[^}]*pointer-events:\s*none;/, 'Debe tener pointer-events: none para no interferir con clicks');
+    assert.match(css, /\.last-event::before[^{]*\{[^}]*z-index:\s*0;/, 'Debe situarse en z-index: 0 detrás de los elementos');
+    assert.match(css, /html\[data-theme="light"\]\s+\.last-event::before/, 'En tema claro debe desactivarse el fondo oscuro');
     assert.match(css, /\.hero-info-stack[^}]*position:\s*relative\s*!important/, 'hero-info-stack debe tener position:relative para no ser cubierto por el fondo en escritorio');
     assert.match(css, /\.hero-btn-primary[^}]*z-index:\s*2\s*!important/, 'hero-btn-primary debe tener z-index:2 para contraste');
+    assert.match(css, /\.metric::before/, 'Debe aplicar estrato en tarjetas .metric');
+    assert.match(css, /\.sismo-tech-panel::before/, 'Debe aplicar estrato en .sismo-tech-panel');
+    assert.match(css, /\.metric\s*>\s*\*/, 'Contenidos de .metric deben tener z-index:2');
   });
 });

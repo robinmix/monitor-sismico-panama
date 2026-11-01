@@ -13,8 +13,8 @@
 
 const CACHE_PREFIX = 'sismodata-';
 const CURRENT_CACHES = {
-  core: `${CACHE_PREFIX}core-v20261031strata2`,
-  static: `${CACHE_PREFIX}static-v20261031strata2`,
+  core: `${CACHE_PREFIX}core-v20261031strata3`,
+  static: `${CACHE_PREFIX}static-v20261031strata3`,
   vendor: `${CACHE_PREFIX}vendor-v1`
 };
 

@@ -7094,15 +7094,19 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
 }
 
 /* --------------------------------------------------------------------------
-   FONDO DE CAPAS GEOLÓGICAS OSCURAS (TARJETA ÚLTIMO SISMO)
+   FONDO DE CAPAS GEOLÓGICAS OSCURAS (TARJETAS COMPATIBLES: HERO, KPIS, FICHA)
    -------------------------------------------------------------------------- */
-.last-event {
+.last-event,
+.metric,
+.sismo-tech-panel {
   position: relative !important;
   overflow: hidden !important;
   background-color: #0b0d12 !important;
 }
 
-.last-event::before {
+.last-event::before,
+.metric::before,
+.sismo-tech-panel::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -7112,13 +7116,16 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
   background-size: cover;
   background-position: center bottom;
   background-repeat: no-repeat;
-  opacity: 0.90;
+  opacity: 0.70;
   pointer-events: none;
   z-index: 0;
   transition: opacity 0.25s ease;
 }
 
-/* Asegurar que todos los contenidos permanezcan al frente con legibilidad óptima */
+.last-event::before {
+  opacity: 0.90;
+}
+
 /* Asegurar que todos los contenidos permanezcan al frente con legibilidad óptima tanto en escritorio como en móvil.
    Nota crítica: En escritorio, .hero-center-row y .hero-actions-grid usan 'display: contents', por lo que
    sus elementos hijos (.hero-info-stack, .hero-circle-container, .hero-btn-primary, .user-distance-card)
@@ -7132,7 +7139,9 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
 .hero-actions-grid,
 .hero-btn-primary,
 .user-distance-card,
-.timer-box {
+.timer-box,
+.metric > *,
+.sismo-tech-panel > * {
   position: relative !important;
   z-index: 2 !important;
 }
@@ -7203,12 +7212,16 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
   color: var(--color-coral) !important;
 }
 
-/* En tema claro: desactivar el fondo geológico oscuro para preservar contraste y legibilidad */
-html[data-theme="light"] .last-event::before {
+/* En tema claro: desactivar el fondo geológico oscuro en todas las tarjetas para preservar contraste y legibilidad */
+html[data-theme="light"] .last-event::before,
+html[data-theme="light"] .metric::before,
+html[data-theme="light"] .sismo-tech-panel::before {
   display: none !important;
 }
 
 html[data-theme="light"] .last-event,
-html[data-theme="light"] #lastEventPanel {
+html[data-theme="light"] #lastEventPanel,
+html[data-theme="light"] .metric,
+html[data-theme="light"] .sismo-tech-panel {
   background: #FFFFFF !important;
 }
