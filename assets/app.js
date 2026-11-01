@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const APP_BUILD_VERSION = '20261031v1';
+  const APP_BUILD_VERSION = '20261031v2';
   console.info(`[sismoPA] Monitor Sísmico activo (${APP_BUILD_VERSION})`);
   const TZ = 'America/Panama';
   const IS_LOCAL = typeof window !== 'undefined' &&

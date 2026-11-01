@@ -7029,3 +7029,66 @@ html[data-theme="light"] .sismo-mobile-card:hover .card-chevron {
   .counter-unit { min-width: 36px; }
   .counter-unit strong { font-size: 20px; }
 }
+
+/* --------------------------------------------------------------------------
+   CENTRO Y REALCE DEL CONTADOR SISMOPA (PANTALLA SISMOS)
+   -------------------------------------------------------------------------- */
+.timer-box {
+  text-align: center !important;
+}
+
+.timer-label {
+  text-align: center !important;
+}
+
+.live-counter {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+}
+
+.counter-unit {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  min-width: 44px !important;
+}
+
+.counter-unit strong {
+  font-family: var(--font-mono) !important;
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  font-variant-numeric: tabular-nums !important;
+  color: var(--text-main) !important;
+  line-height: 1 !important;
+}
+
+.counter-unit small {
+  display: block !important;
+  font-family: var(--font-sans) !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  color: var(--text-muted) !important;
+  letter-spacing: 0.4px !important;
+  margin-top: 3px !important;
+  text-align: center !important;
+}
+
+.counter-sep {
+  display: inline-block !important;
+  font-family: var(--font-mono) !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  font-variant-numeric: tabular-nums !important;
+  color: var(--color-cyan) !important;
+  position: relative !important;
+  top: -4px !important;
+  opacity: 0.7 !important;
+}
+
+@media (max-width: 360px) {
+  .live-counter { gap: 4px !important; }
+  .counter-unit { min-width: 36px !important; }
+  .counter-unit strong { font-size: 20px !important; }
+}
