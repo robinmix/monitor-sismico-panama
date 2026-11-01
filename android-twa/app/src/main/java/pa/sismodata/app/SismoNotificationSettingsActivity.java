@@ -81,27 +81,30 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(20), dp(24), dp(20), dp(32));
+        layout.setPadding(dp(16), dp(18), dp(16), dp(20));
 
         // Título de la pantalla
         TextView title = new TextView(this);
         title.setText("Notificaciones Sísmicas");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setGravity(Gravity.CENTER);
         layout.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Avisos informativos de sismicidad para Panamá");
+        subtitle.setText("Avisos informativos de sismos en Panamá");
+        subtitle.setGravity(Gravity.CENTER);
         subtitle.setTextColor(Color.parseColor("#9E9E9E"));
-        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        subtitle.setPadding(0, dp(4), 0, dp(16));
+        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        subtitle.setPadding(0, dp(2), 0, dp(12));
         layout.addView(subtitle);
 
         // Tarjeta de Estado FCM
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
         GradientDrawable cardBg = new GradientDrawable();
         cardBg.setColor(Color.parseColor("#10141D"));
         cardBg.setCornerRadius(dp(12));
@@ -110,13 +113,14 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         // Badge de estado
         mStatusBadge = new TextView(this);
-        mStatusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mStatusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         mStatusBadge.setTypeface(Typeface.DEFAULT_BOLD);
-        mStatusBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
+        mStatusBadge.setPadding(dp(10), dp(3), dp(10), dp(3));
         mStatusBadge.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        badgeParams.bottomMargin = dp(12);
+        badgeParams.gravity = Gravity.CENTER_HORIZONTAL;
+        badgeParams.bottomMargin = dp(8);
         card.addView(mStatusBadge, badgeParams);
 
         // Soporte técnico discreto (pulsación prolongada para copiar token si es necesario)
@@ -127,7 +131,8 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         // Descripción de estado
         mStatusDesc = new TextView(this);
-        mStatusDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        mStatusDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mStatusDesc.setGravity(Gravity.CENTER);
         mStatusDesc.setTextColor(Color.parseColor("#CFD8DC"));
         mStatusDesc.setLineSpacing(dp(2), 1.15f);
         card.addView(mStatusDesc);
@@ -136,18 +141,19 @@ public class SismoNotificationSettingsActivity extends Activity {
         mErrorDesc = new TextView(this);
         mErrorDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         mErrorDesc.setTextColor(Color.parseColor("#EF5350"));
-        mErrorDesc.setPadding(0, dp(8), 0, 0);
+        mErrorDesc.setPadding(0, dp(6), 0, 0);
+        mErrorDesc.setGravity(Gravity.CENTER);
         mErrorDesc.setVisibility(View.GONE);
         card.addView(mErrorDesc);
 
         // Botón principal de acción FCM
         mBtnAction = new Button(this);
-        mBtnAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        mBtnAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         mBtnAction.setTypeface(Typeface.DEFAULT_BOLD);
-        mBtnAction.setPadding(0, dp(12), 0, dp(12));
+        mBtnAction.setPadding(0, dp(10), 0, dp(10));
         LinearLayout.LayoutParams btnActionParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        btnActionParams.topMargin = dp(16);
+        btnActionParams.topMargin = dp(10);
         card.addView(mBtnAction, btnActionParams);
 
         layout.addView(card);
@@ -164,14 +170,16 @@ public class SismoNotificationSettingsActivity extends Activity {
         mBtnTest.setBackground(testBg);
         LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        testParams.topMargin = dp(12);
+        mBtnTest.setPadding(0, dp(10), 0, dp(10));
+        testParams.topMargin = dp(10);
 
         // =====================================================================
         // TARJETA COMPACTA: DISTANCIA EN NOTIFICACIONES (DISEÑO SOLICITADO)
         // =====================================================================
         mDistCard = new LinearLayout(this);
         mDistCard.setOrientation(LinearLayout.VERTICAL);
-        mDistCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        mDistCard.setPadding(dp(14), dp(10), dp(14), dp(10));
+        mDistCard.setGravity(Gravity.CENTER_HORIZONTAL);
         GradientDrawable distCardBg = new GradientDrawable();
         distCardBg.setColor(Color.parseColor("#10141D"));
         distCardBg.setCornerRadius(dp(10));
@@ -180,20 +188,22 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         LinearLayout.LayoutParams distCardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        distCardParams.topMargin = dp(12);
+        distCardParams.topMargin = dp(10);
 
         // Título breve: Distancia en notificaciones
         TextView distTitle = new TextView(this);
         distTitle.setText("Distancia en notificaciones");
         distTitle.setTextColor(Color.WHITE);
-        distTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        distTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        distTitle.setGravity(Gravity.CENTER);
         distTitle.setTypeface(Typeface.DEFAULT_BOLD);
         mDistCard.addView(distTitle);
 
         // Estado: Desactivada / GPS activado
         mDistStatus = new TextView(this);
-        mDistStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        mDistStatus.setPadding(0, dp(4), 0, dp(10));
+        mDistStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        mDistStatus.setGravity(Gravity.CENTER);
+        mDistStatus.setPadding(0, dp(3), 0, dp(8));
         mDistCard.addView(mDistStatus);
 
         // Botón cuando está desactivada: [ACTIVAR GPS]
@@ -205,6 +215,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         GradientDrawable gpsBg = new GradientDrawable();
         gpsBg.setColor(Color.parseColor("#1B5E20"));
         gpsBg.setCornerRadius(dp(8));
+        mBtnGps.setPadding(0, dp(10), 0, dp(10));
         mBtnGps.setBackground(gpsBg);
         LinearLayout.LayoutParams gpsParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -215,6 +226,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         mActiveActionRow.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mActiveActionRow.setGravity(Gravity.CENTER);
         mActiveActionRow.setVisibility(View.GONE);
 
         mBtnUpdateGps = new Button(this);
@@ -225,6 +237,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         GradientDrawable updateBg = new GradientDrawable();
         updateBg.setColor(Color.parseColor("#1B5E20"));
         updateBg.setCornerRadius(dp(8));
+        mBtnUpdateGps.setPadding(0, dp(10), 0, dp(10));
         mBtnUpdateGps.setBackground(updateBg);
         LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -239,6 +252,7 @@ public class SismoNotificationSettingsActivity extends Activity {
         clearBg.setColor(Color.parseColor("#261C1F"));
         clearBg.setCornerRadius(dp(8));
         clearBg.setStroke(dp(1), Color.parseColor("#5C2028"));
+        mBtnClearLoc.setPadding(0, dp(10), 0, dp(10));
         mBtnClearLoc.setBackground(clearBg);
         LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -253,7 +267,8 @@ public class SismoNotificationSettingsActivity extends Activity {
         // Tarjeta informativa y de transparencia
         LinearLayout infoCard = new LinearLayout(this);
         infoCard.setOrientation(LinearLayout.VERTICAL);
-        infoCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        infoCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+        infoCard.setGravity(Gravity.CENTER_HORIZONTAL);
         GradientDrawable infoBg = new GradientDrawable();
         infoBg.setColor(Color.parseColor("#0D111A"));
         infoBg.setCornerRadius(dp(12));
@@ -262,21 +277,23 @@ public class SismoNotificationSettingsActivity extends Activity {
 
         LinearLayout.LayoutParams infoParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        infoParams.topMargin = dp(14);
+        infoParams.topMargin = dp(10);
 
         TextView infoTitle = new TextView(this);
-        infoTitle.setText("Información sobre el servicio");
+        infoTitle.setText("Información del servicio");
+        infoTitle.setGravity(Gravity.CENTER);
         infoTitle.setTextColor(Color.parseColor("#90CAF9"));
-        infoTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        infoTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         infoTitle.setTypeface(Typeface.DEFAULT_BOLD);
         infoCard.addView(infoTitle);
 
         TextView infoText = new TextView(this);
-        infoText.setText("• Fuente de datos: Instituto de Geociencias de la Universidad de Panamá (IGC-UP).\n\n• sismoPA es una iniciativa comunitaria de monitoreo y divulgación sísmica. No es un sistema de alerta temprana ante terremotos.\n\n• Las coordenadas de ubicación para distancia se procesan exclusivamente en este dispositivo y nunca se transmiten a servidores externos.");
+        infoText.setText("• Fuente: Instituto de Geociencias de la Universidad de Panamá (IGC-UP).\n• Avisos informativos comunitarios, no alerta temprana de terremotos.\n• Las coordenadas se procesan en tu dispositivo y nunca se transmiten a servidores.");
         infoText.setTextColor(Color.parseColor("#90A4AE"));
-        infoText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        infoText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        infoText.setGravity(Gravity.CENTER);
         infoText.setLineSpacing(dp(2), 1.2f);
-        infoText.setPadding(0, dp(8), 0, 0);
+        infoText.setPadding(0, dp(6), 0, 0);
         infoCard.addView(infoText);
 
         layout.addView(infoCard, infoParams);
@@ -284,13 +301,14 @@ public class SismoNotificationSettingsActivity extends Activity {
         // Botón volver / cerrar
         mBtnDismiss = new Button(this);
         mBtnDismiss.setText("Volver al Monitor");
-        mBtnDismiss.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        mBtnDismiss.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        mBtnDismiss.setPadding(0, dp(8), 0, dp(8));
         mBtnDismiss.setTextColor(Color.parseColor("#B0BEC5"));
         mBtnDismiss.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams dismissParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dismissParams.topMargin = dp(12);
-        dismissParams.bottomMargin = dp(16);
+        dismissParams.topMargin = dp(8);
+        dismissParams.bottomMargin = dp(12);
         layout.addView(mBtnDismiss, dismissParams);
 
         scrollView.addView(layout);
@@ -335,7 +353,8 @@ public class SismoNotificationSettingsActivity extends Activity {
                 mStatusBadge.setTextColor(Color.parseColor("#E8F5E9"));
                 badgeBg.setColor(Color.parseColor("#2E7D32"));
                 mStatusBadge.setBackground(badgeBg);
-                mStatusDesc.setText("Notificaciones activas. Recibirás avisos informativos cuando el IGC-UP publique nuevos reportes sísmicos en Panamá.");
+                mStatusDesc.setText("Recibirás avisos cuando el IGC-UP publique nuevos reportes sísmicos.");
+                mStatusDesc.setGravity(Gravity.CENTER);
                 mErrorDesc.setVisibility(View.GONE);
 
                 mBtnAction.setText("Desactivar Alertas");
