@@ -7225,3 +7225,23 @@ html[data-theme="light"] .metric,
 html[data-theme="light"] .sismo-tech-panel {
   background: #FFFFFF !important;
 }
+
+/* Filtros geográficos del historial sísmico */
+#fieldHistProvince,
+#fieldHistDistrict {
+  min-width: 170px;
+}
+
+.field.compact select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(18, 19, 18, 0.6) !important;
+  border-color: #272A27 !important;
+  color: #64748B !important;
+}
+
+html[data-theme="light"] .field.compact select:disabled {
+  background: #F1F5F9 !important;
+  border-color: #E2E8F0 !important;
+  color: #94A3B8 !important;
+}

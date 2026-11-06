@@ -208,8 +208,32 @@ test('Suite Historial Sísmico Permanente — Supabase Production', async (t) =>
   });
 
   await t.test('9. sw.js y index.html sincronizan clave de caché renovada v20261027history1', () => {
-    assert.ok(swJs.includes('core-v20261031strata3') || swJs.includes('core-v20261031strata2') || swJs.includes('core-v20261031strata1'), 'sw.js debe contener clave de cache renovada');
-    assert.ok(indexHtml.includes('assets/style.css?v=20261031strata3') || indexHtml.includes('assets/style.css?v=20261031strata2') || indexHtml.includes('assets/style.css?v=20261031strata1'), 'index.html debe solicitar style.css versionado');
-    assert.ok(indexHtml.includes('assets/app.js?v=20261031strata3') || indexHtml.includes('assets/app.js?v=20261031strata2') || indexHtml.includes('assets/app.js?v=20261031strata1'), 'index.html debe solicitar app.js versionado');
+    assert.ok(swJs.includes('core-v20261106histgeo1') || swJs.includes('core-v20261031strata3') || swJs.includes('core-v20261031strata2') || swJs.includes('core-v20261031strata1'), 'sw.js debe contener clave de cache renovada');
+    assert.ok(indexHtml.includes('assets/style.css?v=20261106histgeo1') || indexHtml.includes('assets/style.css?v=20261031strata3') || indexHtml.includes('assets/style.css?v=20261031strata2') || indexHtml.includes('assets/style.css?v=20261031strata1'), 'index.html debe solicitar style.css versionado');
+    assert.ok(indexHtml.includes('assets/app.js?v=20261106histgeo1') || indexHtml.includes('assets/app.js?v=20261031strata3') || indexHtml.includes('assets/app.js?v=20261031strata2') || indexHtml.includes('assets/app.js?v=20261031strata1'), 'index.html debe solicitar app.js versionado');
+  });
+  await t.test('10. Filtros geográficos: parseAndValidateParams procesa provincia y distrito correctamente', () => {
+    const valid = parseAndValidateParams({ anio: '2026', provincia: 'Chiriquí', distrito: 'Tierras Altas' });
+    assert.equal(valid.isValid, true);
+    assert.equal(valid.filters.provincia, 'Chiriquí');
+    assert.equal(valid.filters.distrito, 'Tierras Altas');
+
+    const allProv = parseAndValidateParams({ anio: '2026', provincia: 'todas', distrito: 'todos' });
+    assert.equal(allProv.isValid, true);
+    assert.equal(allProv.filters.provincia, null);
+    assert.equal(allProv.filters.distrito, null);
+
+    const tooLong = parseAndValidateParams({ anio: '2026', provincia: 'A'.repeat(101) });
+    assert.equal(tooLong.isValid, false);
+    assert.ok(tooLong.errors[0].includes('80 caracteres'));
+  });
+
+  await t.test('11. UI de filtros geográficos en index.html y app.js con catálogo de 83 distritos', () => {
+    assert.ok(indexHtml.includes('id="histProvince"'), 'index.html debe tener select histProvince');
+    assert.ok(indexHtml.includes('id="histDistrict"'), 'index.html debe tener select histDistrict');
+    assert.ok(indexHtml.includes('Todas las provincias y comarcas'), 'Debe incluir opción por defecto de provincias');
+    assert.ok(indexHtml.includes('Todos los distritos'), 'Debe incluir opción por defecto de distritos');
+    assert.ok(appJs.includes('PANAMA_GEO_CATALOG'), 'app.js debe definir catálogo territorial oficial');
+    assert.ok(appJs.includes('function updateHistDistricts('), 'app.js debe definir updateHistDistricts');
   });
 });

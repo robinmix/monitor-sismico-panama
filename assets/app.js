@@ -1202,6 +1202,10 @@
         params.set('desde', dateIso);
         params.set('hasta', dateIso);
       }
+      const histProv = ui.histProvince?.value;
+      const histDist = ui.histDistrict?.value;
+      if (histProv) params.set('provincia', histProv);
+      if (histDist) params.set('distrito', histDist);
     }
 
     try {
@@ -1527,6 +1531,39 @@
   function getDaysInMonth(year, month) {
     if (!year || !month) return 31;
     return new Date(Number(year), Number(month), 0).getDate();
+  }
+
+
+  const PANAMA_GEO_CATALOG = {
+    'Bocas del Toro': ['Almirante', 'Bocas del Toro', 'Changuinola', 'Chiriquí Grande', 'Comarca Naso Tjër Di'],
+    'Chiriquí': ['Alanje', 'Barú', 'Boquerón', 'Boquete', 'Bugaba', 'David', 'Dolega', 'Gualaca', 'Remedios', 'Renacimiento', 'San Félix', 'San Lorenzo', 'Tierras Altas', 'Tolé'],
+    'Coclé': ['Aguadulce', 'Antón', 'La Pintada', 'Natá', 'Olá', 'Penonomé'],
+    'Colón': ['Chagres', 'Colón', 'Donoso', 'Omar Torrijos Herrera', 'Portobelo', 'Santa Isabel'],
+    'Darién': ['Chepigana', 'Pinogana', 'Santa Fe'],
+    'Herrera': ['Chitré', 'Las Minas', 'Los Pozos', 'Ocú', 'Parita', 'Pesé', 'Santa María'],
+    'Los Santos': ['Guararé', 'Las Tablas', 'Los Santos', 'Macaracas', 'Pedasí', 'Pocrí', 'Tonosí'],
+    'Panamá': ['Balboa', 'Chepo', 'Chimán', 'Panamá', 'San Miguelito', 'Taboga'],
+    'Panamá Oeste': ['Arraiján', 'Capira', 'Chame', 'La Chorrera', 'San Carlos'],
+    'Veraguas': ['Atalaya', 'Calobre', 'Cañazas', 'La Mesa', 'Las Palmas', 'Mariato', 'Montijo', 'Río de Jesús', 'San Francisco', 'Santa Fe', 'Santiago', 'Soná'],
+    'Comarca Emberá-Wounaán': ['Cémaco', 'Sambú'],
+    'Comarca Kuna Yala': ['Comarca Kuna Yala'],
+    'Comarca Ngäbe-Buglé': ['Besiko', 'Jirondai', 'Kankintú', 'Kusapín', 'Mironó', 'Müna', 'Nole Duima', 'Ñürüm', 'Santa Catalina o Calovébora (Bledeshia)']
+  };
+
+  function updateHistDistricts() {
+    if (!ui.histProvince || !ui.histDistrict) return;
+    const prov = ui.histProvince.value;
+    ui.histDistrict.value = '';
+    ui.histDistrict.replaceChildren(new Option('Todos los distritos', ''));
+    if (!prov || prov === 'maritimo' || !PANAMA_GEO_CATALOG[prov]) {
+      ui.histDistrict.disabled = true;
+      return;
+    }
+    ui.histDistrict.disabled = false;
+    const distList = [...PANAMA_GEO_CATALOG[prov]].sort((a, b) => a.localeCompare('es', { sensitivity: 'base' }));
+    for (const d of distList) {
+      ui.histDistrict.appendChild(new Option(d, d));
+    }
   }
 
   function updateHistDays() {
@@ -2297,7 +2334,9 @@
     const year = ui.histYear.value || '2026';
     const month = ui.histMonth.value || '';
     const day = ui.histDay?.value || '';
-    const queryKey = `${year}-${month}-${day}`;
+    const province = ui.histProvince?.value || '';
+    const district = ui.histDistrict?.value || '';
+    const queryKey = `${year}-${month}-${day}-${province}-${district}`;
 
     // Evitar peticiones duplicadas idénticas si ya está cargando o ya se cargó sin cambios
     if (state.historicalLoading && state.lastHistoricalKey === queryKey && !force) {
@@ -2331,6 +2370,12 @@
       const dStr = String(day).padStart(2, '0');
       const dateIso = `${yStr}-${mStr}-${dStr}`;
       url += `&desde=${dateIso}&hasta=${dateIso}`;
+    }
+    if (province) {
+      url += `&provincia=${encodeURIComponent(province)}`;
+      if (district) {
+        url += `&distrito=${encodeURIComponent(district)}`;
+      }
     }
 
     try {
@@ -2870,6 +2915,19 @@
     });
     if (ui.histDay) {
       ui.histDay.addEventListener('change', () => {
+        loadHistoricalData(true);
+        fetchHistoricalCatalogPage(1, true);
+      });
+    }
+    if (ui.histProvince) {
+      ui.histProvince.addEventListener('change', () => {
+        updateHistDistricts();
+        loadHistoricalData(true);
+        fetchHistoricalCatalogPage(1, true);
+      });
+    }
+    if (ui.histDistrict) {
+      ui.histDistrict.addEventListener('change', () => {
         loadHistoricalData(true);
         fetchHistoricalCatalogPage(1, true);
       });

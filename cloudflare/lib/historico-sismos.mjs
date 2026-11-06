@@ -1,6 +1,8 @@
 'use strict';
 
 import { enrichEvent, enrichEvents, resolveLocation } from './geo-resolver.mjs';
+import { provincias } from '../../lib/geo-data/panama-provincias.mjs';
+import { distritos } from '../../lib/geo-data/panama-distritos.mjs';
 
 /**
  * SISMODATA PANAMÁ — API DE CONSULTA HISTÓRICA
@@ -118,6 +120,8 @@ function parseAndValidateParams(rawParams = {}) {
     min_prof: null,
     max_prof: null,
     search: null,
+    provincia: null,
+    distrito: null,
     sortField: 'fecha_hora',
     page: 1,
     limit: 50,
@@ -333,6 +337,29 @@ function parseAndValidateParams(rawParams = {}) {
     errors.push('La profundidad mínima (min_prof) no puede ser mayor que la profundidad máxima (max_prof).');
   }
 
+  // 7. Filtros territoriales: Provincia y Distrito
+  const rawProv = params.provincia || params.province;
+  if (rawProv && rawProv !== 'all' && rawProv !== 'todas' && rawProv !== 'todos' && rawProv !== '0') {
+    if (rawProv.length > 80) {
+      errors.push('El parámetro provincia excede el límite de 80 caracteres.');
+    } else {
+      filters.provincia = rawProv.trim();
+    }
+  } else {
+    filters.provincia = null;
+  }
+
+  const rawDist = params.distrito || params.district;
+  if (rawDist && rawDist !== 'all' && rawDist !== 'todos' && rawDist !== '0') {
+    if (rawDist.length > 80) {
+      errors.push('El parámetro distrito excede el límite de 80 caracteres.');
+    } else {
+      filters.distrito = rawDist.trim();
+    }
+  } else {
+    filters.distrito = null;
+  }
+
   return { isValid: errors.length === 0, errors, filters };
 }
 
@@ -368,6 +395,29 @@ function applyFiltersToQuery(query, filters) {
   if (filters.search && typeof q.or === 'function') {
     q = q.or(`region.ilike.%${filters.search}%,ubicacion.ilike.%${filters.search}%`);
   }
+
+  // Optimización espacial mediante BBox en base de datos
+  if (filters.distrito && typeof distritos !== 'undefined') {
+    const dNorm = filters.distrito.toLowerCase();
+    const pNorm = (filters.provincia || '').toLowerCase();
+    const dObj = distritos.find(d => d.nombre.toLowerCase() === dNorm && (!pNorm || d.provincia.toLowerCase().includes(pNorm)));
+    if (dObj && dObj.bbox) {
+      q = q.gte('latitud', Number((dObj.bbox[1] - 0.05).toFixed(4)))
+           .lte('latitud', Number((dObj.bbox[3] + 0.05).toFixed(4)))
+           .gte('longitud', Number((dObj.bbox[0] - 0.05).toFixed(4)))
+           .lte('longitud', Number((dObj.bbox[2] + 0.05).toFixed(4)));
+    }
+  } else if (filters.provincia && typeof provincias !== 'undefined' && filters.provincia.toLowerCase() !== 'maritimo' && filters.provincia.toLowerCase() !== 'marítimo') {
+    const pNorm = filters.provincia.toLowerCase();
+    const pObj = provincias.find(p => p.nombre.toLowerCase().includes(pNorm) || pNorm.includes(p.nombre.toLowerCase()));
+    if (pObj && pObj.bbox) {
+      q = q.gte('latitud', Number((pObj.bbox[1] - 0.05).toFixed(4)))
+           .lte('latitud', Number((pObj.bbox[3] + 0.05).toFixed(4)))
+           .gte('longitud', Number((pObj.bbox[0] - 0.05).toFixed(4)))
+           .lte('longitud', Number((pObj.bbox[2] + 0.05).toFixed(4)));
+    }
+  }
+
   return q;
 }
 
@@ -379,8 +429,39 @@ function applyFiltersToQuery(query, filters) {
  * - entre_4_y_4_9: 4.0 <= M < 5.0
  * - mayor_igual_5: M >= 5.0
  */
-function calculateStatistics(rows) {
-  if (!rows || rows.length === 0) {
+
+function matchesGeoFilter(ev, filters) {
+  if (!filters || (!filters.provincia && !filters.distrito)) return true;
+  if (ev.latitud == null || ev.longitud == null || isNaN(Number(ev.latitud)) || isNaN(Number(ev.longitud))) return false;
+  const geo = resolveLocation(ev.latitud, ev.longitud);
+  
+  if (filters.provincia) {
+    const pNorm = filters.provincia.toLowerCase();
+    if (pNorm === 'maritimo' || pNorm === 'marítimo') {
+      if (geo.geo_tipo !== 'MARITIMO') return false;
+    } else {
+      const evProv = (geo.geo_provincia || geo.geo_comarca || '').toLowerCase();
+      if (!evProv) return false;
+      if (!evProv.includes(pNorm) && !pNorm.includes(evProv)) return false;
+    }
+  }
+
+  if (filters.distrito) {
+    const dNorm = filters.distrito.toLowerCase();
+    const evDist = (geo.geo_distrito || '').toLowerCase();
+    if (!evDist) return false;
+    if (!evDist.includes(dNorm) && !dNorm.includes(evDist)) return false;
+  }
+
+  return true;
+}
+
+function calculateStatistics(rows, filters = null) {
+  let effectiveRows = rows;
+  if (filters && (filters.provincia || filters.distrito)) {
+    effectiveRows = rows.filter(r => matchesGeoFilter(r, filters));
+  }
+  if (!effectiveRows || effectiveRows.length === 0) {
     return {
       total: 0,
       menor_3: 0,
@@ -432,7 +513,7 @@ function calculateStatistics(rows) {
   const distribucionDiaria = {};
   const regionCounts = {};
 
-  for (const r of rows) {
+  for (const r of effectiveRows) {
     const mag = Number(r.magnitud);
     if (!isNaN(mag)) {
       magSum += mag;
@@ -518,7 +599,7 @@ function calculateStatistics(rows) {
   const profMaxVal = profMax !== -Infinity ? Number(profMax.toFixed(1)) : null;
 
   return {
-    total: rows.length,
+    total: effectiveRows.length,
     menor_3: countMenor3,
     entre_3_y_3_9: count3a39,
     entre_4_y_4_9: count4a49,
@@ -553,7 +634,7 @@ function calculateStatistics(rows) {
  * Ejecuta la consulta analítica completa en Supabase.
  */
 async function queryHistoricalSeismicData(filters, supabase) {
-  // 1. Obtener conteo exacto de registros que coinciden con los filtros
+  // 1. Obtener conteo exacto de registros en Supabase
   let countQuery = supabase
     .from('sismos')
     .select('*', { count: 'exact', head: true });
@@ -564,16 +645,17 @@ async function queryHistoricalSeismicData(filters, supabase) {
     throw new Error(`Error consultando total en Supabase: ${countErr.message}`);
   }
 
-  const total = totalCount || 0;
+  const rawTotal = totalCount || 0;
+  const hasGeoFilter = Boolean(filters.provincia || filters.distrito);
 
-  // 2. Obtener proyección ligera de TODOS los registros coincidentes SOLO si include_stats es true
+  // 2. Obtener proyección ligera de registros coincidentes
   let estadisticas = null;
-  if (filters.include_stats !== false) {
+  let statsRows = [];
+  if (filters.include_stats !== false || hasGeoFilter) {
     const CHUNK_SIZE = 1000;
-    const statsRows = [];
 
-    if (total > 0) {
-      for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
+    if (rawTotal > 0) {
+      for (let offset = 0; offset < rawTotal; offset += CHUNK_SIZE) {
         let statsQuery = supabase
           .from('sismos')
           .select('magnitud, profundidad_km, fecha_hora, region, latitud, longitud');
@@ -591,7 +673,19 @@ async function queryHistoricalSeismicData(filters, supabase) {
       }
     }
 
-    estadisticas = calculateStatistics(statsRows);
+    if (filters.include_stats !== false) {
+      estadisticas = calculateStatistics(statsRows, filters);
+    }
+  }
+
+  // Si hay filtro territorial activo, el total exacto proviene de los eventos que cumplen el polígono
+  let total = rawTotal;
+  if (hasGeoFilter) {
+    if (estadisticas && estadisticas.total !== undefined) {
+      total = estadisticas.total;
+    } else {
+      total = statsRows.filter(r => matchesGeoFilter(r, filters)).length;
+    }
   }
 
   // 3. Paginación de registros completos con orden estable (fecha_hora + id)
@@ -599,66 +693,111 @@ async function queryHistoricalSeismicData(filters, supabase) {
   const totalPaginas = total > 0 ? Math.ceil(total / filters.limit) : 0;
 
   if (filters.include_events && total > 0 && filters.page <= totalPaginas) {
-    const offset = (filters.page - 1) * filters.limit;
-    let eventsQuery = supabase
-      .from('sismos')
-      .select('id, source_uid, source_event_id, fecha_hora, magnitud, profundidad_km, latitud, longitud, region, ubicacion, estado, fuente, primera_captura, ultima_verificacion, actualizado_en, datos_originales');
-    eventsQuery = applyFiltersToQuery(eventsQuery, filters);
+    if (hasGeoFilter) {
+      // Para filtros territoriales, consultar candidatos del BBox de la base de datos
+      let eventsQuery = supabase
+        .from('sismos')
+        .select('id, source_uid, source_event_id, fecha_hora, magnitud, profundidad_km, latitud, longitud, region, ubicacion, estado, fuente, primera_captura, ultima_verificacion, actualizado_en, datos_originales');
+      eventsQuery = applyFiltersToQuery(eventsQuery, filters);
 
-    // Ordenamiento estable: campo principal + id como desempate
-    if (filters.sortField === 'magnitud') {
-      eventsQuery = eventsQuery
-        .order('magnitud', { ascending: false })
-        .order('fecha_hora', { ascending: false })
-        .order('id', { ascending: false });
-    } else if (filters.sortField === 'profundidad_km') {
-      eventsQuery = eventsQuery
-        .order('profundidad_km', { ascending: false })
-        .order('fecha_hora', { ascending: false })
-        .order('id', { ascending: false });
+      // Traer candidatos dentro de la ventana de paginación o período
+      const fetchLimit = Math.min(rawTotal, 2000);
+      eventsQuery = eventsQuery.range(0, fetchLimit - 1);
+
+      if (filters.sortField === 'magnitud') {
+        eventsQuery = eventsQuery.order('magnitud', { ascending: false }).order('fecha_hora', { ascending: false }).order('id', { ascending: false });
+      } else if (filters.sortField === 'profundidad_km') {
+        eventsQuery = eventsQuery.order('profundidad_km', { ascending: false }).order('fecha_hora', { ascending: false }).order('id', { ascending: false });
+      } else {
+        eventsQuery = eventsQuery.order('fecha_hora', { ascending: filters.order === 'asc' }).order('id', { ascending: filters.order === 'asc' });
+      }
+
+      const { data: eventsData, error: eventsErr } = await eventsQuery;
+      if (eventsErr) throw new Error(`Error obteniendo eventos en Supabase: ${eventsErr.message}`);
+
+      const normalized = (eventsData || []).map(r => {
+        const { fecha, hora } = formatPanamaDateTime(r.fecha_hora);
+        return {
+          id: r.id,
+          uid: r.source_uid || String(r.id),
+          source_uid: r.source_uid,
+          source_event_id: r.source_event_id,
+          fecha,
+          hora,
+          timestamp: r.fecha_hora,
+          fecha_hora: r.fecha_hora,
+          magnitud: Number(r.magnitud),
+          profundidad: Number(r.profundidad_km),
+          profundidad_km: Number(r.profundidad_km),
+          latitud: Number(r.latitud),
+          longitud: Number(r.longitud),
+          region: r.region,
+          ubicacion: r.ubicacion,
+          zona: r.datos_originales?.zona || r.ubicacion || r.region,
+          localidad: r.datos_originales?.localidad || r.ubicacion || 'Sin localidad especificada',
+          estado: r.estado,
+          fuente: r.fuente || 'IGC-UP',
+          detalle: r.datos_originales?.url_detalle || null,
+          primera_captura: r.primera_captura,
+          ultima_verificacion: r.ultima_verificacion,
+          actualizado_en: r.actualizado_en
+        };
+      });
+
+      const enriched = enrichEvents(normalized);
+      const filtered = enriched.filter(e => matchesGeoFilter(e, filters));
+      const offset = (filters.page - 1) * filters.limit;
+      eventos = filtered.slice(offset, offset + filters.limit);
     } else {
-      eventsQuery = eventsQuery
-        .order('fecha_hora', { ascending: filters.order === 'asc' })
-        .order('id', { ascending: filters.order === 'asc' });
+      const offset = (filters.page - 1) * filters.limit;
+      let eventsQuery = supabase
+        .from('sismos')
+        .select('id, source_uid, source_event_id, fecha_hora, magnitud, profundidad_km, latitud, longitud, region, ubicacion, estado, fuente, primera_captura, ultima_verificacion, actualizado_en, datos_originales');
+      eventsQuery = applyFiltersToQuery(eventsQuery, filters);
+
+      if (filters.sortField === 'magnitud') {
+        eventsQuery = eventsQuery.order('magnitud', { ascending: false }).order('fecha_hora', { ascending: false }).order('id', { ascending: false });
+      } else if (filters.sortField === 'profundidad_km') {
+        eventsQuery = eventsQuery.order('profundidad_km', { ascending: false }).order('fecha_hora', { ascending: false }).order('id', { ascending: false });
+      } else {
+        eventsQuery = eventsQuery.order('fecha_hora', { ascending: filters.order === 'asc' }).order('id', { ascending: filters.order === 'asc' });
+      }
+
+      eventsQuery = eventsQuery.range(offset, offset + filters.limit - 1);
+      const { data: eventsData, error: eventsErr } = await eventsQuery;
+      if (eventsErr) throw new Error(`Error obteniendo eventos paginados en Supabase: ${eventsErr.message}`);
+
+      const normalizedEvents = (eventsData || []).map(r => {
+        const { fecha, hora } = formatPanamaDateTime(r.fecha_hora);
+        return {
+          id: r.id,
+          uid: r.source_uid || String(r.id),
+          source_uid: r.source_uid,
+          source_event_id: r.source_event_id,
+          fecha,
+          hora,
+          timestamp: r.fecha_hora,
+          fecha_hora: r.fecha_hora,
+          magnitud: Number(r.magnitud),
+          profundidad: Number(r.profundidad_km),
+          profundidad_km: Number(r.profundidad_km),
+          latitud: Number(r.latitud),
+          longitud: Number(r.longitud),
+          region: r.region,
+          ubicacion: r.ubicacion,
+          zona: r.datos_originales?.zona || r.ubicacion || r.region,
+          localidad: r.datos_originales?.localidad || r.ubicacion || 'Sin localidad especificada',
+          estado: r.estado,
+          fuente: r.fuente || 'IGC-UP',
+          detalle: r.datos_originales?.url_detalle || null,
+          primera_captura: r.primera_captura,
+          ultima_verificacion: r.ultima_verificacion,
+          actualizado_en: r.actualizado_en
+        };
+      });
+
+      eventos = enrichEvents(normalizedEvents);
     }
-
-    eventsQuery = eventsQuery.range(offset, offset + filters.limit - 1);
-
-    const { data: eventsData, error: eventsErr } = await eventsQuery;
-    if (eventsErr) {
-      throw new Error(`Error obteniendo eventos paginados en Supabase: ${eventsErr.message}`);
-    }
-
-    const normalizedEvents = (eventsData || []).map(r => {
-      const { fecha, hora } = formatPanamaDateTime(r.fecha_hora);
-      return {
-        id: r.id,
-        uid: r.source_uid || String(r.id),
-        source_uid: r.source_uid,
-        source_event_id: r.source_event_id,
-        fecha,
-        hora,
-        timestamp: r.fecha_hora,
-        fecha_hora: r.fecha_hora,
-        magnitud: Number(r.magnitud),
-        profundidad: Number(r.profundidad_km),
-        profundidad_km: Number(r.profundidad_km),
-        latitud: Number(r.latitud),
-        longitud: Number(r.longitud),
-        region: r.region,
-        ubicacion: r.ubicacion,
-        zona: r.datos_originales?.zona || r.ubicacion || r.region,
-        localidad: r.datos_originales?.localidad || r.ubicacion || 'Sin localidad especificada',
-        estado: r.estado,
-        fuente: r.fuente || 'IGC-UP',
-        detalle: r.datos_originales?.url_detalle || null,
-        primera_captura: r.primera_captura,
-        ultima_verificacion: r.ultima_verificacion,
-        actualizado_en: r.actualizado_en
-      };
-    });
-
-    eventos = enrichEvents(normalizedEvents);
   }
 
   return {
@@ -668,6 +807,8 @@ async function queryHistoricalSeismicData(filters, supabase) {
       desde: filters.desdeISO,
       hasta: filters.hastaISO,
       region: filters.region,
+      provincia: filters.provincia,
+      distrito: filters.distrito,
       estado: filters.estado,
       min_mag: filters.min_mag,
       max_mag: filters.max_mag,
